@@ -1,0 +1,295 @@
+// components/select-friend-modal.tsx
+
+import React, { useState, useEffect } from 'react';
+import { Modal, StyleSheet, View, TouchableOpacity, FlatList, ActivityIndicator, Image, TextInput, Switch } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { userAPI, getImageUrl } from '@/utils/api';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface Friend {
+    _id: string;
+    username: string;
+    profilePhoto?: string;
+    age?: number;
+}
+
+interface SelectFriendModalProps {
+    visible: boolean;
+    onClose: () => void;
+    onSelectFriend: (friendId: string) => void;
+    onCreateGroup?: (friendIds: string[], groupName: string, isTemporary: boolean, isAnonymous: boolean) => void;
+}
+
+export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGroup }: SelectFriendModalProps) {
+    const { user } = useAuth();
+    const [friends, setFriends] = useState<Friend[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isGroupMode, setIsGroupMode] = useState(false);
+    const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+    const [groupName, setGroupName] = useState('');
+    const [isTemporary, setIsTemporary] = useState(false);
+    const [isAnonymous, setIsAnonymous] = useState(false);
+
+    const backgroundColor = useThemeColor('background');
+    const textColor = useThemeColor('text');
+    const primaryColor = useThemeColor('primary');
+    const lightTextColor = useThemeColor('lightText');
+    const surfaceColor = useThemeColor('surface');
+    const borderColor = useThemeColor('border');
+    const white = useThemeColor('white');
+
+    const fetchFriends = async () => {
+        if (!user?._id) return;
+
+        setIsLoading(true);
+        try {
+            const response = await userAPI.getProfile(user._id);
+            setFriends(response.data.friends || []);
+        } catch (error) {
+            console.error('Error fetching friends:', error);
+            setFriends([]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (visible) {
+            fetchFriends();
+            setIsGroupMode(false);
+            setSelectedFriends([]);
+            setGroupName('');
+            setIsTemporary(false);
+            setIsAnonymous(false);
+        }
+    }, [visible, user?._id]);
+
+    const toggleFriendSelection = (friendId: string) => {
+        if (selectedFriends.includes(friendId)) {
+            setSelectedFriends(prev => prev.filter(id => id !== friendId));
+        } else {
+            setSelectedFriends(prev => [...prev, friendId]);
+        }
+    };
+
+    const handleCreateGroup = () => {
+        if (onCreateGroup && groupName.trim() && selectedFriends.length > 0) {
+            onCreateGroup(selectedFriends, groupName.trim(), isTemporary, isAnonymous);
+            onClose();
+        }
+    };
+
+    const renderFriendItem = ({ item }: { item: Friend }) => {
+        const avatarSource = item.profilePhoto ? { uri: getImageUrl(item.profilePhoto) } : undefined;
+        const isSelected = selectedFriends.includes(item._id);
+
+        return (
+            <TouchableOpacity
+                style={[styles.friendRow, { borderBottomColor: borderColor }, isGroupMode && isSelected && { backgroundColor: surfaceColor }]}
+                onPress={() => {
+                    if (isGroupMode) {
+                        toggleFriendSelection(item._id);
+                    } else {
+                        onSelectFriend(item._id);
+                        onClose();
+                    }
+                }}
+            >
+                <View style={[styles.avatarCircle, { backgroundColor: surfaceColor }]}>
+                    {avatarSource ? (
+                        <Image source={avatarSource} style={styles.friendAvatar} />
+                    ) : (
+                        <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                    )}
+                </View>
+                <View style={styles.friendInfo}>
+                    <ThemedText style={[styles.friendName, { color: textColor }]}>
+                        {item.username}
+                    </ThemedText>
+                    {item.age && (
+                        <ThemedText style={[styles.friendAge, { color: lightTextColor }]}>
+                            {item.age} years old
+                        </ThemedText>
+                    )}
+                </View>
+                {isGroupMode && (
+                    <Ionicons
+                        name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                        size={24}
+                        color={isSelected ? primaryColor : lightTextColor}
+                    />
+                )}
+            </TouchableOpacity>
+        );
+    };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+            <ThemedView style={[styles.container, { backgroundColor }]}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={onClose}>
+                        <IconSymbol name="x" size={24} color={textColor} />
+                    </TouchableOpacity>
+                    <ThemedText style={{ fontSize: typography.sizes.title, fontWeight: 'bold' }}>
+                        {isGroupMode ? 'New Group' : 'Select Friend'}
+                    </ThemedText>
+                    <TouchableOpacity onPress={() => setIsGroupMode(!isGroupMode)}>
+                        <ThemedText style={{ color: primaryColor, fontWeight: 'bold' }}>
+                            {isGroupMode ? 'Cancel' : 'Group'}
+                        </ThemedText>
+                    </TouchableOpacity>
+                </View>
+
+                {isGroupMode && (
+                    <View>
+                        <View style={styles.groupInputContainer}>
+                            <TextInput
+                                style={[styles.groupInput, { color: textColor, borderColor, backgroundColor: surfaceColor }]}
+                                placeholder="Group Name"
+                                placeholderTextColor={lightTextColor}
+                                value={groupName}
+                                onChangeText={setGroupName}
+                            />
+                            <TouchableOpacity
+                                style={[styles.createButton, { backgroundColor: primaryColor, opacity: (!groupName.trim() || selectedFriends.length === 0) ? 0.5 : 1 }]}
+                                onPress={handleCreateGroup}
+                                disabled={!groupName.trim() || selectedFriends.length === 0}
+                            >
+                                <ThemedText style={{ color: 'white', fontWeight: 'bold' }}>Create</ThemedText>
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.optionsContainer}>
+                            <View style={styles.optionRow}>
+                                <ThemedText>Temporary (24h)</ThemedText>
+                                <Switch
+                                    value={isTemporary}
+                                    onValueChange={setIsTemporary}
+                                    trackColor={{ false: '#767577', true: primaryColor }}
+                                    thumbColor={white}
+                                />
+                            </View>
+                            <View style={styles.optionRow}>
+                                <ThemedText>Anonymous Group</ThemedText>
+                                <Switch
+                                    value={isAnonymous}
+                                    onValueChange={setIsAnonymous}
+                                    trackColor={{ false: '#767577', true: primaryColor }}
+                                    thumbColor={white}
+                                />
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                <View style={styles.content}>
+                    {isLoading ? (
+                        <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: spacing.xl }} />
+                    ) : (
+                        <FlatList
+                            data={friends}
+                            renderItem={renderFriendItem}
+                            keyExtractor={item => item._id}
+                            contentContainerStyle={styles.listContainer}
+                            ListEmptyComponent={
+                                <ThemedText style={[styles.emptyText, { color: lightTextColor }]}>
+                                    No friends yet. Add some friends to start chatting!
+                                </ThemedText>
+                            }
+                        />
+                    )}
+                </View>
+            </ThemedView>
+        </Modal>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    content: {
+        flex: 1,
+        paddingHorizontal: spacing.md,
+    },
+    listContainer: {
+        paddingVertical: spacing.md,
+    },
+    friendRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: spacing.md,
+        borderBottomWidth: 1,
+    },
+    avatarCircle: {
+        width: 50,
+        height: 50,
+        borderRadius: borderRadius.round,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: spacing.md,
+    },
+    friendAvatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: borderRadius.round,
+    },
+    friendInfo: {
+        flex: 1,
+    },
+    friendName: {
+        fontSize: typography.sizes.title,
+        fontWeight: 'bold',
+    },
+    friendAge: {
+        fontSize: typography.sizes.caption,
+        marginTop: spacing.xs,
+    },
+    emptyText: {
+        textAlign: 'center',
+        marginTop: spacing.xl,
+        fontSize: typography.sizes.body1,
+    },
+    groupInputContainer: {
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    groupInput: {
+        flex: 1,
+        height: 40,
+        borderWidth: 1,
+        borderRadius: borderRadius.md,
+        paddingHorizontal: spacing.md,
+    },
+    createButton: {
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.md,
+    },
+    optionsContainer: {
+        paddingHorizontal: spacing.md,
+        paddingBottom: spacing.sm,
+    },
+    optionRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: spacing.xs,
+    },
+});

@@ -1,0 +1,134 @@
+import React, { createContext, useState, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI } from '@/utils/api';
+
+interface User {
+  _id: string;
+  username: string;
+  email: string;
+  age: number;
+  bio?: string;
+  location?: string;
+  interests?: string[];
+  avatar?: string;
+  profilePhoto?: string;
+  friends?: any[];
+  followers?: any[];
+  following?: any[];
+  posts?: any[];
+}
+
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  register: (username: string, email: string, password: string, age: number) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  restoreToken: () => Promise<void>;
+  updateUser: (updatedUser: Partial<User>) => void;
+  isSignedIn: boolean;
+}
+
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const register = useCallback(
+    async (username: string, email: string, password: string, age: number) => {
+      setIsLoading(true);
+      try {
+        const response = await authAPI.register({ username, email, password, age });
+        const { token, user } = response.data;
+
+        await AsyncStorage.setItem('authToken', token);
+        setToken(token);
+        setUser(user);
+      } catch (error: any) {
+        throw error.response?.data?.msg || 'Registration failed';
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  const login = useCallback(async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const response = await authAPI.login({ email, password });
+      const { token, user } = response.data;
+
+      await AsyncStorage.setItem('authToken', token);
+      setToken(token);
+      setUser(user);
+    } catch (error: any) {
+      throw error.response?.data?.msg || 'Login failed';
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await AsyncStorage.removeItem('authToken');
+      setToken(null);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const restoreToken = useCallback(async () => {
+    try {
+      const storedToken = await AsyncStorage.getItem('authToken');
+      if (storedToken) {
+        setToken(storedToken);
+        // Optionally fetch user data to validate token
+        try {
+          const response = await authAPI.getCurrentUser();
+          // Backend returns user object directly, not wrapped
+          const userData = response.data.user || response.data;
+          setUser(userData);
+        } catch (error) {
+          // Token is invalid, clear it
+          await AsyncStorage.removeItem('authToken');
+          setToken(null);
+          setUser(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore token:', error);
+    }
+  }, []);
+
+  const updateUser = useCallback((updatedUser: Partial<User>) => {
+    setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : null);
+  }, []);
+
+  const value: AuthContextType = {
+    user,
+    token,
+    isLoading,
+    register,
+    login,
+    logout,
+    restoreToken,
+    updateUser,
+    isSignedIn: !!token,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+export const useAuth = () => {
+  const context = React.useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

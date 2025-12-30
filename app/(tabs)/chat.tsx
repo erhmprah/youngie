@@ -1,0 +1,262 @@
+// app/(tabs)/chat.tsx
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, FlatList, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@/contexts/AuthContext';
+import { chatAPI, getImageUrl } from '@/utils/api';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { onMessageReceived, offMessageReceived, onNewNotification, offNewNotification } from '@/utils/socket';
+import { SelectFriendModal } from '@/components/select-friend-modal';
+
+interface User {
+    _id: string;
+    username: string;
+    profilePhoto?: string;
+}
+
+interface ChatMessage {
+    _id: string;
+    sender: string;
+    content: string;
+    timestamp: string;
+    createdAt?: string;
+}
+
+interface Chat {
+    _id: string;
+    participants: User[];
+    name?: string;
+    messages?: ChatMessage[];
+    lastMessage?: string;
+    updatedAt?: string;
+    isGroupChat?: boolean;
+}
+
+export default function ChatScreen() {
+    const { user } = useAuth();
+    const router = useRouter();
+    const [chats, setChats] = useState<Chat[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isFriendModalVisible, setIsFriendModalVisible] = useState(false);
+    const [activeTab, setActiveTab] = useState<'direct' | 'groups'>('direct');
+
+    const backgroundColor = useThemeColor('background');
+    const primaryColor = useThemeColor('primary');
+    const textColor = useThemeColor('text');
+    const lightTextColor = useThemeColor('lightText');
+    const surfaceColor = useThemeColor('surface');
+    const borderColor = useThemeColor('border');
+    const white = useThemeColor('white');
+
+    const fetchChats = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            if (user?._id) {
+                const response = await chatAPI.getUserChats(user._id);
+                setChats(response.data || []);
+            } else {
+                setChats([]);
+            }
+        } catch (error: any) {
+            console.error('Error fetching chats:', error);
+            Alert.alert('Error', 'Failed to load chats');
+            setChats([]);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [user?._id]);
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchChats();
+        }, [fetchChats])
+    );
+    
+    const handleNewChat = () => {
+        setIsFriendModalVisible(true);
+    };
+
+    const handleSelectFriend = async (friendId: string) => {
+        if (user?._id) {
+            try {
+                const response = await chatAPI.createChat({
+                    participants: [user._id, friendId],
+                    isGroupChat: false,
+                });
+                router.push({
+                    pathname: '/chat/[id]',
+                    params: { id: response.data._id }
+                });
+            } catch (error: any) {
+                if (error.response?.data?.msg === 'Chat already exists') {
+                      Alert.alert('Chat Exists', 'A chat with this user already exists.');
+                } else {
+                    Alert.alert('Error', 'Failed to create chat.');
+                }
+            }
+        }
+    };
+
+    const handleCreateGroup = async (friendIds: string[], groupName: string, isTemporary: boolean, isAnonymous: boolean) => {
+        if (user?._id) {
+            try {
+                const response = await chatAPI.createChat({
+                    participants: [user._id, ...friendIds],
+                    isGroupChat: true,
+                    name: groupName,
+                    isTemporary,
+                    isAnonymous,
+                });
+                router.push({
+                    pathname: '/chat/[id]',
+                    params: { id: response.data._id }
+                });
+            } catch (error: any) {
+                console.error('Error creating group chat:', error);
+                Alert.alert('Error', 'Failed to create group chat.');
+            }
+        }
+    };
+    
+    useEffect(() => {
+        const handleNewMessage = (newMessage: any) => {
+            fetchChats();
+        };
+
+        const handleNotification = (data: any) => {
+            if (data.type === 'message') {
+                fetchChats();
+            }
+        };
+
+        onMessageReceived(handleNewMessage);
+        onNewNotification(handleNotification);
+
+        return () => {
+            offMessageReceived();
+            offNewNotification();
+        };
+    }, [fetchChats]);
+
+    const filteredChats = chats.filter(chat => {
+        if (activeTab === 'direct') return !chat.isGroupChat;
+        return chat.isGroupChat;
+    });
+
+    const renderChatItem = ({ item }: { item: Chat }) => {
+        const participant = item.participants.find(p => p._id !== user?._id);
+        
+        let chatName = '';
+        let avatarSource = undefined;
+        const isGroup = item.isGroupChat;
+
+        if (isGroup) {
+            chatName = item.name || 'Group Chat';
+        } else {
+            chatName = participant?.username || 'Unknown User';
+            avatarSource = participant?.profilePhoto ? { uri: getImageUrl(participant.profilePhoto) } : undefined;
+        }
+
+        return (
+            <TouchableOpacity 
+                style={[styles.chatRow, { borderBottomColor: borderColor }]} 
+                onPress={() => router.push({
+                    pathname: '/chat/[id]',
+                    params: { id: item._id }
+                })}
+            >
+                <View style={[styles.avatarCircle, { backgroundColor: surfaceColor }]}>
+                    {avatarSource ? (
+                        <Image source={avatarSource} style={styles.chatAvatar} />
+                    ) : (
+                        <IconSymbol name={isGroup ? "person.2.fill" : "person.fill"} size={24} color={lightTextColor} />
+                    )}
+                </View>
+                <View style={styles.chatInfo}>
+                    <View style={styles.chatHeader}>
+                        <ThemedText style={[styles.chatName, { color: textColor }]}>
+                            {chatName}
+                        </ThemedText>
+                        <ThemedText style={[styles.chatDate, { color: lightTextColor }]}>
+                            {item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </ThemedText>
+                    </View>
+                    <ThemedText style={[styles.chatPreview, { color: lightTextColor }]} numberOfLines={1}>
+                        {item.messages?.[item.messages.length - 1]?.content || item.lastMessage || 'No messages'}
+                    </ThemedText>
+                </View>
+            </TouchableOpacity>
+        );
+    };
+
+    return (
+        <SafeAreaView style={{ flex: 1, backgroundColor }}>
+            <ThemedView style={styles.container}>
+                <ThemedView style={[styles.listHeader, { borderBottomColor: borderColor }]}>
+                    <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Messages</ThemedText>
+                    <TouchableOpacity style={[styles.editBtn, { backgroundColor: primaryColor }]} onPress={handleNewChat}>
+                        <IconSymbol name="plus" size={24} color={white} />
+                    </TouchableOpacity>
+                </ThemedView>
+
+                <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'direct' && { borderBottomColor: primaryColor }]}
+                        onPress={() => setActiveTab('direct')}
+                    >
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'direct' ? primaryColor : lightTextColor }]}>Direct</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'groups' && { borderBottomColor: primaryColor }]}
+                        onPress={() => setActiveTab('groups')}
+                    >
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'groups' ? primaryColor : lightTextColor }]}>Groups</ThemedText>
+                    </TouchableOpacity>
+                </View>
+
+                {isLoading ? (
+                    <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: spacing.xl }} />
+                ) : (
+                    <FlatList
+                        data={filteredChats}
+                        renderItem={renderChatItem}
+                        keyExtractor={item => item._id}
+                        contentContainerStyle={styles.listContainer}
+                        ListEmptyComponent={<ThemedText style={{ textAlign: 'center', marginTop: spacing.xl, color: lightTextColor }}>No {activeTab === 'direct' ? 'messages' : 'groups'} yet.</ThemedText>}
+                    />
+                )}
+            </ThemedView>
+
+            <SelectFriendModal
+                visible={isFriendModalVisible}
+                onClose={() => setIsFriendModalVisible(false)}
+                onSelectFriend={handleSelectFriend}
+                onCreateGroup={handleCreateGroup}
+            />
+        </SafeAreaView>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { flex: 1 },
+    listHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: spacing.lg, alignItems: 'center', borderBottomWidth: 1 },
+    editBtn: { padding: spacing.sm, borderRadius: borderRadius.md },
+    listContainer: { paddingHorizontal: spacing.md },
+    chatRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, borderBottomWidth: 1 },
+    avatarCircle: { width: 55, height: 55, borderRadius: borderRadius.round, justifyContent: 'center', alignItems: 'center', marginRight: spacing.md },
+    chatAvatar: { width: '100%', height: '100%', borderRadius: borderRadius.round },
+    chatInfo: { flex: 1 },
+    chatHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
+    chatName: { fontSize: typography.sizes.title, fontFamily: typography.families.bold },
+    chatDate: { fontSize: typography.sizes.caption },
+    chatPreview: { fontSize: typography.sizes.body2 },
+    tabsContainer: { flexDirection: 'row', borderBottomWidth: 1 },
+    tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
+});

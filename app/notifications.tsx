@@ -1,0 +1,440 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { StyleSheet, View, SectionList, TouchableOpacity, ActivityIndicator, Alert, Animated } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@/contexts/AuthContext';
+import { notificationAPI, userAPI } from '@/utils/api';
+import { getColors, spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Swipeable } from 'react-native-gesture-handler';
+
+interface Notification {
+  _id: string;
+  sender: {
+    _id: string;
+    username: string;
+    avatar?: string;
+    profilePhoto?: string;
+  };
+  type: 'like' | 'comment' | 'follow' | 'match' | 'message';
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+const NotificationSkeleton = ({ colors }: { colors: ReturnType<typeof getColors> }) => (
+  <View style={dynamicStyles(colors).skeletonContainer}>
+    <View style={dynamicStyles(colors).skeletonAvatar} />
+    <View style={dynamicStyles(colors).skeletonTextContainer}>
+      <View style={dynamicStyles(colors).skeletonTextLine} />
+      <View style={[dynamicStyles(colors).skeletonTextLine, { width: '60%' }]} />
+    </View>
+  </View>
+);
+
+export default function NotificationsScreen() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const colorScheme = useColorScheme();
+  const colors = getColors(colorScheme);
+  const styles = dynamicStyles(colors);
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    }
+  }, [user]);
+
+  const fetchNotifications = async () => {
+    setIsLoading(true);
+    try {
+      const response = await notificationAPI.getNotifications();
+      setNotifications(response.data);
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error);
+      Alert.alert('Error', 'Failed to load notifications');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMarkAsRead = useCallback(async (notificationId: string) => {
+    try {
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true } : notif
+      ));
+    } catch (error) {
+      console.error('Failed to mark as read:', error);
+    }
+  }, []);
+
+  const handleAcceptRequest = async (senderId: string, notificationId: string) => {
+    if (!user?._id) return;
+    try {
+      await userAPI.acceptFriendRequest(user._id, senderId);
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request accepted' } : notif
+      ));
+      Alert.alert('Success', 'Friend request accepted!');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to accept request');
+    }
+  };
+
+  const handleIgnoreRequest = async (senderId: string, notificationId: string) => {
+    if (!user?._id) return;
+    try {
+      await userAPI.ignoreFriendRequest(user._id, senderId);
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request ignored' } : notif
+      ));
+      Alert.alert('Ignored', 'Friend request ignored');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to ignore request');
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notificationAPI.markAllAsRead();
+      setNotifications(prev => prev.map(notif => ({ ...notif, isRead: true })));
+    } catch (error) {
+      console.error('Failed to mark all as read:', error);
+    }
+  };
+
+  const groupedNotifications = useMemo(() => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const groups = {
+      Today: [] as Notification[],
+      Yesterday: [] as Notification[],
+      Older: [] as Notification[],
+    };
+
+    notifications.forEach(notification => {
+      const notificationDate = new Date(notification.createdAt);
+      if (notificationDate.toDateString() === today.toDateString()) {
+        groups.Today.push(notification);
+      } else if (notificationDate.toDateString() === yesterday.toDateString()) {
+        groups.Yesterday.push(notification);
+      } else {
+        groups.Older.push(notification);
+      }
+    });
+
+    return Object.entries(groups)
+      .map(([title, data]) => ({ title, data }))
+      .filter(section => section.data.length > 0);
+  }, [notifications]);
+
+  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, notificationId: string) => {
+    const trans = dragX.interpolate({
+      inputRange: [-80, 0],
+      outputRange: [0, 80],
+      extrapolate: 'clamp',
+    });
+    return (
+      <TouchableOpacity onPress={() => handleMarkAsRead(notificationId)}>
+        <Animated.View style={[styles.rightAction, { transform: [{ translateX: trans }] }]}>
+          <Ionicons name="checkmark-circle" size={24} color={colors.white} />
+          <ThemedText style={styles.rightActionText}>Read</ThemedText>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderNotification = ({ item }: { item: Notification }) => {
+    const isPendingFriendRequest = item.type === 'follow' && item.message === 'sent you a friend request' && !item.isRead;
+    // For accepted/ignored, the message will already be updated by handleAcceptRequest/handleIgnoreRequest
+    // So, we just need to make sure buttons don't show if it's not a pending request.
+
+    return (
+      <Swipeable
+        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item._id)}
+        onSwipeableOpen={() => handleMarkAsRead(item._id)}
+        friction={2}
+        rightThreshold={40}
+      >
+        <View style={[styles.notification, !item.isRead && styles.unread]}>
+          <View style={[styles.avatarContainer, { backgroundColor: colors.surface }]}>
+            {item.sender.profilePhoto ? (
+              <Image
+                source={{ uri: item.sender.profilePhoto }}
+                style={styles.avatar}
+              />
+            ) : (
+              <Ionicons name="person" size={24} color={colors.lightText} />
+            )}
+          </View>
+          <View style={styles.textContainer}>
+            <ThemedText>
+              <ThemedText style={styles.sender}>{item.sender.username}</ThemedText> {item.message}
+            </ThemedText>
+            <ThemedText style={styles.timestamp}>
+              {new Date(item.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </ThemedText>
+            
+            {isPendingFriendRequest && (
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.acceptButton}
+                  onPress={() => handleAcceptRequest(item.sender._id, item._id)}
+                >
+                  <ThemedText style={styles.buttonText}>Accept</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.ignoreButton}
+                  onPress={() => handleIgnoreRequest(item.sender._id, item._id)}
+                >
+                  <ThemedText style={styles.buttonText}>Ignore</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+          {!item.isRead && <View style={styles.unreadDot} />}
+        </View>
+      </Swipeable>
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.header}>
+             <ThemedText type="title" style={styles.title}>Notifications</ThemedText>
+          </View>
+          <NotificationSkeleton colors={colors} />
+          <NotificationSkeleton colors={colors} />
+          <NotificationSkeleton colors={colors} />
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ThemedView style={styles.container}>
+        <View style={styles.header}>
+           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+             <Ionicons name="chevron-back" size={28} color={colors.text} />
+           </TouchableOpacity>
+           <ThemedText type="title" style={styles.title}>Notifications</ThemedText>
+           {notifications.some(n => !n.isRead) && (
+             <TouchableOpacity onPress={handleMarkAllAsRead}>
+               <ThemedText style={styles.markAllText}>Mark all read</ThemedText>
+             </TouchableOpacity>
+           )}
+         </View>
+
+        {notifications.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <ThemedText style={styles.emptyIcon}>🎉</ThemedText>
+            <ThemedText style={styles.emptyText}>All caught up!</ThemedText>
+            <ThemedText style={styles.emptySubtext}>You have no new notifications.</ThemedText>
+          </View>
+        ) : (
+          <SectionList
+            sections={groupedNotifications}
+            renderItem={renderNotification}
+            keyExtractor={(item) => item._id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContainer}
+            renderSectionHeader={({ section: { title } }) => (
+              <ThemedText style={styles.sectionHeader}>{title}</ThemedText>
+            )}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+          />
+        )}
+      </ThemedView>
+    </SafeAreaView>
+  );
+}
+
+const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  backButton: {
+    position: 'absolute',
+    left: spacing.lg,
+    zIndex: 1,
+    padding: spacing.sm,
+  },
+  title: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: typography.sizes.heading3,
+    fontWeight: typography.weights.bold,
+    color: colors.text,
+  },
+  markAllText: {
+    fontSize: typography.sizes.body2,
+    color: colors.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  listContainer: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md, // Added vertical padding
+  },
+  sectionHeader: {
+    fontSize: typography.sizes.body1,
+    fontWeight: typography.weights.bold,
+    color: colors.text,
+    paddingVertical: spacing.sm,
+    paddingTop: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  notification: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md, // Consistent padding
+    marginVertical: spacing.xs, // Add vertical margin between items
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md, // Softer corners
+    ...shadows.sm, // Add subtle shadow for depth
+  },
+  unread: {
+    backgroundColor: colors.primary + '20', // More distinct tint for unread
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: spacing.md, // Consistent spacing
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: spacing.xs, // Added vertical padding for text
+  },
+  sender: {
+    fontWeight: typography.weights.bold,
+    color: colors.text,
+  },
+  timestamp: {
+    fontSize: typography.sizes.caption, // Slightly smaller font
+    color: colors.lighterText, // Less prominent color
+    marginTop: spacing.xs,
+  },
+  unreadDot: {
+    width: 8, // Slightly smaller dot
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+    marginLeft: spacing.sm, // Consistent spacing
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.md, // Consistent margin
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xxl,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: spacing.lg,
+  },
+  emptyText: {
+    fontSize: typography.sizes.heading4,
+    fontWeight: typography.weights.semibold,
+    marginBottom: spacing.sm,
+    color: colors.text,
+  },
+  emptySubtext: {
+    fontSize: typography.sizes.body1,
+    color: colors.lightText,
+    textAlign: 'center',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  acceptButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.xl,
+  },
+  ignoreButton: {
+    backgroundColor: colors.error,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.xl,
+  },
+  buttonText: {
+    color: colors.white,
+    fontSize: typography.sizes.body2,
+    fontWeight: typography.weights.bold,
+  },
+  rightAction: {
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80, // Keeping original width
+    height: '100%',
+  },
+  rightActionText: {
+    color: colors.white,
+    marginTop: spacing.xs,
+  },
+  skeletonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    marginVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  skeletonAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.border,
+    marginRight: spacing.md,
+  },
+  skeletonTextContainer: {
+    marginLeft: spacing.md,
+    flex: 1,
+  },
+  skeletonTextLine: {
+    height: 16,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    marginBottom: spacing.xs,
+  },
+});
