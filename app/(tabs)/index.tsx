@@ -10,7 +10,6 @@ import { ThemedText } from '@/components/themed-text';
 import { FeedCard } from '@/app/chat/FeedCard';
 import { CreatePostModal } from '@/components/create-post-modal';
 import { CreateStoryModal } from '@/components/create-story-modal';
-import { CreateCommunityModal } from '@/app/(tabs)/create-community-modal';
 import { StoryViewer } from '@/components/story-viewer';
 import { CommentModal } from '@/components/comment-modal';
 import { NotificationBell } from '@/components/notification-bell';
@@ -78,7 +77,6 @@ export default function FeedScreen() {
     
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
-    const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
     const [showStoryViewer, setShowStoryViewer] = useState(false);
     const [selectedStoryGroupIndex, setSelectedStoryGroupIndex] = useState(0);
     const [showCommentModal, setShowCommentModal] = useState(false);
@@ -242,9 +240,6 @@ export default function FeedScreen() {
                         <TouchableOpacity style={[styles.iconCircle, isIncognito && { backgroundColor: primaryColor }]} onPress={() => setIsIncognito(!isIncognito)}>
                             <Ionicons name="glasses" size={22} color={isIncognito ? white : textColor} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.iconCircle} onPress={() => setShowCreateCommunityModal(true)}>
-                            <Ionicons name="people" size={22} color={textColor} />
-                        </TouchableOpacity>
                         <TouchableOpacity style={styles.iconCircle} onPress={() => router.push('/explore')}>
                             <IconSymbol name="magnifyingglass" size={22} color={textColor} />
                         </TouchableOpacity>
@@ -282,7 +277,6 @@ export default function FeedScreen() {
                 
                 <CreatePostModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} onPost={fetchData} initialAnonymous={isIncognito} />
                 <CreateStoryModal visible={showCreateStoryModal} onClose={() => setShowCreateStoryModal(false)} onCreate={fetchData} />
-                <CreateCommunityModal visible={showCreateCommunityModal} onClose={() => setShowCreateCommunityModal(false)} />
                 <StoryViewer visible={showStoryViewer} onClose={() => setShowStoryViewer(false)} storyGroups={stories} initialGroupIndex={selectedStoryGroupIndex} onStoryDeleted={fetchData} />
                 <CommentModal visible={showCommentModal} onClose={() => setShowCommentModal(false)} post={selectedPostForComments} initialAnonymous={isIncognito} />
             </ThemedView>

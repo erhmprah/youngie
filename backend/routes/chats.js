@@ -48,6 +48,13 @@ router.post('/', auth, async (req, res) => {
     await newChat.save();
     await newChat.populate('participants', 'username profilePhoto');
 
+    // Notify participants about the new chat
+    if (req.io) {
+      newChat.participants.forEach(p => {
+        req.io.to(p._id.toString()).emit('newChat', newChat);
+      });
+    }
+
     res.json(newChat);
   } catch (error) {
     console.error('Create chat error:', error);
@@ -66,6 +73,7 @@ router.get('/user/:userId', auth, async (req, res) => {
       participants: req.params.userId
     })
     .populate('participants', 'username profilePhoto')
+    .populate('relatedCommunity', 'name image')
     .sort({ updatedAt: -1 });
 
     const chatsWithLastMessage = await Promise.all(chats.map(async (chat) => {
@@ -76,6 +84,12 @@ router.get('/user/:userId', auth, async (req, res) => {
             chatObj.updatedAt = lastMsg.createdAt; // Use message time for sorting
         }
         
+        const unreadCount = await Message.countDocuments({
+            chat: chat._id,
+            readBy: { $ne: req.params.userId }
+        });
+        chatObj.unreadCount = unreadCount;
+
         // Handle anonymous chats
         if (chat.isAnonymous) {
             chatObj.participants = chatObj.participants.map(p => ({
@@ -99,7 +113,9 @@ router.get('/user/:userId', auth, async (req, res) => {
 // Get single chat
 router.get('/:chatId', auth, async (req, res) => {
     try {
-        const chat = await Chat.findById(req.params.chatId).populate('participants', 'username profilePhoto');
+        const chat = await Chat.findById(req.params.chatId)
+          .populate('participants', 'username profilePhoto')
+          .populate('relatedCommunity', 'name image');
         if (!chat) return res.status(404).json({ msg: 'Chat not found' });
 
         // Check if user is participant
@@ -131,7 +147,17 @@ router.get('/:chatId', auth, async (req, res) => {
                  return msgObj;
              });
         } else {
-            chatObj.messages = messages;
+            chatObj.messages = messages.map(msg => {
+                const msgObj = msg.toObject();
+                if (msgObj.isAnonymous && msgObj.sender._id.toString() !== req.userId) {
+                    msgObj.sender = {
+                        _id: 'anonymous',
+                        username: 'Anonymous',
+                        profilePhoto: null
+                    };
+                }
+                return msgObj;
+            });
         }
         
         res.json(chatObj);
@@ -143,7 +169,7 @@ router.get('/:chatId', auth, async (req, res) => {
 // Send message
 router.post('/:chatId/messages', auth, async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, isAnonymous } = req.body;
     const chatId = req.params.chatId;
 
     if (!content) {
@@ -164,7 +190,9 @@ router.post('/:chatId/messages', auth, async (req, res) => {
     const newMessage = new Message({
       chat: chatId,
       sender: req.userId,
-      content
+      content,
+      isAnonymous: isAnonymous || false,
+      readBy: [req.userId]
     });
 
     await newMessage.save();
@@ -175,9 +203,32 @@ router.post('/:chatId/messages', auth, async (req, res) => {
 
     await newMessage.populate('sender', 'username profilePhoto');
 
+    // Emit socket event for real-time updates
+    if (req.io) {
+      req.io.to(chatId).emit('newMessage', newMessage);
+
+      // Emit event to participants for chat list updates
+      chat.participants.forEach(participantId => {
+        req.io.to(participantId.toString()).emit('chatUpdated', newMessage);
+      });
+    }
+
     res.json(newMessage);
   } catch (error) {
     console.error('Send message error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mark chat as read
+router.put('/:chatId/read', auth, async (req, res) => {
+  try {
+    await Message.updateMany(
+      { chat: req.params.chatId, readBy: { $ne: req.userId } },
+      { $addToSet: { readBy: req.userId } }
+    );
+    res.json({ msg: 'Marked as read' });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

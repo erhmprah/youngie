@@ -73,22 +73,32 @@ router.post('/login', [
   body('password').exists(),
 ], async (req, res) => {
   try {
+    console.log('Login attempt for email:', req.body.email);
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
     const { email, password } = req.body;
+    console.log('Entered email:', email);
+    console.log('Entered password length:', password.length);
 
     // Find user
     const user = await User.findOne({ email }).select('+password');
+    console.log('User found:', !!user);
     if (!user) {
+      console.log('No user found with email:', email);
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
+    console.log('User email in DB:', user.email);
+    console.log('User password hash exists:', !!user.password);
 
     // Check password
     const isMatch = await user.comparePassword(password);
+    console.log('Password match:', isMatch);
     if (!isMatch) {
+      console.log('Password does not match for user:', email);
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 

@@ -6,12 +6,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { postAPI, userAPI, getImageUrl } from '@/utils/api';
+import { postAPI, userAPI, communityAPI, getImageUrl } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { CreateCommunityModal } from './create-community-modal';
 
 const { width } = Dimensions.get('window');
 
@@ -39,16 +40,28 @@ interface User {
   bio?: string;
 }
 
+interface Community {
+  _id: string;
+  name: string;
+  description: string;
+  image?: string;
+  memberCount?: number;
+  chat?: { _id: string };
+}
+
 export default function ExploreScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [myCommunities, setMyCommunities] = useState<Community[]>([]);
   const [searchResults, setSearchResults] = useState<{ users: User[]; posts: Post[] }>({ users: [], posts: [] });
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [friendIds, setFriendIds] = useState<string[]>([]);
+  const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 500); // Debounce search query by 500ms
 
@@ -66,6 +79,7 @@ export default function ExploreScreen() {
       const promises: Promise<any>[] = [
         postAPI.getTrendingPosts(),
         userAPI.getNearbyUsers(),
+        communityAPI.getAll(),
       ];
 
       if (user?._id) {
@@ -75,11 +89,31 @@ export default function ExploreScreen() {
       const results = await Promise.all(promises);
       const trendingResponse = results[0];
       const discoverResponse = results[1];
-      const profileResponse = results[2];
+      const communitiesResponse = results[2];
+      const profileResponse = results[3];
 
       setTrendingPosts(trendingResponse.data);
       setDiscoverUsers(discoverResponse.data.slice(0, 4)); // Limit to 4 for display
-      
+
+      const allCommunities = communitiesResponse.data;
+
+      // 1. My Communities (Member or Creator)
+      const myComms = allCommunities.filter((community: any) => {
+        const isMember = community.members.some((member: any) => member._id === user?._id);
+        const isCreator = community.creator._id === user?._id;
+        return isMember || isCreator;
+      });
+      setMyCommunities(myComms);
+
+      // 2. Discover Communities (Not a member)
+      const discoverComms = allCommunities.filter((community: any) => {
+        const isMember = community.members.some((member: any) => member._id === user?._id);
+        const isCreator = community.creator._id === user?._id;
+        return !isMember && !isCreator;
+      }).slice(0, 4); // Limit to 4 for display
+
+      setCommunities(discoverComms);
+
       if (profileResponse?.data?.friends) {
         setFriendIds(profileResponse.data.friends.map((f: any) => typeof f === 'string' ? f : f._id));
       }
@@ -132,6 +166,17 @@ export default function ExploreScreen() {
       Alert.alert('Success', `Friend request sent to ${userName}`);
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
+    }
+  };
+
+  const handleJoinCommunity = async (communityId: string, communityName: string) => {
+    try {
+      await communityAPI.join(communityId);
+      Alert.alert('Success', `Joined ${communityName}`);
+      // Refetch to update the list
+      fetchExploreData();
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to join community');
     }
   };
 
@@ -319,9 +364,84 @@ export default function ExploreScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            {/* My Communities */}
+            <View style={styles.section}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingRight: spacing.lg }}>
+                <ThemedText type="title" style={styles.sectionTitle}>My Communities</ThemedText>
+                <TouchableOpacity onPress={() => setShowCreateCommunityModal(true)}>
+                  <IconSymbol name="plus" size={24} color={primaryColor} />
+                </TouchableOpacity>
+              </View>
+              {myCommunities.length > 0 ? (
+                myCommunities.map((community) => (
+                  <TouchableOpacity 
+                    key={community._id} 
+                    style={[styles.userRow, { borderBottomColor: borderColor }]} 
+                    onPress={() => {
+                      const chatId = typeof community.chat === 'object' ? (community.chat as any)?._id : community.chat;
+                      if (chatId) {
+                        router.push(`/chat/${chatId}`);
+                      } else {
+                        Alert.alert('Info', 'Chat not available for this community');
+                      }
+                    }}
+                  >
+                    <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
+                      {community.image ? (
+                        <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                      ) : (
+                        <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
+                      )}
+                    </View>
+                    <View style={styles.userInfo}>
+                      <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{community.name}</ThemedText>
+                      <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
+                    </View>
+                    <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
+                      <ThemedText style={[styles.followText, { color: textColor }]}>Open</ThemedText>
+                    </View>
+                    <TouchableOpacity style={{ marginLeft: spacing.sm, padding: spacing.sm }} onPress={() => router.push(`/community/${community._id}`)}>
+                        <IconSymbol name="info.circle" size={24} color={lightTextColor} />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <ThemedText style={{ paddingHorizontal: spacing.lg, color: lightTextColor, fontStyle: 'italic' }}>
+                  You haven't joined any communities yet.
+                </ThemedText>
+              )}
+            </View>
+
+            {/* Communities */}
+            <View style={styles.section}>
+              <ThemedText type="title" style={styles.sectionTitle}>Communities</ThemedText>
+              {communities.map((community) => (
+                <TouchableOpacity key={community._id} 
+                  style={[styles.userRow, { borderBottomColor: borderColor }]}
+                  onPress={() => router.push(`/community/${community._id}`)}
+                >
+                  <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
+                    {community.image ? (
+                      <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                    ) : (
+                      <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
+                    )}
+                  </View>
+                  <View style={styles.userInfo}>
+                    <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{community.name}</ThemedText>
+                    <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
+                  </View>
+                  <TouchableOpacity style={[styles.followButton, { backgroundColor: primaryColor }]} onPress={() => handleJoinCommunity(community._id, community.name)}>
+                    <ThemedText style={[styles.followText, { color: white }]}>Join</ThemedText>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </View>
           </>
         )}
 
+        <CreateCommunityModal visible={showCreateCommunityModal} onClose={() => setShowCreateCommunityModal(false)} onCreate={fetchExploreData} />
       </ScrollView>
     </ThemedView>
   );

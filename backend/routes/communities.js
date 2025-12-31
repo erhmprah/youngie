@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const Community = require('../models/Community');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
+const Chat = require('../models/Chat');
 const auth = require('../middleware/auth');
 
 // Upload community image base64
@@ -36,12 +38,68 @@ router.post('/upload-image-base64', auth, async (req, res) => {
 // Get all communities
 router.get('/', auth, async (req, res) => {
   try {
-    const communities = await Community.find()
+    let communities = await Community.find()
       .populate('creator', 'username avatar profilePhoto')
       .populate('members', 'username avatar profilePhoto')
+      .populate('chat')
       .sort({ createdAt: -1 });
 
+    // Self-healing: Create chats for communities that don't have one (Legacy data support)
+    const updates = communities.map(async (comm) => {
+      if (!comm.chat) {
+        const newChat = new Chat({
+          participants: comm.members.map(m => m._id),
+          isGroupChat: true,
+          name: comm.name,
+          admin: comm.creator._id,
+          relatedCommunity: comm._id
+        });
+        await newChat.save();
+        comm.chat = newChat; // Update in-memory object for response
+        await Community.updateOne({ _id: comm._id }, { chat: newChat._id });
+      }
+      return comm;
+    });
+    await Promise.all(updates);
+
     res.json(communities);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single community details
+router.get('/:communityId', auth, async (req, res) => {
+  try {
+    let community = await Community.findById(req.params.communityId)
+      .populate('creator', 'username avatar profilePhoto')
+      .populate('members', 'username avatar profilePhoto')
+      .populate('chat');
+
+    if (!community) {
+      return res.status(404).json({ msg: 'Community not found' });
+    }
+
+    // Self-healing: Create chat if missing
+    if (!community.chat) {
+      const newChat = new Chat({
+        participants: community.members.map(m => m._id),
+        isGroupChat: true,
+        name: community.name,
+        admin: community.creator._id,
+        relatedCommunity: community._id
+      });
+      await newChat.save();
+      community.chat = newChat;
+      await Community.updateOne({ _id: community._id }, { chat: newChat._id });
+    }
+
+    // If user is creator, populate pending members
+    if (community.creator._id.toString() === req.userId) {
+      await community.populate('pendingMembers', 'username avatar profilePhoto');
+    }
+
+    res.json(community);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -56,6 +114,15 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ msg: 'Name and description are required' });
     }
 
+    // Create a group chat for the community
+    const chat = new Chat({
+      participants: [req.userId],
+      isGroupChat: true,
+      name: name,
+      admin: req.userId,
+    });
+    await chat.save();
+
     const community = new Community({
       name,
       description,
@@ -63,9 +130,15 @@ router.post('/', auth, async (req, res) => {
       creator: req.userId,
       requiresApproval: requiresApproval !== false, // Default to true
       members: [req.userId], // Creator is automatically a member
+      chat: chat._id,
     });
 
     await community.save();
+
+    // Link chat back to community
+    chat.relatedCommunity = community._id;
+    await chat.save();
+
     await community.populate('creator', 'username avatar profilePhoto');
     await community.populate('members', 'username avatar profilePhoto');
 
@@ -92,12 +165,41 @@ router.post('/:communityId/join', auth, async (req, res) => {
       if (!community.pendingMembers.includes(req.userId)) {
         community.pendingMembers.push(req.userId);
         await community.save();
+
+        // Send notification to community creator
+        const notification = new Notification({
+          recipient: community.creator,
+          sender: req.userId,
+          type: 'community_join_request',
+          message: `wants to join your community "${community.name}"`,
+          relatedCommunity: community._id,
+        });
+        await notification.save();
+
         return res.json({ msg: 'Join request sent for approval' });
       }
       return res.status(400).json({ msg: 'Join request already pending' });
     } else {
       // Directly add to members
       community.members.push(req.userId);
+
+      // Add to community chat
+      if (community.chat) {
+        const chat = await Chat.findById(community.chat);
+        if (chat && !chat.participants.includes(req.userId)) {
+          chat.participants.push(req.userId);
+          await chat.save();
+
+          // Notify user of new chat
+          if (req.io) {
+            const fullChat = await Chat.findById(chat._id)
+              .populate('participants', 'username profilePhoto')
+              .populate('relatedCommunity', 'name image');
+            req.io.to(req.userId).emit('newChat', fullChat);
+          }
+        }
+      }
+
       await community.save();
       await community.populate('members', 'username avatar profilePhoto');
       res.json(community);
@@ -110,6 +212,59 @@ router.post('/:communityId/join', auth, async (req, res) => {
 // Approve member
 router.post('/:communityId/approve/:userId', auth, async (req, res) => {
   try {
+    console.log('Approve request:', req.params.communityId, req.params.userId, 'by', req.userId);
+    const community = await Community.findById(req.params.communityId);
+    if (!community) {
+      console.log('Community not found');
+      return res.status(404).json({ msg: 'Community not found' });
+    }
+
+    // Check if user is creator
+    console.log('Community creator:', community.creator.toString(), 'req.userId:', req.userId);
+    if (community.creator.toString() !== req.userId) {
+      console.log('Not creator');
+      return res.status(403).json({ msg: 'Only creator can approve members' });
+    }
+
+    const userId = req.params.userId;
+    const pendingIndex = community.pendingMembers.findIndex(id => id.toString() === userId);
+    if (pendingIndex === -1) {
+      return res.status(400).json({ msg: 'User not in pending list' });
+    }
+
+    community.pendingMembers.splice(pendingIndex, 1);
+    community.members.push(userId);
+
+    // Add to community chat
+    if (community.chat) {
+      const chat = await Chat.findById(community.chat);
+      if (chat && !chat.participants.includes(userId)) {
+        chat.participants.push(userId);
+        await chat.save();
+
+        // Notify user of new chat
+        if (req.io) {
+          const fullChat = await Chat.findById(chat._id)
+            .populate('participants', 'username profilePhoto')
+            .populate('relatedCommunity', 'name image');
+          req.io.to(userId).emit('newChat', fullChat);
+        }
+      }
+    }
+
+    await community.save();
+    await community.populate('members', 'username avatar profilePhoto');
+    await community.populate('pendingMembers', 'username avatar profilePhoto');
+
+    res.json(community);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reject member
+router.post('/:communityId/reject/:userId', auth, async (req, res) => {
+  try {
     const community = await Community.findById(req.params.communityId);
     if (!community) {
       return res.status(404).json({ msg: 'Community not found' });
@@ -117,19 +272,15 @@ router.post('/:communityId/approve/:userId', auth, async (req, res) => {
 
     // Check if user is creator
     if (community.creator.toString() !== req.userId) {
-      return res.status(403).json({ msg: 'Only creator can approve members' });
+      return res.status(403).json({ msg: 'Only creator can reject members' });
     }
 
     const userId = req.params.userId;
-    const pendingIndex = community.pendingMembers.indexOf(userId);
-    if (pendingIndex === -1) {
-      return res.status(400).json({ msg: 'User not in pending list' });
-    }
-
-    community.pendingMembers.splice(pendingIndex, 1);
-    community.members.push(userId);
+    
+    // Remove from pending members
+    community.pendingMembers = community.pendingMembers.filter(id => id.toString() !== userId);
+    
     await community.save();
-    await community.populate('members', 'username avatar profilePhoto');
     await community.populate('pendingMembers', 'username avatar profilePhoto');
 
     res.json(community);

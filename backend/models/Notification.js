@@ -14,7 +14,7 @@ const NotificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['like', 'comment', 'follow', 'match', 'message', 'comment_like', 'comment_reply'],
+      enum: ['like', 'comment', 'follow', 'match', 'message', 'comment_like', 'comment_reply', 'community_join_request'],
       required: true,
     },
     message: {
@@ -28,6 +28,10 @@ const NotificationSchema = new mongoose.Schema(
     relatedChat: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Chat',
+    },
+    relatedCommunity: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Community',
     },
     isRead: {
       type: Boolean,

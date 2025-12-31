@@ -7,8 +7,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // For physical devices, you MUST use your machine's actual local IP address (e.g., '192.168.1.X').
 // Ensure your backend server is running and accessible on the specified port.
 // If you encounter a 'Network Error', verify this URL is correct for your device/emulator and network.
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5002/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:5000/api';
 
+console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
 
 const api: AxiosInstance = axios.create({
@@ -41,6 +42,21 @@ api.interceptors.request.use(
   }
 );
 
+// Add response interceptor to debug connection issues
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!error.response) {
+      console.error('❌ Network Error: Could not reach backend.');
+      console.error(`   Attempted URL: ${error.config?.baseURL}${error.config?.url}`);
+      console.error('   Check your API_URL and ensure the server is running.');
+    } else {
+      console.log('⚠️ API Error:', error.response.status, error.response.data);
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Add token to file upload requests
 uploadAPI.interceptors.request.use(
   async (config: any) => {
@@ -68,6 +84,7 @@ export const authAPI = {
   getCurrentUser: () => api.get('/auth/me'),
   checkUsername: (username: string) => api.get(`/auth/check-username/${username}`),
   checkEmail: (email: string) => api.get(`/auth/check-email/${email}`),
+  checkConnection: () => axios.get(`${BASE_URL}/health`),
 };
 
 export const userAPI = {
@@ -109,8 +126,9 @@ export const chatAPI = {
   getUserChats: (userId: string) => api.get(`/chats/user/${userId}`),
   getChat: (chatId: string) => api.get(`/chats/${chatId}`),
   createChat: (data: any) => api.post('/chats', data),
-  sendMessage: (chatId: string, data: { sender: string; content: string }) =>
+  sendMessage: (chatId: string, data: { content: string; isAnonymous?: boolean }) =>
     api.post(`/chats/${chatId}/messages`, data),
+  markAsRead: (chatId: string) => api.put(`/chats/${chatId}/read`),
   uploadAttachment: async (formData: FormData) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/chats/upload-attachment`, {
@@ -241,11 +259,14 @@ export const storyAPI = {
 
 export const communityAPI = {
   getAll: () => api.get('/communities'),
+  getCommunity: (communityId: string) => api.get(`/communities/${communityId}`),
   create: (data: { name: string; description: string; image?: string; requiresApproval?: boolean }) =>
     api.post('/communities', data),
   join: (communityId: string) => api.post(`/communities/${communityId}/join`),
   approveMember: (communityId: string, userId: string) =>
     api.post(`/communities/${communityId}/approve/${userId}`),
+  rejectMember: (communityId: string, userId: string) =>
+    api.post(`/communities/${communityId}/reject/${userId}`),
   uploadImageBase64: async (data: { imageData: string; filename: string }) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/communities/upload-image-base64`, {

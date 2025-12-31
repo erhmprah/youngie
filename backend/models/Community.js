@@ -37,6 +37,10 @@ const CommunitySchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  chat: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Chat',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

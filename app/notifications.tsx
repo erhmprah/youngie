@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { notificationAPI, userAPI } from '@/utils/api';
+import { notificationAPI, userAPI, communityAPI } from '@/utils/api';
 import { getColors, spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -20,10 +20,11 @@ interface Notification {
     avatar?: string;
     profilePhoto?: string;
   };
-  type: 'like' | 'comment' | 'follow' | 'match' | 'message';
+  type: 'like' | 'comment' | 'follow' | 'match' | 'message' | 'community_join_request';
   message: string;
   isRead: boolean;
   createdAt: string;
+  relatedCommunity?: string;
 }
 
 const NotificationSkeleton = ({ colors }: { colors: ReturnType<typeof getColors> }) => (
@@ -103,6 +104,31 @@ export default function NotificationsScreen() {
     }
   };
 
+  const handleApproveCommunity = async (communityId: string, senderId: string, notificationId: string) => {
+    try {
+      await communityAPI.approveMember(communityId, senderId);
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request approved' } : notif
+      ));
+      Alert.alert('Success', 'Member approved!');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to approve member');
+    }
+  };
+
+  const handleRejectCommunity = async (notificationId: string) => {
+    try {
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request rejected' } : notif
+      ));
+      Alert.alert('Rejected', 'Join request rejected');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to reject request');
+    }
+  };
+
   const handleMarkAllAsRead = async () => {
     try {
       await notificationAPI.markAllAsRead();
@@ -157,6 +183,7 @@ export default function NotificationsScreen() {
 
   const renderNotification = ({ item }: { item: Notification }) => {
     const isPendingFriendRequest = item.type === 'follow' && item.message === 'sent you a friend request' && !item.isRead;
+    const isPendingCommunityRequest = item.type === 'community_join_request' && !item.isRead;
     // For accepted/ignored, the message will already be updated by handleAcceptRequest/handleIgnoreRequest
     // So, we just need to make sure buttons don't show if it's not a pending request.
 
@@ -199,6 +226,23 @@ export default function NotificationsScreen() {
                   onPress={() => handleIgnoreRequest(item.sender._id, item._id)}
                 >
                   <ThemedText style={styles.buttonText}>Ignore</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {isPendingCommunityRequest && item.relatedCommunity && (
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.acceptButton}
+                  onPress={() => handleApproveCommunity(item.relatedCommunity!, item.sender._id, item._id)}
+                >
+                  <ThemedText style={styles.buttonText}>Approve</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.ignoreButton}
+                  onPress={() => handleRejectCommunity(item._id)}
+                >
+                  <ThemedText style={styles.buttonText}>Reject</ThemedText>
                 </TouchableOpacity>
               </View>
             )}

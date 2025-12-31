@@ -33,29 +33,39 @@ function RootLayoutNav() {
 
   useEffect(() => {
     const restore = async () => {
+      console.log('Starting token restoration...');
       try {
         await restoreToken();
+        console.log('Token restoration completed');
       } catch (error) {
         console.error('Failed to restore token:', error);
       } finally {
         setIsRestoring(false);
+        console.log('isRestoring set to false');
       }
     };
     restore();
   }, []);
 
+  console.log('isRestoring:', isRestoring, 'isLoading:', isLoading, 'isSignedIn:', isSignedIn);
+
   if (isRestoring || isLoading) {
+    console.log('Showing null (loading screen)');
     return null; // Or show a splash screen
   }
 
+  const initialRoute = isSignedIn ? "(tabs)" : "login";
+  console.log('Initial route:', initialRoute);
+
   return (
     <ThemeProvider value={DarkTheme}>
-      <Stack initialRouteName={isSignedIn ? "(tabs)" : "login"}>
+      <Stack initialRouteName={initialRoute}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="community/[id]" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="light" />
     </ThemeProvider>

@@ -25,6 +25,10 @@ const ChatSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  relatedCommunity: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Community'
+  },
   expiresAt: {
     type: Date
   }

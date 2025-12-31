@@ -1,7 +1,7 @@
 // app/(tabs)/chat.tsx
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, FlatList, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
+import { StyleSheet, View, FlatList, TouchableOpacity, ActivityIndicator, Alert, Image, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
@@ -11,7 +11,7 @@ import { chatAPI, getImageUrl } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-import { onMessageReceived, offMessageReceived, onNewNotification, offNewNotification } from '@/utils/socket';
+import { onNewNotification, offNewNotification, getSocket } from '@/utils/socket';
 import { SelectFriendModal } from '@/components/select-friend-modal';
 
 interface User {
@@ -36,6 +36,7 @@ interface Chat {
     lastMessage?: string;
     updatedAt?: string;
     isGroupChat?: boolean;
+    unreadCount?: number;
 }
 
 export default function ChatScreen() {
@@ -45,6 +46,7 @@ export default function ChatScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [isFriendModalVisible, setIsFriendModalVisible] = useState(false);
     const [activeTab, setActiveTab] = useState<'direct' | 'groups'>('direct');
+    const [refreshing, setRefreshing] = useState(false);
 
     const backgroundColor = useThemeColor('background');
     const primaryColor = useThemeColor('primary');
@@ -53,10 +55,15 @@ export default function ChatScreen() {
     const surfaceColor = useThemeColor('surface');
     const borderColor = useThemeColor('border');
     const white = useThemeColor('white');
+    const errorColor = useThemeColor('error');
 
-    const fetchChats = useCallback(async () => {
+    const fetchChats = useCallback(async (isRefresh = false) => {
         try {
-            setIsLoading(true);
+            if (isRefresh) {
+                setRefreshing(true);
+            } else {
+                setIsLoading(true);
+            }
             if (user?._id) {
                 const response = await chatAPI.getUserChats(user._id);
                 setChats(response.data || []);
@@ -65,10 +72,16 @@ export default function ChatScreen() {
             }
         } catch (error: any) {
             console.error('Error fetching chats:', error);
-            Alert.alert('Error', 'Failed to load chats');
+            if (!isRefresh) {
+                Alert.alert('Error', 'Failed to load chats');
+            }
             setChats([]);
         } finally {
-            setIsLoading(false);
+            if (isRefresh) {
+                setRefreshing(false);
+            } else {
+                setIsLoading(false);
+            }
         }
     }, [user?._id]);
 
@@ -77,6 +90,10 @@ export default function ChatScreen() {
             fetchChats();
         }, [fetchChats])
     );
+
+    const onRefresh = useCallback(() => {
+        fetchChats(true);
+    }, [fetchChats]);
     
     const handleNewChat = () => {
         setIsFriendModalVisible(true);
@@ -125,8 +142,29 @@ export default function ChatScreen() {
     };
     
     useEffect(() => {
-        const handleNewMessage = (newMessage: any) => {
-            fetchChats();
+        const socket = getSocket();
+
+        const handleChatUpdated = (newMessage: any) => {
+            setChats(prev => prev.map(chat => {
+                if (chat._id === newMessage.chat) {
+                    const isMyMessage = newMessage.sender._id === user?._id;
+                    return {
+                        ...chat,
+                        lastMessage: newMessage.content,
+                        updatedAt: newMessage.createdAt,
+                        // If it was a new chat that just arrived via socket, ensure participants are set if needed
+                        unreadCount: isMyMessage ? (chat.unreadCount || 0) : (chat.unreadCount || 0) + 1
+                    };
+                }
+                return chat;
+            }).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)));
+        };
+
+        const handleNewChat = (newChat: Chat) => {
+            setChats(prev => {
+                if (prev.find(c => c._id === newChat._id)) return prev;
+                return [newChat, ...prev];
+            });
         };
 
         const handleNotification = (data: any) => {
@@ -135,14 +173,20 @@ export default function ChatScreen() {
             }
         };
 
-        onMessageReceived(handleNewMessage);
+        if (socket) {
+            socket.on('chatUpdated', handleChatUpdated);
+            socket.on('newChat', handleNewChat);
+        }
         onNewNotification(handleNotification);
 
         return () => {
-            offMessageReceived();
+            if (socket) {
+                socket.off('chatUpdated', handleChatUpdated);
+                socket.off('newChat', handleNewChat);
+            }
             offNewNotification();
         };
-    }, [fetchChats]);
+    }, []);
 
     const filteredChats = chats.filter(chat => {
         if (activeTab === 'direct') return !chat.isGroupChat;
@@ -229,6 +273,14 @@ export default function ChatScreen() {
                         keyExtractor={item => item._id}
                         contentContainerStyle={styles.listContainer}
                         ListEmptyComponent={<ThemedText style={{ textAlign: 'center', marginTop: spacing.xl, color: lightTextColor }}>No {activeTab === 'direct' ? 'messages' : 'groups'} yet.</ThemedText>}
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={[primaryColor]}
+                                tintColor={primaryColor}
+                            />
+                        }
                     />
                 )}
             </ThemedView>
@@ -259,4 +311,6 @@ const styles = StyleSheet.create({
     tabsContainer: { flexDirection: 'row', borderBottomWidth: 1 },
     tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
     tabText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
+    unreadBadge: { minWidth: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, marginLeft: spacing.sm },
+    unreadText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
 });
