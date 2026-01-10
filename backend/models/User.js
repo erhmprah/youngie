@@ -24,7 +24,15 @@ const UserSchema = new mongoose.Schema(
       select: false,
     },
     bio: String,
-    age: Number,
+    birthYear: Number,
+    gender: {
+      type: String,
+      enum: ['male', 'female', 'other'],
+    },
+    suspended: {
+      type: Boolean,
+      default: false,
+    },
     interests: [String],
     avatar: String,
     profilePhoto: String,
@@ -56,6 +64,12 @@ const UserSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    blockedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
     likes: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -69,6 +83,12 @@ const UserSchema = new mongoose.Schema(
       },
     ],
     posts: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Post',
+      },
+    ],
+    favorites: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Post',

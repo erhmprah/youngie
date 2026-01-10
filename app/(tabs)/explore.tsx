@@ -13,8 +13,22 @@ import { spacing, borderRadius, typography, shadows } from '@/constants/design-t
 import { useDebounce } from '@/hooks/use-debounce';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { CreateCommunityModal } from './create-community-modal';
+import { FilterModal, FilterState } from '@/components/FilterModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
+
+const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 interface Post {
   _id: string;
@@ -62,6 +76,13 @@ export default function ExploreScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [friendIds, setFriendIds] = useState<string[]>([]);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
+  const [isFilterVisible, setFilterVisible] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    minAge: '',
+    maxAge: '',
+    gender: [],
+    location: ''
+  });
 
   const debouncedSearchQuery = useDebounce(searchQuery, 500); // Debounce search query by 500ms
 
@@ -73,12 +94,27 @@ export default function ExploreScreen() {
   const borderColor = useThemeColor('border');
   const white = useThemeColor('white');
 
-  const fetchExploreData = useCallback(async () => {
+  useEffect(() => {
+    const loadFilters = async () => {
+      try {
+        const savedFilters = await AsyncStorage.getItem('discovery_filters');
+        if (savedFilters) {
+          setFilters(JSON.parse(savedFilters));
+        }
+      } catch (error) {
+        console.error('Failed to load filters', error);
+      }
+    };
+    loadFilters();
+  }, []);
+
+  const fetchExploreData = useCallback(async (currentFilters?: FilterState) => {
     setIsLoading(true);
     try {
+      const activeFilters = currentFilters || filters;
       const promises: Promise<any>[] = [
         postAPI.getTrendingPosts(),
-        userAPI.getNearbyUsers(),
+        userAPI.getNearbyUsers(activeFilters),
         communityAPI.getAll(),
       ];
 
@@ -93,7 +129,30 @@ export default function ExploreScreen() {
       const profileResponse = results[3];
 
       setTrendingPosts(trendingResponse.data);
-      setDiscoverUsers(discoverResponse.data.slice(0, 4)); // Limit to 4 for display
+      
+      let discoverData = discoverResponse.data;
+      if (activeFilters.minAge) {
+        const min = parseInt(activeFilters.minAge);
+        if (!isNaN(min)) discoverData = discoverData.filter((p: any) => p.age >= min);
+      }
+      if (activeFilters.maxAge) {
+        const max = parseInt(activeFilters.maxAge);
+        if (!isNaN(max)) discoverData = discoverData.filter((p: any) => p.age <= max);
+      }
+      if (activeFilters.gender && activeFilters.gender.length > 0) {
+        discoverData = discoverData.filter((p: any) => activeFilters.gender.includes(p.gender));
+      }
+      
+      if (activeFilters.latitude && activeFilters.longitude && activeFilters.radius) {
+        discoverData = discoverData.filter((p: any) => {
+            if (!p.latitude || !p.longitude) return false;
+            const distance = getDistanceFromLatLonInKm(activeFilters.latitude!, activeFilters.longitude!, p.latitude, p.longitude);
+            return distance <= activeFilters.radius!;
+        });
+      } else if (activeFilters.location) {
+        discoverData = discoverData.filter((p: any) => p.location && p.location.toLowerCase().includes(activeFilters.location.toLowerCase()));
+      }
+      setDiscoverUsers(discoverData.slice(0, 4)); // Limit to 4 for display
 
       const allCommunities = communitiesResponse.data;
 
@@ -122,7 +181,7 @@ export default function ExploreScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?._id]);
+  }, [user?._id, filters]);
 
   useFocusEffect(
     useCallback(() => {
@@ -158,6 +217,15 @@ export default function ExploreScreen() {
     performSearch(debouncedSearchQuery);
   }, [debouncedSearchQuery, performSearch]);
 
+  const handleApplyFilters = async (newFilters: FilterState) => {
+    setFilters(newFilters);
+    fetchExploreData(newFilters);
+    try {
+      await AsyncStorage.setItem('discovery_filters', JSON.stringify(newFilters));
+    } catch (error) {
+      console.error('Failed to save filters:', error);
+    }
+  };
 
   const handleSendFriendRequest = async (targetUserId: string, userName: string) => {
     if (!user?._id) return;
@@ -216,7 +284,12 @@ export default function ExploreScreen() {
     <ThemedView style={styles.container}>
       {/* Search Header */}
       <ThemedView style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
-        <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Explore</ThemedText>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+          <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Explore</ThemedText>
+          <TouchableOpacity onPress={() => setFilterVisible(true)}>
+            <IconSymbol name="slider.horizontal.3" size={24} color={textColor} />
+          </TouchableOpacity>
+        </View>
         <View style={[styles.searchWrapper, { backgroundColor: surfaceColor, borderColor }]}>
           <IconSymbol name="magnifyingglass" size={20} color={lightTextColor} style={styles.searchIcon} />
           <TextInput
@@ -347,22 +420,30 @@ export default function ExploreScreen() {
             {/* Popular Users */}
             <View style={styles.section}>
               <ThemedText type="title" style={styles.sectionTitle}>Discover People</ThemedText>
-              {discoverUsers.map((user) => (
-                <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => router.push(`/user/${user._id}`)}>
-                  <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
-                    {user.profilePhoto ? (
-                      <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatarImage} />
-                    ) : (
-                      <IconSymbol name="person.fill" size={24} color={lightTextColor} />
-                    )}
-                  </View>
-                  <View style={styles.userInfo}>
-                    <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{user.username}</ThemedText>
-                    <ThemedText type="caption" style={{ color: lightTextColor }}>{user.bio || 'No bio'}</ThemedText>
-                  </View>
-                  {renderUserAction(user)}
-                </TouchableOpacity>
-              ))}
+              {discoverUsers.length > 0 ? (
+                discoverUsers.map((user) => (
+                  <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => router.push(`/user/${user._id}`)}>
+                    <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
+                      {user.profilePhoto ? (
+                        <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatarImage} />
+                      ) : (
+                        <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                      )}
+                    </View>
+                    <View style={styles.userInfo}>
+                      <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{user.username}</ThemedText>
+                      <ThemedText type="caption" style={{ color: lightTextColor }}>{user.bio || 'No bio'}</ThemedText>
+                    </View>
+                    {renderUserAction(user)}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={{ paddingHorizontal: spacing.lg }}>
+                  <ThemedText style={{ color: lightTextColor, fontStyle: 'italic' }}>
+                    {(filters.minAge || filters.maxAge || filters.gender.length > 0 || filters.location) ? "No users match your filters." : "No users found."}
+                  </ThemedText>
+                </View>
+              )}
             </View>
 
             {/* My Communities */}
@@ -442,6 +523,12 @@ export default function ExploreScreen() {
         )}
 
         <CreateCommunityModal visible={showCreateCommunityModal} onClose={() => setShowCreateCommunityModal(false)} onCreate={fetchExploreData} />
+        <FilterModal
+          visible={isFilterVisible}
+          onClose={() => setFilterVisible(false)}
+          onApply={handleApplyFilters}
+          initialFilters={filters}
+        />
       </ScrollView>
     </ThemedView>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { notificationAPI } from '@/utils/api';
 import { getColors } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getSocket } from '@/utils/socket';
 
 export function NotificationBell() {
   const { user } = useAuth();
@@ -30,6 +31,22 @@ export function NotificationBell() {
       fetchUnreadCount();
     }, [fetchUnreadCount])
   );
+
+  // Listen for real-time notifications
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNewNotification = () => {
+      setUnreadCount((prev) => prev + 1);
+    };
+
+    socket.on('notification:new', handleNewNotification);
+
+    return () => {
+      socket.off('notification:new', handleNewNotification);
+    };
+  }, []);
 
   const handlePress = () => {
     router.push('/notifications');

@@ -27,21 +27,13 @@ module.exports = function (io) {
     });
 
     // Listen for a new message
-    socket.on('new-message', async ({ chatId, senderId, content, attachment }) => {
+    socket.on('new-message', async ({ chatId, senderId, content, attachment, isAnonymous }) => {
       try {
         const chat = await Chat.findById(chatId);
         if (!chat) {
           // Handle error: chat not found
           return;
         }
-
-        const message = {
-          sender: senderId,
-          content: content || null,
-          attachment: attachment || null,
-          readBy: [senderId],
-          createdAt: new Date(),
-        };
 
         // Create Message document for database consistency
         const newMessage = new Message({
@@ -50,11 +42,12 @@ module.exports = function (io) {
           content: content || null,
           attachment: attachment || null,
           readBy: [senderId],
+          isAnonymous: isAnonymous || false,
         });
 
         await newMessage.save();
 
-        chat.messages.push(newMessage);
+        // Update chat's last message info
         chat.lastMessage = attachment ? `📎 ${attachment.fileName}` : content;
         chat.lastMessageTime = new Date();
 
@@ -70,9 +63,10 @@ module.exports = function (io) {
         }
 
         const populatedMessage = {
-            ...message,
+            ...newMessage.toObject(),
             _id: newMessage._id,
             sender: senderData,
+            isAnonymous: newMessage.isAnonymous,
         };
 
         // Broadcast the new message to all clients in the chat room

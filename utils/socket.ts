@@ -53,8 +53,8 @@ export const leaveChat = (chatId: string) => {
   socket?.emit('leave-chat', { chatId });
 };
 
-export const sendMessage = (chatId: string, senderId: string, content: string, attachment?: any) => {
-  socket?.emit('new-message', { chatId, senderId, content, attachment });
+export const sendMessage = (chatId: string, senderId: string, content: string, replyTo?: string, isAnonymous?: boolean, attachment?: any) => {
+  socket?.emit('new-message', { chatId, senderId, content, replyTo, isAnonymous, attachment });
 };
 
 export const sendTypingStart = (chatId: string, username: string) => {
@@ -97,4 +97,12 @@ export const onNewNotification = (callback: (data: any) => void) => {
 
 export const offNewNotification = () => {
     socket?.off('new-notification');
+}
+
+export const onMessagesRead = (callback: (data: { userId: string; chatId: string }) => void) => {
+    socket?.on('messages-read', callback);
+}
+
+export const offMessagesRead = () => {
+    socket?.off('messages-read');
 }

@@ -13,7 +13,17 @@ const MessageSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-    required: true
+    required: false
+  },
+  attachment: {
+    fileName: String,
+    url: String,
+    type: String,
+    size: Number
+  },
+  replyTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message'
   },
   isAnonymous: {
     type: Boolean,

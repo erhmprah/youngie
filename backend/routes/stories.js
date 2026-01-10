@@ -29,7 +29,7 @@ const upload = multer({ storage, fileFilter });
 router.get('/', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId).populate('friends', '_id');
-    const followingIds = user.friends.map(friend => friend._id);
+    const followingIds = (user.friends || []).filter(f => f).map(friend => friend._id);
     followingIds.push(req.userId); // Include own stories
 
     const stories = await Story.find({
@@ -37,12 +37,15 @@ router.get('/', auth, async (req, res) => {
       expiresAt: { $gt: new Date() }, // Not expired
     })
       .populate('author', 'username avatar profilePhoto')
-      .populate('viewers.user', 'username')
+      .populate('viewers.user', 'username avatar profilePhoto')
+      .populate('tags', 'username')
+      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .sort({ createdAt: -1 })
       .limit(50);
 
     // Group stories by author
     const groupedStories = stories.reduce((acc, story) => {
+      if (!story.author) return acc;
       const authorId = story.author._id.toString();
       if (!acc[authorId]) {
         acc[authorId] = {
@@ -58,7 +61,11 @@ router.get('/', auth, async (req, res) => {
     const groupedArray = Object.values(groupedStories);
     const result = groupedArray.map(group => ({
       ...group,
-      allViewed: group.stories.every(story => story.viewers.some(viewer => viewer.user.toString() === req.userId)),
+      allViewed: group.stories.every(story => {
+        const isAuthor = story.author && story.author._id.toString() === req.userId;
+        if (isAuthor) return true;
+        return story.viewers.some(viewer => viewer.user && viewer.user.toString() === req.userId);
+      }),
     }));
 
     res.json(result);
@@ -75,7 +82,9 @@ router.get('/user/:userId', auth, async (req, res) => {
       expiresAt: { $gt: new Date() },
     })
       .populate('author', 'username avatar profilePhoto')
-      .populate('viewers.user', 'username')
+      .populate('viewers.user', 'username avatar profilePhoto')
+      .populate('tags', 'username')
+      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .sort({ createdAt: -1 });
 
     res.json(stories);
@@ -116,7 +125,7 @@ router.post('/upload-image-base64', auth, async (req, res) => {
 // Create a story
 router.post('/', auth, async (req, res) => {
   try {
-    const { content, image, video } = req.body;
+    const { content, image, video, tags, pollOptions } = req.body;
 
     if (!content && !image && !video) {
       return res.status(400).json({ msg: 'Story must have content, image, or video' });
@@ -127,10 +136,30 @@ router.post('/', auth, async (req, res) => {
       content,
       image,
       video,
+      tags: tags || [],
+      pollOptions: pollOptions || [],
     });
 
     await story.save();
     await story.populate('author', 'username avatar profilePhoto');
+    await story.populate('tags', 'username');
+
+    // Create notifications for tagged users
+    if (tags && Array.isArray(tags) && tags.length > 0) {
+      const Notification = require('../models/Notification');
+      const notificationPromises = tags.map(taggedUserId => {
+        if (taggedUserId !== req.userId) {
+          return Notification.create({
+            recipient: taggedUserId,
+            sender: req.userId,
+            type: 'tag',
+            message: 'tagged you in a story',
+            relatedStory: story._id,
+          });
+        }
+      });
+      await Promise.all(notificationPromises);
+    }
 
     res.json(story);
   } catch (error) {
@@ -143,7 +172,9 @@ router.get('/:storyId', auth, async (req, res) => {
   try {
     const story = await Story.findById(req.params.storyId)
       .populate('author', 'username avatar profilePhoto')
-      .populate('viewers.user', 'username');
+      .populate('viewers.user', 'username avatar profilePhoto')
+      .populate('tags', 'username')
+      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
 
     if (!story) {
       return res.status(404).json({ msg: 'Story not found' });
@@ -163,21 +194,163 @@ router.post('/:storyId/view', auth, async (req, res) => {
       return res.status(404).json({ msg: 'Story not found' });
     }
 
-    // Check if user already viewed
-    const alreadyViewed = story.viewers.some(viewer =>
-      viewer.user.toString() === req.userId
-    );
+    // Check if user is the author (author views shouldn't be counted)
+    if (story.author.toString() !== req.userId) {
+      // Check if user already viewed
+      const alreadyViewed = story.viewers.some(viewer =>
+        viewer.user && viewer.user.toString() === req.userId
+      );
 
-    if (!alreadyViewed) {
-      story.viewers.push({
-        user: req.userId,
-        viewedAt: new Date(),
-      });
-      await story.save();
+      if (!alreadyViewed) {
+        story.viewers.push({
+          user: req.userId,
+          viewedAt: new Date(),
+        });
+        await story.save();
+      }
+    }
+
+    await story.populate('author', 'username avatar profilePhoto');
+    await story.populate('viewers.user', 'username avatar profilePhoto');
+    await story.populate('tags', 'username');
+    await story.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
+
+    res.json(story);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Vote on story poll
+router.post('/:storyId/vote-poll', auth, async (req, res) => {
+  try {
+    const { optionIndex } = req.body;
+
+    if (optionIndex === undefined || optionIndex < 0) {
+      return res.status(400).json({ msg: 'Valid option index required' });
+    }
+
+    const story = await Story.findById(req.params.storyId);
+    if (!story) {
+      return res.status(404).json({ msg: 'Story not found' });
+    }
+
+    if (!story.pollOptions || story.pollOptions.length === 0) {
+      return res.status(400).json({ msg: 'No poll options available' });
+    }
+
+    if (optionIndex >= story.pollOptions.length) {
+      return res.status(400).json({ msg: 'Invalid option index' });
+    }
+
+    const userId = req.userId;
+
+    // Remove user from all options first (in case they already voted)
+    story.pollOptions.forEach(option => {
+      option.votes = option.votes.filter(id => id.toString() !== userId);
+    });
+
+    // Add vote to selected option
+    story.pollOptions[optionIndex].votes.push(userId);
+
+    await story.save();
+
+    // Populate and return updated story
+    await story.populate('author', 'username avatar profilePhoto');
+    await story.populate('viewers.user', 'username avatar profilePhoto');
+    await story.populate('tags', 'username');
+    if (story.reactions && story.reactions.length > 0) {
+      await story.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
     }
 
     res.json(story);
   } catch (error) {
+    console.error('Error voting on story poll:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// React to a story
+router.post('/:storyId/react', auth, async (req, res) => {
+  try {
+    const { reactionType } = req.body;
+    if (!reactionType) {
+      return res.status(400).json({ msg: 'Reaction type is required' });
+    }
+
+    const story = await Story.findById(req.params.storyId);
+    if (!story) {
+      return res.status(404).json({ msg: 'Story not found' });
+    }
+
+    // Initialize reactions array if it doesn't exist
+    if (!story.reactions) {
+      story.reactions = [];
+    }
+
+    const userId = req.userId;
+    
+    // Remove any existing reaction from this user
+    story.reactions = story.reactions.filter(r => r.user && r.user.toString() !== userId);
+
+    // Add new reaction
+    story.reactions.push({
+      user: userId,
+      type: reactionType,
+      createdAt: new Date()
+    });
+
+    // Create notification if not reacting to own story
+    if (story.author && story.author.toString() !== userId) {
+      const Notification = require('../models/Notification');
+      
+      const REACTION_EMOJIS = {
+        like: '👍',
+        heart: '❤️',
+        laugh: '😂',
+        wow: '😮',
+        sad: '😢',
+        fire: '🔥'
+      };
+      const emoji = REACTION_EMOJIS[reactionType] || '';
+
+      await Notification.create({
+        recipient: story.author,
+        sender: userId,
+        type: 'like',
+        message: `reacted to your story ${emoji}`,
+        relatedStory: story._id,
+      });
+    }
+
+    await story.save();
+
+    // Populate before returning
+    await story.populate('author', 'username avatar profilePhoto');
+    await story.populate('viewers.user', 'username avatar profilePhoto');
+    await story.populate('tags', 'username');
+    await story.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
+
+    // Emit socket event for real-time updates
+    if (req.io) {
+      req.io.emit('story:updated', story);
+      
+      const reactionEntry = story.reactions.find(r => {
+          const rUserId = r.user && (r.user._id || r.user);
+          return rUserId && rUserId.toString() === userId;
+      });
+      if (reactionEntry && reactionEntry.user) {
+        req.io.emit('story:reaction', {
+          storyId: story._id,
+          reactionType,
+          user: reactionEntry.user
+        });
+      }
+    }
+
+    res.json(story);
+  } catch (error) {
+    console.error('Error reacting to story:', error);
     res.status(500).json({ error: error.message });
   }
 });

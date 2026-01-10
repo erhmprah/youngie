@@ -1,8 +1,9 @@
 // app/signup.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,18 +12,24 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
+
 export default function SignupScreen() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [age, setAge] = useState('');
+  const [birthYear, setBirthYear] = useState('');
+  const [gender, setGender] = useState('');
+  const [location, setLocation] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
   const [usernameError, setUsernameError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [validatingUsername, setValidatingUsername] = useState(false);
   const [validatingEmail, setValidatingEmail] = useState(false);
   const router = useRouter();
   const { register, isLoading } = useAuth();
+  const skipLocationSearch = useRef(false);
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -80,8 +87,102 @@ export default function SignupScreen() {
     return () => clearTimeout(timer);
   }, [email]);
 
+  // Search location with debounce
+  useEffect(() => {
+    if (skipLocationSearch.current || location.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        // Using OpenStreetMap Nominatim API (No API key required)
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&addressdetails=1&limit=5`,
+          { headers: { 'User-Agent': 'YoungieApp/1.0' } }
+        );
+        const data = await response.json();
+
+        if (Array.isArray(data)) {
+          const places = data.map((item: any) => {
+            const addr = item.address;
+            const city = addr.city || addr.town || addr.village || addr.municipality || item.name;
+            const country = addr.country;
+            return city && country ? `${city}, ${country}` : item.display_name.split(',').slice(0, 2).join(',');
+          });
+          setSuggestions([...new Set(places)] as string[]);
+        }
+      } catch (error) {
+        console.log('Location search error:', error);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [location]);
+
+  const detectLocation = async () => {
+    setDetectingLocation(true);
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const inferredLocation = timeZone ? timeZone.split('/').pop()?.replace(/_/g, ' ') : null;
+        setLocation(inferredLocation || 'Unknown Location');
+        return;
+      }
+
+      const hasServices = await Location.hasServicesEnabledAsync();
+      if (!hasServices) {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const inferredLocation = timeZone ? timeZone.split('/').pop()?.replace(/_/g, ' ') : null;
+        setLocation(inferredLocation || 'Unknown Location');
+        return;
+      }
+
+      let locationData = await Location.getLastKnownPositionAsync({});
+
+      if (!locationData) {
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Location detection timeout')), 5000)
+        );
+
+        const locationPromise = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        locationData = await Promise.race([locationPromise, timeoutPromise]) as any;
+      }
+
+      let address = await Location.reverseGeocodeAsync({
+        latitude: locationData.coords.latitude,
+        longitude: locationData.coords.longitude,
+      });
+      if (address.length > 0) {
+        const addr = address[0];
+        const loc = `${addr.city || addr.region || ''}, ${addr.country || ''}`.trim();
+        setLocation(loc || 'Unknown Location');
+      } else {
+        setLocation('Unknown Location');
+      }
+    } catch (error: any) {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const inferredLocation = timeZone ? timeZone.split('/').pop()?.replace(/_/g, ' ') : null;
+      setLocation(inferredLocation || 'Unknown Location');
+    } finally {
+      setDetectingLocation(false);
+    }
+  };
+
+  const handleLocationChange = (text: string) => {
+    skipLocationSearch.current = false;
+    setLocation(text);
+  };
+
+  const selectSuggestion = (city: string) => {
+    skipLocationSearch.current = true;
+    setLocation(city);
+    setSuggestions([]);
+  };
+
   const handleSignup = async () => {
-    if (!username || !email || !password || !age) {
+    if (!username || !email || !password || !birthYear || !gender) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -93,9 +194,10 @@ export default function SignupScreen() {
       Alert.alert('Error', 'Email is already registered');
       return;
     }
-    const ageNum = parseInt(age);
-    if (ageNum < 13 || ageNum > 18) {
-      Alert.alert('Error', 'Age must be between 13 and 18');
+    const birthYearNum = parseInt(birthYear);
+    const currentYear = new Date().getFullYear();
+    if (birthYearNum < 1997 || birthYearNum > currentYear) {
+      Alert.alert('Error', `Birth year must be between 1997 and ${currentYear}`);
       return;
     }
     if (password.length < 6) {
@@ -104,7 +206,7 @@ export default function SignupScreen() {
     }
 
     try {
-      await register(username, email, password, ageNum);
+      await register(username, email, password, birthYearNum, gender, location);
       router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Signup Failed', error.message || 'Please try again');
@@ -170,20 +272,69 @@ export default function SignupScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <ThemedText type="body2" style={{ fontWeight: '600' }}>Age (13-18)</ThemedText>
+              <ThemedText type="body2" style={{ fontWeight: '600' }}>Year of Birth</ThemedText>
               <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
                 <IconSymbol name="calendar" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
-                  placeholder="16"
+                  placeholder="1997"
                   placeholderTextColor={lightTextColor}
-                  value={age}
-                  onChangeText={setAge}
+                  value={birthYear}
+                  onChangeText={setBirthYear}
                   editable={!isLoading}
                   keyboardType="number-pad"
-                  maxLength={2}
+                  maxLength={4}
                 />
               </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <ThemedText type="body2" style={{ fontWeight: '600' }}>Gender</ThemedText>
+              <View style={styles.genderContainer}>
+                {['male', 'female', 'other'].map((g) => (
+                  <TouchableOpacity
+                    key={g}
+                    style={[
+                      styles.genderButton,
+                      { backgroundColor: gender === g ? primaryColor : inputBackgroundColor, borderColor: inputBorderColor }
+                    ]}
+                    onPress={() => setGender(g)}
+                    disabled={isLoading}
+                  >
+                    <ThemedText style={{ color: gender === g ? white : textColor, textTransform: 'capitalize' }}>{g}</ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={[styles.inputContainer, { zIndex: 1000 }]}>
+              <ThemedText type="body2" style={{ fontWeight: '600' }}>Location</ThemedText>
+              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                <TextInput
+                  style={[styles.input, { color: textColor, flex: 1 }]}
+                  placeholder="Your location"
+                  placeholderTextColor={lightTextColor}
+                  value={location}
+                  onChangeText={handleLocationChange}
+                  editable={!isLoading}
+                />
+                <TouchableOpacity onPress={detectLocation} disabled={isLoading || detectingLocation} style={{ padding: spacing.sm }}>
+                  {detectingLocation ? (
+                    <ActivityIndicator size="small" color={primaryColor} />
+                  ) : (
+                    <IconSymbol name="location.fill" size={20} color={primaryColor} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {suggestions.length > 0 && (
+                <View style={[styles.suggestionsDropdown, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                  {suggestions.map((city, index) => (
+                    <TouchableOpacity key={index} style={styles.suggestionItem} onPress={() => selectSuggestion(city)}>
+                      <ThemedText>{city}</ThemedText>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -278,6 +429,20 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     fontSize: typography.sizes.body1,
   },
+  genderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  genderButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
   button: {
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
@@ -306,5 +471,24 @@ const styles = StyleSheet.create({
   successText: {
     fontSize: typography.sizes.caption,
     marginTop: spacing.xs,
+  },
+  suggestionsDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: borderRadius.md,
+    borderBottomRightRadius: borderRadius.md,
+    zIndex: 1000,
+    marginTop: -2, // Overlap slightly with input border
+    elevation: 10,
+    ...shadows.md,
+  },
+  suggestionItem: {
+    padding: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc', // Or use theme border color if available in styles scope
   },
 });

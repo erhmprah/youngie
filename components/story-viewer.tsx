@@ -6,12 +6,16 @@ import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
+import { PollView } from './poll-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
 import { getImageUrl, storyAPI } from '@/utils/api';
 import { getRelativeTime } from '@/utils/helpers';
 import { useAuth } from '@/contexts/AuthContext';
+import { ReactionPicker, ReactionType } from './reaction-picker';
+import { StoryViewersModal } from './story-viewers-modal';
+import { useRouter } from 'expo-router';
 
 interface User {
     _id: string;
@@ -28,6 +32,8 @@ interface Story {
     expiresAt: string;
     viewers: Array<{ user: User; viewedAt: string }>;
     createdAt: string;
+    pollOptions?: { text: string; votes: string[] }[];
+    reactions?: Array<{ user: User; type: string }>;
 }
 
 interface StoryGroup {
@@ -49,8 +55,11 @@ const { width, height } = Dimensions.get('window');
 export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, onStoryDeleted }: StoryViewerProps) {
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
+    const router = useRouter();
     const [currentGroupIndex, setCurrentGroupIndex] = useState(initialGroupIndex);
     const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+    const [showReactions, setShowReactions] = useState(false);
+    const [showViewersModal, setShowViewersModal] = useState(false);
     const progressAnim = useRef(new Animated.Value(0)).current;
 
     const group = storyGroups[currentGroupIndex];
@@ -63,6 +72,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const isOwnStory = story && user && story.author._id === user._id;
 
     const startProgressAnimation = useCallback(() => {
+        if (showReactions || showViewersModal) return; // Pause when reacting or viewing viewers
         progressAnim.setValue(0);
         Animated.timing(progressAnim, {
             toValue: 1,
@@ -74,13 +84,17 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                 handleNextStory();
             }
         });
-    }, [progressAnim, currentGroupIndex, currentStoryIndex]);
+    }, [progressAnim, currentGroupIndex, currentStoryIndex, showReactions, showViewersModal]);
 
     useEffect(() => {
         if (visible && story) {
+            // Mark as viewed if not already viewed
+            if (user && !story.viewers?.some(v => v.user._id === user._id)) {
+                 storyAPI.viewStory(story._id).catch(() => {});
+            }
             startProgressAnimation();
         }
-    }, [visible, story, startProgressAnimation]);
+    }, [visible, story, startProgressAnimation, showReactions, showViewersModal, user]);
 
     const handleNextStory = () => {
         if (group && currentStoryIndex < group.stories.length - 1) {
@@ -134,6 +148,16 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         );
     };
 
+    const handleReaction = async (type: ReactionType) => {
+        setShowReactions(false);
+        try {
+            await storyAPI.reactStory(story._id, { reactionType: type });
+            // Optionally show a floating animation here
+        } catch (error) {
+            console.error('Failed to react to story:', error);
+        }
+    };
+
     if (!group || !story) return null;
 
     return (
@@ -173,8 +197,16 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
                 {/* User Info */}
                 <View style={[styles.userInfoContainer, { top: insets.top + spacing.xl }]}>
-                    <Image source={{ uri: getImageUrl(group.user.profilePhoto) }} style={styles.avatar} />
-                    <ThemedText style={styles.username}>{group.user.username}</ThemedText>
+                    <TouchableOpacity 
+                        style={{ flexDirection: 'row', alignItems: 'center' }}
+                        onPress={() => {
+                            onClose();
+                            router.push(`/user/${group.user._id}`);
+                        }}
+                    >
+                        <Image source={{ uri: getImageUrl(group.user.profilePhoto) }} style={styles.avatar} />
+                        <ThemedText style={styles.username}>{group.user.username}</ThemedText>
+                    </TouchableOpacity>
                     <ThemedText style={styles.time}>{getRelativeTime(story.createdAt)}</ThemedText>
                     {isOwnStory && (
                         <TouchableOpacity onPress={handleDeleteStory} style={styles.deleteButton}>
@@ -186,12 +218,70 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                     </TouchableOpacity>
                 </View>
 
+                {/* Poll */}
+                {story.pollOptions && story.pollOptions.length > 0 && (
+                    <View style={styles.pollContainer}>
+                        <PollView
+                            postId={story._id}
+                            options={story.pollOptions}
+                            voteAPI={storyAPI.votePoll}
+                            onVote={(updatedOptions) => {
+                                // Update the story with new poll options
+                                // Since stories are refreshed, this might not be necessary
+                            }}
+                        />
+                    </View>
+                )}
+
                 {/* Navigation Gestures */}
                 <View style={styles.navigationOverlay}>
                     <TouchableOpacity style={styles.navButton} onPress={handlePrevStory} />
                     <TouchableOpacity style={styles.navButton} onPress={handleNextStory} />
                 </View>
+
+                {isOwnStory && (
+                    <TouchableOpacity 
+                        style={[styles.viewersButton, { paddingBottom: insets.bottom + spacing.md }]}
+                        onPress={() => setShowViewersModal(true)}
+                    >
+                        <IconSymbol name="eye.fill" size={24} color={white} />
+                        <ThemedText style={styles.viewersCount}>
+                            {story.viewers?.length || 0}
+                        </ThemedText>
+                    </TouchableOpacity>
+                )}
             </ThemedView>
+
+            {/* Reaction Controls */}
+            {!isOwnStory && (
+                <View style={[styles.footerControls, { paddingBottom: insets.bottom + spacing.md }]}>
+                    {showReactions ? (
+                        <ReactionPicker 
+                            onSelect={handleReaction} 
+                            onClose={() => setShowReactions(false)} 
+                        />
+                    ) : (
+                        <TouchableOpacity 
+                            style={styles.reactButton}
+                            onPress={() => setShowReactions(true)}
+                        >
+                            <IconSymbol name="heart" size={28} color={white} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
+
+            <StoryViewersModal
+                visible={showViewersModal}
+                onClose={() => setShowViewersModal(false)}
+                viewers={story.viewers || []}
+                reactions={story.reactions || []}
+                onUserSelect={(userId) => {
+                    setShowViewersModal(false);
+                    onClose();
+                    router.push(`/user/${userId}`);
+                }}
+            />
         </Modal>
     );
 }
@@ -283,5 +373,40 @@ const styles = StyleSheet.create({
     },
     navButton: {
         flex: 1,
+    },
+    pollContainer: {
+        position: 'absolute',
+        bottom: 100,
+        left: spacing.md,
+        right: spacing.md,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        borderRadius: borderRadius.md,
+        padding: spacing.md,
+    },
+    footerControls: {
+        position: 'absolute',
+        bottom: 0,
+        right: spacing.md,
+        zIndex: 10,
+        alignItems: 'flex-end',
+    },
+    reactButton: {
+        padding: spacing.sm,
+        opacity: 0.9,
+    },
+    viewersButton: {
+        position: 'absolute',
+        bottom: 0,
+        left: spacing.md,
+        zIndex: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: spacing.sm,
+    },
+    viewersCount: {
+        color: 'white',
+        marginLeft: spacing.xs,
+        fontSize: typography.sizes.body1,
+        fontFamily: typography.families.bold,
     },
 });

@@ -30,6 +30,27 @@ router.get('/:userId', auth, async (req, res) => {
       return res.status(404).json({ msg: 'User not found' });
     }
 
+    // Check privacy settings
+    const isSelf = req.userId === user._id.toString();
+    const isFriend = user.friends.some(f => f._id.toString() === req.userId);
+    const isFollower = user.followers.some(f => f._id.toString() === req.userId);
+
+    if (user.isPrivate && !isSelf && !isFriend && !isFollower) {
+      return res.json({
+        _id: user._id,
+        username: user.username,
+        profilePhoto: user.profilePhoto,
+        bio: user.bio,
+        isPrivate: true,
+        friends: [],
+        matches: [],
+        followers: [],
+        following: [],
+        interests: [],
+        location: null
+      });
+    }
+
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -39,7 +60,7 @@ router.get('/:userId', auth, async (req, res) => {
 // Update user profile
 router.put('/:userId', auth, async (req, res) => {
   try {
-    const { bio, interests, avatar, location, username } = req.body;
+    const { bio, interests, avatar, location, username, isPrivate } = req.body;
 
     let user = await User.findById(req.params.userId);
     if (!user) {
@@ -56,6 +77,7 @@ router.put('/:userId', auth, async (req, res) => {
     if (avatar !== undefined) user.avatar = avatar;
     if (location !== undefined) user.location = location;
     if (username !== undefined) user.username = username;
+    if (isPrivate !== undefined) user.isPrivate = isPrivate;
 
     await user.save();
     res.json(user);
@@ -181,6 +203,7 @@ router.get('/nearby/all', auth, async (req, res) => {
       ...currentUser.ignoredUsers,
       ...currentUser.friendRequests,
       ...currentUser.incomingRequests,
+      ...currentUser.blockedUsers,
     ];
 
     const users = await User.find({
@@ -402,6 +425,67 @@ router.post('/:userId/ignore-request/:senderId', auth, async (req, res) => {
     await sender.save();
 
     res.json({ msg: 'Friend request ignored' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Block user
+router.post('/:userId/block/:targetUserId', auth, async (req, res) => {
+  try {
+    const blocker = await User.findById(req.userId);
+    const target = await User.findById(req.params.targetUserId);
+
+    if (!blocker || !target) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Check if already blocked
+    if (blocker.blockedUsers.includes(target._id)) {
+      return res.status(400).json({ msg: 'User already blocked' });
+    }
+
+    // Add to blocked
+    blocker.blockedUsers.push(target._id);
+
+    // Remove from friends if they are friends
+    blocker.friends = blocker.friends.filter(id => id.toString() !== target._id.toString());
+    target.friends = target.friends.filter(id => id.toString() !== blocker._id.toString());
+
+    // Remove from following/followers
+    blocker.following = blocker.following.filter(id => id.toString() !== target._id.toString());
+    target.followers = target.followers.filter(id => id.toString() !== blocker._id.toString());
+
+    await blocker.save();
+    await target.save();
+
+    res.json({ msg: 'User blocked' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unblock user
+router.post('/:userId/unblock/:targetUserId', auth, async (req, res) => {
+  try {
+    const unblocker = await User.findById(req.userId);
+    const target = await User.findById(req.params.targetUserId);
+
+    if (!unblocker || !target) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Check if blocked
+    if (!unblocker.blockedUsers.includes(target._id)) {
+      return res.status(400).json({ msg: 'User not blocked' });
+    }
+
+    // Remove from blocked
+    unblocker.blockedUsers = unblocker.blockedUsers.filter(id => id.toString() !== target._id.toString());
+
+    await unblocker.save();
+
+    res.json({ msg: 'User unblocked' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

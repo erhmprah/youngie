@@ -19,6 +19,20 @@ const PostSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    reactions: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        type: {
+          type: String,
+          enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire'],
+          default: 'like',
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     comments: [
       {
         author: {
@@ -26,7 +40,25 @@ const PostSchema = new mongoose.Schema(
           ref: 'User',
         },
         content: String,
-        likes: [
+        reactions: [
+          {
+            user: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'User',
+            },
+            type: {
+              type: String,
+              enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire', 'sticker'],
+              default: 'like',
+            },
+            sticker: String, // Optional sticker URL or identifier
+            createdAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
+        tags: [
           {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
@@ -46,6 +78,17 @@ const PostSchema = new mongoose.Schema(
         },
       },
     ],
+    pollOptions: [
+      {
+        text: String,
+        votes: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+          },
+        ],
+      },
+    ],
     shares: {
       type: Number,
       default: 0,
@@ -62,6 +105,12 @@ const PostSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    tags: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
   },
   { timestamps: true }
 );

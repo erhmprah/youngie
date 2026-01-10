@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
+import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -45,6 +45,7 @@ interface Post {
     updatedAt: string;
     isAnonymous?: boolean;
     commentsDisabled?: boolean;
+    pollOptions?: { text: string; votes: string[] }[];
 }
 
 interface Story {
@@ -62,6 +63,7 @@ interface StoryGroup {
     user: User;
     stories: Story[];
     allViewed: boolean;
+    isYourStory?: boolean;
 }
 
 export default function FeedScreen() {
@@ -82,6 +84,8 @@ export default function FeedScreen() {
     const [showCommentModal, setShowCommentModal] = useState(false);
     const [selectedPostForComments, setSelectedPostForComments] = useState<Post | null>(null);
     const [isIncognito, setIsIncognito] = useState(false);
+    const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
+    const [playingPostId, setPlayingPostId] = useState<string | null>(null);
     
     const flatListRef = useRef<FlatList>(null);
 
@@ -128,6 +132,14 @@ export default function FeedScreen() {
         }
     }, [postId, posts]);
 
+    useFocusEffect(
+        useCallback(() => {
+            return () => {
+                setPlayingPostId(null);
+            };
+        }, [])
+    );
+
     const onRefresh = () => {
         setIsRefreshing(true);
         fetchData();
@@ -166,47 +178,68 @@ export default function FeedScreen() {
         setShowStoryViewer(true);
     };
 
-    const renderStoryItem = ({ item, index }: { item: StoryGroup; index: number }) => (
-        <TouchableOpacity style={styles.storyItem} onPress={() => handleStoryPress(index)}>
-            <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
-                {item.user.profilePhoto ? (
-                    <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.storyAvatar} />
-                ) : (
-                    <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
-                        <IconSymbol name="person.fill" size={30} color={lightTextColor} />
-                    </View>
-                )}
-            </View>
-            <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
-        </TouchableOpacity>
-    );
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 50,
+    }).current;
 
-    const renderHeader = () => (
-        <View style={[styles.storiesContainer, { borderBottomColor: borderColor }]}>
-            <TouchableOpacity style={styles.storyItem} onPress={() => setShowCreateStoryModal(true)}>
-                <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
-                    {user?.profilePhoto ? (
-                        <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.storyAvatar} />
-                    ) : (
-                        <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
-                            <IconSymbol name="person.fill" size={30} color={lightTextColor} />
-                        </View>
+    const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        if (viewableItems.length > 0) {
+            setPlayingPostId(viewableItems[0].item._id);
+        }
+    }, []);
+
+    const renderHeader = () => {
+        const yourStoryItem: StoryGroup = {
+            user: user ? { _id: user._id, username: 'Your Story', profilePhoto: user.profilePhoto } : { _id: '', username: 'Your Story' },
+            stories: [],
+            allViewed: true,
+            isYourStory: true,
+        };
+        const allStories = [yourStoryItem, ...stories];
+
+        return (
+            <View style={[styles.storiesContainer, { borderBottomColor: borderColor }]}>
+                <FlatList
+                    data={allStories}
+                    renderItem={({ item, index }) => (
+                        item.isYourStory ? (
+                            <TouchableOpacity style={styles.storyItem} onPress={() => setShowCreateStoryModal(true)}>
+                                <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
+                                    {item.user.profilePhoto ? (
+                                        <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.storyAvatar} />
+                                    ) : (
+                                        <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
+                                            <IconSymbol name="person.fill" size={30} color={lightTextColor} />
+                                        </View>
+                                    )}
+                                    <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
+                                        <IconSymbol name="plus" size={12} color={white} />
+                                    </View>
+                                </View>
+                                <ThemedText style={styles.storyUsername}>{item.user.username}</ThemedText>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity style={styles.storyItem} onPress={() => handleStoryPress(index - 1)}>
+                                <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
+                                    {item.user.profilePhoto ? (
+                                        <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.storyAvatar} />
+                                    ) : (
+                                        <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
+                                            <IconSymbol name="person.fill" size={30} color={lightTextColor} />
+                                        </View>
+                                    )}
+                                </View>
+                                <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
+                            </TouchableOpacity>
+                        )
                     )}
-                    <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
-                        <IconSymbol name="plus" size={12} color={white} />
-                    </View>
-                </View>
-                <ThemedText style={styles.storyUsername}>Your Story</ThemedText>
-            </TouchableOpacity>
-            <FlatList
-                data={stories}
-                renderItem={renderStoryItem}
-                keyExtractor={(item) => item.user._id}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-            />
-        </View>
-    );
+                    keyExtractor={(item) => item.isYourStory ? 'your-story' : item.user._id}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                />
+            </View>
+        );
+    };
 
     const renderPost = ({ item }: { item: Post }) => {
         const fullProfilePhoto = getImageUrl(item.author.profilePhoto);
@@ -227,6 +260,7 @@ export default function FeedScreen() {
                 onUpdate={handleUpdatePost}
                 onLike={handleLikePost}
                 onComment={(post) => { setSelectedPostForComments(post); setShowCommentModal(true); }}
+                shouldPlay={item._id === playingPostId}
             />
         );
     };
@@ -261,6 +295,8 @@ export default function FeedScreen() {
                             flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
                         });
                     }}
+                    onViewableItemsChanged={onViewableItemsChanged}
+                    viewabilityConfig={viewabilityConfig}
                 />
 
                 <TouchableOpacity

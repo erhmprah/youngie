@@ -30,6 +30,23 @@ const StorySchema = new mongoose.Schema(
         },
       },
     ],
+    tags: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    pollOptions: [
+      {
+        text: String,
+        votes: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+          },
+        ],
+      },
+    ],
   },
   { timestamps: true }
 );

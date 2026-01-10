@@ -5,6 +5,10 @@ const ChatSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  pendingMembers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   isGroupChat: {
     type: Boolean,
     default: false
@@ -29,6 +33,10 @@ const ChatSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Community'
   },
+  clearedHistory: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    clearedAt: { type: Date, default: Date.now }
+  }],
   expiresAt: {
     type: Date
   }

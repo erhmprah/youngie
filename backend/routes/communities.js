@@ -4,7 +4,9 @@ const Community = require('../models/Community');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Chat = require('../models/Chat');
+const CommunityInvite = require('../models/CommunityInvite');
 const auth = require('../middleware/auth');
+const crypto = require('crypto');
 
 // Upload community image base64
 router.post('/upload-image-base64', auth, async (req, res) => {
@@ -61,6 +63,35 @@ router.get('/', auth, async (req, res) => {
       return comm;
     });
     await Promise.all(updates);
+
+    res.json(communities);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search communities
+router.get('/search', auth, async (req, res) => {
+  try {
+    console.log('🔍 Searching communities for:', req.query.q);
+    const { q } = req.query;
+    if (!q) {
+      return res.status(400).json({ msg: 'Search query required' });
+    }
+
+    const escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const communities = await Community.find({
+      $or: [
+        { name: { $regex: escapedQuery, $options: 'i' } },
+        { description: { $regex: escapedQuery, $options: 'i' } }
+      ]
+    })
+    .populate('creator', 'username avatar profilePhoto')
+    .populate('members', 'username avatar profilePhoto')
+    .populate('chat')
+    .sort({ createdAt: -1 })
+    .limit(20);
 
     res.json(communities);
   } catch (error) {
@@ -276,14 +307,256 @@ router.post('/:communityId/reject/:userId', auth, async (req, res) => {
     }
 
     const userId = req.params.userId;
-    
+
     // Remove from pending members
     community.pendingMembers = community.pendingMembers.filter(id => id.toString() !== userId);
-    
+
     await community.save();
     await community.populate('pendingMembers', 'username avatar profilePhoto');
 
     res.json(community);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Leave community
+router.post('/:communityId/leave', auth, async (req, res) => {
+  try {
+    const community = await Community.findById(req.params.communityId);
+    if (!community) {
+      return res.status(404).json({ msg: 'Community not found' });
+    }
+
+    // Check if user is a member
+    if (!community.members.includes(req.userId)) {
+      return res.status(400).json({ msg: 'Not a member of this community' });
+    }
+
+    // Prevent creator from leaving if there are other members
+    if (community.creator.toString() === req.userId && community.members.length > 1) {
+      return res.status(400).json({ msg: 'Creator cannot leave community with other members. Transfer ownership first.' });
+    }
+
+    // Remove user from members
+    community.members = community.members.filter(id => id.toString() !== req.userId);
+
+    // Remove from community chat
+    if (community.chat) {
+      const chat = await Chat.findById(community.chat);
+      if (chat) {
+        chat.participants = chat.participants.filter(id => id.toString() !== req.userId);
+        await chat.save();
+      }
+    }
+
+    await community.save();
+    await community.populate('members', 'username avatar profilePhoto');
+
+    res.json({ msg: 'Successfully left community', community });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate invite link (only by creator/admin)
+router.post('/:communityId/invite', auth, async (req, res) => {
+  try {
+    const community = await Community.findById(req.params.communityId);
+    if (!community) {
+      return res.status(404).json({ msg: 'Community not found' });
+    }
+
+    // Check if user is the creator
+    if (community.creator.toString() !== req.userId) {
+      return res.status(403).json({ msg: 'Only the creator can generate invite links' });
+    }
+
+    const { maxUses, expiresIn } = req.body; // expiresIn in days
+
+    // Generate unique token
+    const inviteToken = crypto.randomBytes(16).toString('hex');
+
+    // Calculate expiration date
+    const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000) : null;
+
+    const invite = new CommunityInvite({
+      community: req.params.communityId,
+      createdBy: req.userId,
+      inviteToken,
+      maxUses: maxUses || null,
+      expiresAt,
+    });
+
+    await invite.save();
+
+    // Generate the invite URL
+    const inviteUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/join-community/${inviteToken}`;
+
+    res.json({
+      inviteToken,
+      inviteUrl,
+      expiresAt,
+      maxUses
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Join community via invite link (public endpoint)
+router.post('/join/:inviteToken', async (req, res) => {
+  try {
+    const invite = await CommunityInvite.findOne({ inviteToken: req.params.inviteToken })
+      .populate('community');
+
+    if (!invite) {
+      return res.status(404).json({ msg: 'Invalid invite link' });
+    }
+
+    if (!invite.isActive) {
+      return res.status(400).json({ msg: 'This invite link has been deactivated' });
+    }
+
+    if (invite.expiresAt && invite.expiresAt < new Date()) {
+      return res.status(400).json({ msg: 'This invite link has expired' });
+    }
+
+    if (invite.maxUses && invite.uses >= invite.maxUses) {
+      return res.status(400).json({ msg: 'This invite link has reached its usage limit' });
+    }
+
+    const community = invite.community;
+
+    // Check if user is already authenticated
+    const userId = req.userId; // This will be undefined for non-authenticated users
+
+    if (!userId) {
+      // Return community info for unauthenticated users
+      return res.json({
+        requiresAuth: true,
+        community: {
+          _id: community._id,
+          name: community.name,
+          description: community.description,
+          image: community.image,
+          requiresApproval: community.requiresApproval,
+          isPrivate: community.isPrivate,
+        }
+      });
+    }
+
+    // Check if user is already a member
+    if (community.members.includes(userId)) {
+      return res.status(400).json({ msg: 'Already a member of this community' });
+    }
+
+    if (community.requiresApproval) {
+      // Add to pending members
+      if (!community.pendingMembers.includes(userId)) {
+        community.pendingMembers.push(userId);
+        await community.save();
+
+        // Send notification to community creator
+        const notification = new Notification({
+          recipient: community.creator,
+          sender: userId,
+          type: 'community_join_request',
+          message: `wants to join your community "${community.name}" via invite link`,
+          relatedCommunity: community._id,
+        });
+        await notification.save();
+
+        // Increment invite usage
+        invite.uses += 1;
+        await invite.save();
+
+        return res.json({ msg: 'Join request sent for approval' });
+      }
+      return res.status(400).json({ msg: 'Join request already pending' });
+    } else {
+      // Directly add to members
+      community.members.push(userId);
+
+      // Add to community chat
+      if (community.chat) {
+        const chat = await Chat.findById(community.chat);
+        if (chat && !chat.participants.includes(userId)) {
+          chat.participants.push(userId);
+          await chat.save();
+        }
+      }
+
+      await community.save();
+
+      // Increment invite usage
+      invite.uses += 1;
+      await invite.save();
+
+      await community.populate('members', 'username avatar profilePhoto');
+      res.json(community);
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get community invite info (public endpoint for invite links)
+router.get('/invite/:inviteToken', async (req, res) => {
+  try {
+    const invite = await CommunityInvite.findOne({ inviteToken: req.params.inviteToken })
+      .populate('community', 'name description image requiresApproval isPrivate')
+      .populate('createdBy', 'username');
+
+    if (!invite) {
+      return res.status(404).json({ msg: 'Invalid invite link' });
+    }
+
+    if (!invite.isActive) {
+      return res.status(400).json({ msg: 'This invite link has been deactivated' });
+    }
+
+    if (invite.expiresAt && invite.expiresAt < new Date()) {
+      return res.status(400).json({ msg: 'This invite link has expired' });
+    }
+
+    res.json({
+      community: invite.community,
+      createdBy: invite.createdBy,
+      expiresAt: invite.expiresAt,
+      maxUses: invite.maxUses,
+      uses: invite.uses,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete community (only by creator)
+router.delete('/:communityId', auth, async (req, res) => {
+  try {
+    const community = await Community.findById(req.params.communityId);
+    if (!community) {
+      return res.status(404).json({ msg: 'Community not found' });
+    }
+
+    // Check if user is the creator
+    if (community.creator.toString() !== req.userId) {
+      return res.status(403).json({ msg: 'Only the creator can delete this community' });
+    }
+
+    // Delete associated chat
+    if (community.chat) {
+      await Chat.findByIdAndDelete(community.chat);
+    }
+
+    // Delete associated invites
+    await CommunityInvite.deleteMany({ community: req.params.communityId });
+
+    // Delete the community
+    await Community.findByIdAndDelete(req.params.communityId);
+
+    res.json({ msg: 'Community deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

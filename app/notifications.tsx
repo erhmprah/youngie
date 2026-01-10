@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { notificationAPI, userAPI, communityAPI } from '@/utils/api';
+import { notificationAPI, userAPI, communityAPI, chatAPI } from '@/utils/api';
 import { getColors, spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -20,11 +20,13 @@ interface Notification {
     avatar?: string;
     profilePhoto?: string;
   };
-  type: 'like' | 'comment' | 'follow' | 'match' | 'message' | 'community_join_request';
+  type: 'like' | 'comment' | 'follow' | 'match' | 'message' | 'community_join_request' | 'chat_invitation' | 'tag';
   message: string;
   isRead: boolean;
   createdAt: string;
   relatedCommunity?: string;
+  relatedChat?: string;
+  relatedPost?: string;
 }
 
 const NotificationSkeleton = ({ colors }: { colors: ReturnType<typeof getColors> }) => (
@@ -129,6 +131,32 @@ export default function NotificationsScreen() {
     }
   };
 
+  const handleAcceptChatInvitation = async (chatId: string, notificationId: string) => {
+    try {
+      await chatAPI.acceptInvitation(chatId);
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation accepted' } : notif
+      ));
+      Alert.alert('Success', 'You have joined the chat!');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to accept invitation');
+    }
+  };
+
+  const handleRejectChatInvitation = async (chatId: string, notificationId: string) => {
+    try {
+      await chatAPI.rejectInvitation(chatId);
+      await notificationAPI.markAsRead(notificationId);
+      setNotifications(prev => prev.map(notif =>
+        notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation rejected' } : notif
+      ));
+      Alert.alert('Rejected', 'Chat invitation rejected');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.msg || 'Failed to reject invitation');
+    }
+  };
+
   const handleMarkAllAsRead = async () => {
     try {
       await notificationAPI.markAllAsRead();
@@ -181,9 +209,30 @@ export default function NotificationsScreen() {
     );
   };
 
+  const handleNotificationPress = (notification: Notification) => {
+    // Mark as read when tapped
+    if (!notification.isRead) {
+      handleMarkAsRead(notification._id);
+    }
+
+    // Navigate based on notification type
+    if ((notification.type === 'tag' || notification.type === 'like' || notification.type === 'comment') && notification.relatedPost) {
+      // Navigate to the feed and scroll to the specific post
+      router.push(`/?postId=${notification.relatedPost}`);
+    } else if (notification.relatedChat) {
+      // Navigate to chat
+      router.push(`/chat/${notification.relatedChat}`);
+    } else if (notification.relatedCommunity) {
+      // Navigate to community
+      router.push(`/community/${notification.relatedCommunity}`);
+    }
+    // Add more navigation cases as needed
+  };
+
   const renderNotification = ({ item }: { item: Notification }) => {
     const isPendingFriendRequest = item.type === 'follow' && item.message === 'sent you a friend request' && !item.isRead;
     const isPendingCommunityRequest = item.type === 'community_join_request' && !item.isRead;
+    const isPendingChatInvitation = item.type === 'chat_invitation' && !item.isRead;
     // For accepted/ignored, the message will already be updated by handleAcceptRequest/handleIgnoreRequest
     // So, we just need to make sure buttons don't show if it's not a pending request.
 
@@ -194,17 +243,23 @@ export default function NotificationsScreen() {
         friction={2}
         rightThreshold={40}
       >
-        <View style={[styles.notification, !item.isRead && styles.unread]}>
-          <View style={[styles.avatarContainer, { backgroundColor: colors.surface }]}>
-            {item.sender.profilePhoto ? (
-              <Image
-                source={{ uri: item.sender.profilePhoto }}
-                style={styles.avatar}
-              />
-            ) : (
-              <Ionicons name="person" size={24} color={colors.lightText} />
-            )}
-          </View>
+        <TouchableOpacity
+          style={[styles.notification, !item.isRead && styles.unread]}
+          onPress={() => handleNotificationPress(item)}
+          activeOpacity={0.7}
+        >
+          <TouchableOpacity onPress={() => router.push(`/user/${item.sender._id}`)}>
+            <View style={[styles.avatarContainer, { backgroundColor: colors.surface }]}>
+              {item.sender.profilePhoto ? (
+                <Image
+                  source={{ uri: item.sender.profilePhoto }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <Ionicons name="person" size={24} color={colors.lightText} />
+              )}
+            </View>
+          </TouchableOpacity>
           <View style={styles.textContainer}>
             <ThemedText>
               <ThemedText style={styles.sender}>{item.sender.username}</ThemedText> {item.message}
@@ -246,9 +301,26 @@ export default function NotificationsScreen() {
                 </TouchableOpacity>
               </View>
             )}
+
+            {isPendingChatInvitation && item.relatedChat && (
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.acceptButton}
+                  onPress={() => handleAcceptChatInvitation(item.relatedChat!, item._id)}
+                >
+                  <ThemedText style={styles.buttonText}>Accept</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.ignoreButton}
+                  onPress={() => handleRejectChatInvitation(item.relatedChat!, item._id)}
+                >
+                  <ThemedText style={styles.buttonText}>Reject</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
           {!item.isRead && <View style={styles.unreadDot} />}
-        </View>
+        </TouchableOpacity>
       </Swipeable>
     );
   };

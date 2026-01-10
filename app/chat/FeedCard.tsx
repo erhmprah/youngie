@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, Alert, Image, Dimensions, Share } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, TouchableOpacity, View, Alert, Image, Dimensions, Animated, TouchableWithoutFeedback } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -8,22 +8,38 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { FeedPostOptions } from '@/app/chat/FeedPostOptions';
 import { EditPostModal } from '@/components/edit-post-modal';
+import { PollView } from '@/components/poll-view';
+import { ReactionPicker, ReactionType } from '@/components/reaction-picker';
+import { ReactionModal } from '@/components/reaction-modal';
+import { LikesModal } from '@/components/likes-modal';
+import { CommentModal } from '@/components/comment-modal';
 import { postAPI, getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useAuth } from '@/contexts/AuthContext';
+import { getSocket } from '@/utils/socket';
+import { useRouter } from 'expo-router';
 
 interface FeedPost {
     _id: string;
     author: {
         _id: string;
         username: string;
+        profilePhoto?: string;
+        isOnline?: boolean;
     };
     content?: string;
     image?: string;
     video?: string;
     createdAt: string;
     updatedAt: string;
-    likes: { _id: string; username: string }[];
+    likes: { _id: string; username: string; profilePhoto?: string }[];
+    reactions?: { user: { _id: string; username: string }; type: ReactionType; createdAt: string }[];
+    isFavorited?: boolean;
     comments: any[];
+    tags?: { _id: string; username: string }[];
+    isAnonymous?: boolean;
+    shares?: number;
+    pollOptions?: { text: string; votes: string[] }[];
 }
 
 interface FeedCardProps {
@@ -34,16 +50,114 @@ interface FeedCardProps {
     onUpdate?: (updatedPost: any) => void;
     onLike?: (postId: string) => void;
     onComment?: (post: FeedPost) => void;
+    onFavorite?: (postId: string) => void;
+    shouldPlay?: boolean;
 }
 
-export function FeedCard({ post, currentUserId, onDelete, onReport, onUpdate, onLike, onComment }: FeedCardProps) {
+export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay }: FeedCardProps) {
+    const { user } = useAuth();
+    const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
+    const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+    const [reactionModalVisible, setReactionModalVisible] = useState(false);
+    const [likesModalVisible, setLikesModalVisible] = useState(false);
+    const [commentsModalVisible, setCommentsModalVisible] = useState(false);
     const textColor = useThemeColor('text');
     const lightTextColor = useThemeColor('lightText');
     const errorColor = useThemeColor('error');
+    const primaryColor = useThemeColor('primary');
+    const backgroundColor = useThemeColor('background');
     const isOwner = post.author._id === currentUserId;
     const isLiked = post.likes.some(l => l._id === currentUserId);
+    const [isFavorited, setIsFavorited] = useState(post.isFavorited ?? false);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const lastTap = useRef<number | null>(null);
+    const videoRef = useRef<Video>(null);
+    const router = useRouter();
+
+    useEffect(() => {
+        setPost(initialPost);
+    }, [initialPost]);
+
+    useEffect(() => {
+        const socket = getSocket();
+        if (!socket) return;
+
+        const handlePostUpdate = (updatedPost: any) => {
+            if (updatedPost._id === post._id) {
+                setPost(updatedPost);
+                onUpdate?.(updatedPost);
+            }
+        };
+
+        socket.on('post:updated', handlePostUpdate);
+        return () => {
+            socket.off('post:updated', handlePostUpdate);
+        };
+    }, [post._id, onUpdate]);
+
+    useEffect(() => {
+        setIsFavorited(post.isFavorited ?? false);
+    }, [post.isFavorited]);
+
+    useEffect(() => {
+        if (post.author.isOnline) {
+            const anim = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(pulseAnim, {
+                        toValue: 1.2,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(pulseAnim, {
+                        toValue: 1,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            anim.start();
+            return () => anim.stop();
+        }
+    }, [post.author.isOnline]);
+
+    useEffect(() => {
+        if (!shouldPlay && videoRef.current) {
+            videoRef.current.pauseAsync().catch(() => {});
+        }
+    }, [shouldPlay]);
+
+    const handleDoubleTap = () => {
+        const now = Date.now();
+        const DOUBLE_PRESS_DELAY = 300;
+        if (lastTap.current && (now - lastTap.current) < DOUBLE_PRESS_DELAY) {
+            if (!isLiked) {
+                onLike?.(post._id);
+            }
+            lastTap.current = null;
+        } else {
+            lastTap.current = now;
+        }
+    };
+
+    const handleFavoritePress = async () => {
+        setIsFavorited(prev => !prev);
+        if (onFavorite) {
+            onFavorite(post._id);
+        } else {
+            try {
+                if (!isFavorited) {
+                    await postAPI.favoritePost(post._id);
+                } else {
+                    await postAPI.unfavoritePost(post._id);
+                }
+            } catch (error) {
+                console.error('Favorite action failed:', error);
+                setIsFavorited(prev => !prev);
+            }
+        }
+    };
     const { width } = Dimensions.get('window');
 
     const handleEdit = () => {
@@ -99,37 +213,99 @@ export function FeedCard({ post, currentUserId, onDelete, onReport, onUpdate, on
     };
 
     const handleShare = async () => {
-        try {
-            let message = `Check out this post by ${post.author.username}`;
-
-            if (post.content) {
-                message += `: "${post.content}"`;
-            }
-
-            if (post.image) {
-                message += ' [with image]';
-            } else if (post.video) {
-                message += ' [with video]';
-            }
-
-            message += ' - Shared from Youngie';
-
-            await Share.share({
-                message,
-            });
-        } catch (error: any) {
-            Alert.alert('Error', 'Failed to share post');
+        if (post.isAnonymous) {
+            Alert.alert('Cannot Share', 'Sharing anonymous posts is not allowed.');
+            return;
         }
+
+        Alert.alert(
+            'Share Post',
+            'Are you sure you want to share this post to your feed?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Share',
+                    onPress: async () => {
+                        try {
+                            // First, call share API to increment shares and notify author
+                            await postAPI.sharePost(post._id);
+
+                            // Then, repost to user's feed
+                            const repostContent = post.content ? `Shared: ${post.content}` : 'Shared post';
+                            await postAPI.createPost({
+                                content: repostContent,
+                                image: post.image,
+                                video: post.video,
+                                isPublic: true,
+                                isAnonymous: false,
+                                commentsDisabled: false,
+                                tags: [],
+                            });
+                            Alert.alert('Success', 'Post reposted to your feed');
+                        } catch (_error: any) {
+                            Alert.alert('Error', 'Failed to repost post');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleReactionSelect = async (reaction: ReactionType) => {
+        try {
+            await postAPI.reactPost(post._id, { reactionType: reaction });
+            // Update the local post data with the new reaction
+            const updatedPost = {
+                ...post,
+                reactions: [
+                    ...(post.reactions || []).filter(r => r.user._id !== currentUserId),
+                    { user: { _id: currentUserId, username: user?.username || '' }, type: reaction, createdAt: new Date().toISOString() }
+                ]
+            };
+            onUpdate?.(updatedPost);
+        } catch (error) {
+            console.error('Reaction failed:', error);
+        }
+        setReactionPickerVisible(false);
     };
 
     return (
         <ThemedView style={styles.card}>
             <View style={styles.header}>
                 <View style={styles.userInfo}>
-                    <ThemedText type="default">{post.author.username}</ThemedText>
-                    <ThemedText style={styles.timestamp}>
-                        {new Date(post.createdAt).toLocaleDateString()}
-                    </ThemedText>
+                    <TouchableOpacity 
+                        style={styles.authorRow}
+                        onPress={() => router.push(`/user/${post.author._id}`)}
+                    >
+                        <View style={styles.avatarContainer}>
+                            {post.author.profilePhoto ? (
+                                <Image source={{ uri: getImageUrl(post.author.profilePhoto) }} style={styles.profilePhoto} />
+                            ) : (
+                                <View style={[styles.profilePhotoPlaceholder, { backgroundColor: primaryColor }]}>
+                                    <IconSymbol name="person.fill" size={16} color="white" />
+                                </View>
+                            )}
+                            {post.author.isOnline && <Animated.View style={[styles.onlineIndicator, { borderColor: backgroundColor, transform: [{ scale: pulseAnim }] }]} />}
+                        </View>
+                        <View style={styles.authorDetails}>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <ThemedText type="default" style={styles.username}>{post.author.username}</ThemedText>
+                                {post.tags && post.tags.length > 0 && (
+                                    <ThemedText style={{ fontSize: typography.sizes.body2, color: textColor }}>
+                                        <ThemedText style={{ color: lightTextColor }}> with </ThemedText>
+                                        {post.tags.map((tag, index) => (
+                                            <ThemedText key={tag._id} style={{ fontFamily: typography.families.bold }}>
+                                                {tag.username}{index < post.tags!.length - 1 ? ', ' : ''}
+                                            </ThemedText>
+                                        ))}
+                                    </ThemedText>
+                                )}
+                            </View>
+                            <ThemedText style={styles.timestamp}>
+                                {new Date(post.createdAt).toLocaleDateString()}
+                            </ThemedText>
+                        </View>
+                    </TouchableOpacity>
                 </View>
                 <TouchableOpacity onPress={() => setOptionsVisible(true)} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }} style={{ zIndex: 10 }}>
                     <Ionicons name="ellipsis-horizontal" size={20} color={textColor} />
@@ -138,36 +314,96 @@ export function FeedCard({ post, currentUserId, onDelete, onReport, onUpdate, on
 
             {post.content && <ThemedText style={styles.content}>{post.content}</ThemedText>}
 
-            {post.image && <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width, height: width }]} resizeMode="cover" />}
-            {post.video && (
-                <Video
-                    source={{ uri: getImageUrl(post.video)! }}
-                    style={[styles.postMedia, { width, height: width }]}
-                    useNativeControls
-                    resizeMode={ResizeMode.COVER}
-                    isLooping={false}
+            {post.pollOptions && post.pollOptions.length > 0 && (
+                <PollView
+                    postId={post._id}
+                    options={post.pollOptions}
+                    onVote={(updatedOptions) => {
+                        const updatedPost = { ...post, pollOptions: updatedOptions };
+                        onUpdate?.(updatedPost);
+                    }}
                 />
             )}
 
+            <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                <View>
+                    {post.image && <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width, height: width }]} resizeMode="cover" />}
+                    {post.video && (
+                        <Video
+                            ref={videoRef}
+                            source={{ uri: getImageUrl(post.video)! }}
+                            style={[styles.postMedia, { width, height: width }]}
+                            resizeMode={ResizeMode.COVER}
+                            shouldPlay={shouldPlay}
+                            isLooping={true}
+                        />
+                    )}
+                </View>
+            </TouchableWithoutFeedback>
+
             <View style={styles.actionBar}>
                 <View style={styles.leftActions}>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => onLike?.(post._id)}>
-                        <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => onComment?.(post)}>
-                        <IconSymbol name="message.fill" size={24} color={textColor} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-                        <IconSymbol name="paperplane.fill" size={24} color={textColor} />
-                    </TouchableOpacity>
+                    <View style={styles.actionWithCount}>
+                        <TouchableOpacity
+                            style={styles.actionBtn}
+                            onPress={() => onLike?.(post._id)}
+                            onLongPress={() => setReactionPickerVisible(true)}
+                        >
+                            <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
+                        </TouchableOpacity>
+                        {post.likes.length > 0 && (
+                            <TouchableOpacity onPress={() => setLikesModalVisible(true)}>
+                                <ThemedText style={[styles.actionCount, { color: textColor }]}>
+                                    {post.likes.length.toLocaleString()}
+                                </ThemedText>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <View style={styles.actionWithCount}>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => setCommentsModalVisible(true)}>
+                            <IconSymbol name="message.fill" size={24} color={textColor} />
+                        </TouchableOpacity>
+                        {post.comments.length > 0 && (
+                            <TouchableOpacity onPress={() => setCommentsModalVisible(true)}>
+                                <ThemedText style={[styles.actionCount, { color: textColor }]}>
+                                    {post.comments.length.toLocaleString()}
+                                </ThemedText>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <View style={styles.actionWithCount}>
+                        <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
+                            <IconSymbol name="paperplane.fill" size={24} color={textColor} />
+                        </TouchableOpacity>
+                        {(post.shares || 0) > 0 && (
+                            <TouchableOpacity onPress={handleShare}>
+                                <ThemedText style={[styles.actionCount, { color: textColor }]}>
+                                    {(post.shares || 0).toLocaleString()}
+                                </ThemedText>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
+                <TouchableOpacity style={styles.actionBtn} onPress={handleFavoritePress}>
+                    <IconSymbol name={isFavorited ? "bookmark.fill" : "bookmark"} size={24} color={isFavorited ? primaryColor : textColor} />
+                </TouchableOpacity>
             </View>
 
+            {reactionPickerVisible && (
+                <View style={styles.reactionPickerContainer}>
+                    <ReactionPicker
+                        onSelect={handleReactionSelect}
+                        onClose={() => setReactionPickerVisible(false)}
+                    />
+                </View>
+            )}
+
             <View style={styles.socialStats}>
-                <ThemedText style={{ fontWeight: '600', fontSize: typography.sizes.body2 }}>{post.likes.length.toLocaleString()} likes</ThemedText>
-                <TouchableOpacity onPress={() => onComment?.(post)}>
-                    <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>View all {post.comments.length} comments</ThemedText>
-                </TouchableOpacity>
+                {typeof post.shares === 'number' && post.shares > 0 && (
+                    <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>
+                        {post.shares.toLocaleString()} shares
+                    </ThemedText>
+                )}
             </View>
 
             <FeedPostOptions
@@ -185,6 +421,25 @@ export function FeedCard({ post, currentUserId, onDelete, onReport, onUpdate, on
                 onSave={handleSaveEdit}
                 initialData={post}
             />
+
+            <LikesModal
+                visible={likesModalVisible}
+                onClose={() => setLikesModalVisible(false)}
+                likes={post.likes}
+                reactions={post.reactions}
+            />
+            
+            <CommentModal
+                visible={commentsModalVisible}
+                onClose={() => setCommentsModalVisible(false)}
+                post={post}
+            />
+            <ReactionModal
+                visible={reactionModalVisible}
+                onClose={() => setReactionModalVisible(false)}
+                reactions={post.reactions || []}
+            />
+
         </ThemedView>
     );
 }
@@ -203,6 +458,31 @@ const styles = StyleSheet.create({
     },
     userInfo: {
         flex: 1,
+    },
+    authorRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    avatarContainer: {
+        marginRight: spacing.sm,
+    },
+    profilePhoto: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+    },
+    profilePhotoPlaceholder: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    authorDetails: {
+        flex: 1,
+    },
+    username: {
+        fontFamily: typography.families.bold,
     },
     timestamp: {
         fontSize: typography.sizes.tiny,
@@ -227,7 +507,34 @@ const styles = StyleSheet.create({
         gap: spacing.lg,
     },
     actionBtn: {},
+    actionWithCount: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+    },
+    actionCount: {
+        fontSize: typography.sizes.body2,
+        fontFamily: typography.families.medium,
+    },
     socialStats: {
         paddingBottom: spacing.md,
+    },
+    onlineIndicator: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#4CAF50',
+        borderWidth: 2,
+    },
+    reactionPickerContainer: {
+        position: 'absolute',
+        top: -60,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 1000,
     },
 });

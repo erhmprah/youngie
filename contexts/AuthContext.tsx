@@ -6,7 +6,9 @@ interface User {
   _id: string;
   username: string;
   email: string;
-  age: number;
+  birthYear: number;
+  gender?: string;
+  suspended?: boolean;
   bio?: string;
   location?: string;
   interests?: string[];
@@ -22,7 +24,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  register: (username: string, email: string, password: string, age: number) => Promise<void>;
+  register: (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreToken: () => Promise<void>;
@@ -38,10 +40,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(false);
 
   const register = useCallback(
-    async (username: string, email: string, password: string, age: number) => {
+    async (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => {
       setIsLoading(true);
       try {
-        const response = await authAPI.register({ username, email, password, age });
+        const response = await authAPI.register({ username, email, password, birthYear, gender, location });
         const { token, user } = response.data;
 
         await AsyncStorage.setItem('authToken', token);
@@ -61,6 +63,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await authAPI.login({ email, password });
       const { token, user } = response.data;
+
+      if (user.suspended) {
+        alert('Your account has been suspended.');
+        throw new Error('Account suspended');
+      }
 
       await AsyncStorage.setItem('authToken', token);
       setToken(token);
@@ -93,7 +100,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const response = await authAPI.getCurrentUser();
           // Backend returns user object directly, not wrapped
           const userData = response.data.user || response.data;
-          setUser(userData);
+          if (userData.suspended) {
+            // Account suspended, clear token and logout
+            await AsyncStorage.removeItem('authToken');
+            setToken(null);
+            setUser(null);
+            alert('Your account has been suspended.');
+          } else {
+            setUser(userData);
+          }
         } catch (error) {
           // Token is invalid, clear it
           await AsyncStorage.removeItem('authToken');

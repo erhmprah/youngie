@@ -23,6 +23,7 @@ const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState('posts');
+    const [favoritedPosts, setFavoritedPosts] = useState<any[]>([]);
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [stats, setStats] = useState([
         { label: 'Posts', value: '0' },
@@ -56,10 +57,11 @@ export default function ProfileScreen() {
                 userAPI.getAlbum(user._id).catch(() => ({ data: [] })),
             ]);
             const userData = statsResponse.data;
+            const totalLikes = postsResponse.data.reduce((sum: number, post: any) => sum + (post.likes?.length || 0), 0);
             setStats([
                 { label: 'Posts', value: String(userData.posts?.length || 0) },
                 { label: 'Friends', value: String(userData.friends?.length || 0) },
-                { label: 'Matches', value: String(userData.matches?.length || 0) },
+                { label: 'Likes', value: String(totalLikes) },
             ]);
             setFriends(userData.friends || []);
             setUserPosts(postsResponse.data || []);
@@ -220,6 +222,33 @@ export default function ProfileScreen() {
         );
     };
 
+    const handleBlock = async (friendId: string, username: string) => {
+        if (!user?._id) return;
+
+        Alert.alert(
+            'Block User',
+            `Are you sure you want to block ${username}? This will remove them from your friends and prevent them from contacting you.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Block',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await userAPI.blockUser(user._id, friendId);
+                            setFriends(prev => prev.filter(f => f._id !== friendId));
+                            setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(Math.max(0, parseInt(s.value) - 1)) } : s));
+                            Alert.alert('Success', `${username} has been blocked`);
+                        } catch (error) {
+                            console.error('Error blocking user:', error);
+                            Alert.alert('Error', 'Failed to block user');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const renderHeader = () => (
         <ThemedView style={styles.container}>
             <LinearGradient colors={[primaryColor + '20', 'transparent']} style={styles.headerBackground} />
@@ -234,6 +263,27 @@ export default function ProfileScreen() {
                 </View>
                 <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>{user?.username}</ThemedText>
                 <ThemedText style={{ color: lightTextColor, marginBottom: spacing.md }}>{user?.bio}</ThemedText>
+
+                <View style={styles.profileDetails}>
+                    {user?.location && user.location.trim() && (
+                        <View style={styles.detailRow}>
+                            <IconSymbol name="location.fill" size={16} color={lightTextColor} />
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.location}</ThemedText>
+                        </View>
+                    )}
+                    {user?.gender && (
+                        <View style={styles.detailRow}>
+                            <IconSymbol name="person.fill" size={16} color={lightTextColor} />
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2, textTransform: 'capitalize' }}>{user.gender}</ThemedText>
+                        </View>
+                    )}
+                    {user?.birthYear && (
+                        <View style={styles.detailRow}>
+                            <IconSymbol name="calendar" size={16} color={lightTextColor} />
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{new Date().getFullYear() - user.birthYear} years old</ThemedText>
+                        </View>
+                    )}
+                </View>
 
                 <View style={[styles.statsBar, { backgroundColor: cardBackgroundColor, borderColor }]}>
                     {stats.map((stat, i) => (
@@ -252,6 +302,9 @@ export default function ProfileScreen() {
                     )}
                     <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => setIsEditModalVisible(true)}>
                         <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Edit Profile</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => router.push('/chat/favorites')}>
+                        <IconSymbol name="heart.fill" size={20} color={textColor} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => logout()}>
                         <IconSymbol name="x" size={20} color={textColor} />
@@ -369,6 +422,9 @@ export default function ProfileScreen() {
                         <TouchableOpacity style={[styles.messageBtn, { backgroundColor: errorColor || '#FF3B30' }]} onPress={() => handleUnfriend(item._id, item.username)}>
                             <Ionicons name="person-remove" size={18} color={white} />
                         </TouchableOpacity>
+                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: '#8E8E93' }]} onPress={() => handleBlock(item._id, item.username)}>
+                            <IconSymbol name="x" size={18} color={white} />
+                        </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
             );
@@ -410,6 +466,8 @@ const styles = StyleSheet.create({
     avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
     avatarImage: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
     editBadge: { position: 'absolute', bottom: 5, right: 5, width: 32, height: 32, borderRadius: 16, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+    profileDetails: { gap: spacing.xs, marginBottom: spacing.md },
+    detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.lg, borderWidth: 1 },
     statBox: { flex: 1, alignItems: 'center', borderRightWidth: 1 },
     actionRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },

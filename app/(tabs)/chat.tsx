@@ -48,6 +48,14 @@ export default function ChatScreen() {
     const [activeTab, setActiveTab] = useState<'direct' | 'groups'>('direct');
     const [refreshing, setRefreshing] = useState(false);
 
+    const EmptyComponent = () => (
+        <View style={{ padding: spacing.lg }}>
+            <ThemedText style={{ textAlign: 'center', marginTop: spacing.xl, color: lightTextColor }}>
+                No {activeTab === 'direct' ? 'messages' : 'groups'} yet.
+            </ThemedText>
+        </View>
+    );
+
     const backgroundColor = useThemeColor('background');
     const primaryColor = useThemeColor('primary');
     const textColor = useThemeColor('text');
@@ -140,7 +148,7 @@ export default function ChatScreen() {
             }
         }
     };
-    
+
     useEffect(() => {
         const socket = getSocket();
 
@@ -157,7 +165,11 @@ export default function ChatScreen() {
                     };
                 }
                 return chat;
-            }).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)));
+            }).sort((a, b) => {
+                const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                return bTime - aTime;
+            }));
         };
 
         const handleNewChat = (newChat: Chat) => {
@@ -173,9 +185,18 @@ export default function ChatScreen() {
             }
         };
 
+        const handleMessagesRead = (data: { userId: string; chatId: string }) => {
+            if (data.userId === user?._id) {
+                setChats(prev => prev.map(chat =>
+                    chat._id === data.chatId ? { ...chat, unreadCount: 0 } : chat
+                ));
+            }
+        };
+
         if (socket) {
             socket.on('chatUpdated', handleChatUpdated);
             socket.on('newChat', handleNewChat);
+            socket.on('messages-read', handleMessagesRead);
         }
         onNewNotification(handleNotification);
 
@@ -183,10 +204,11 @@ export default function ChatScreen() {
             if (socket) {
                 socket.off('chatUpdated', handleChatUpdated);
                 socket.off('newChat', handleNewChat);
+                socket.off('messages-read', handleMessagesRead);
             }
             offNewNotification();
         };
-    }, []);
+    }, [user, fetchChats]);
 
     const filteredChats = chats.filter(chat => {
         if (activeTab === 'direct') return !chat.isGroupChat;
@@ -227,12 +249,21 @@ export default function ChatScreen() {
                         <ThemedText style={[styles.chatName, { color: textColor }]}>
                             {chatName}
                         </ThemedText>
-                        <ThemedText style={[styles.chatDate, { color: lightTextColor }]}>
-                            {item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </ThemedText>
+                        <View style={styles.timeAndBadgeContainer}>
+                            <ThemedText style={[styles.chatDate, { color: lightTextColor }]}>
+                                {item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </ThemedText>
+                            {!!item.unreadCount && item.unreadCount > 0 && (
+                                <View style={[styles.unreadBadge, { backgroundColor: primaryColor }]}>
+                                    <ThemedText style={styles.unreadText}>
+                                        {item.unreadCount > 99 ? '99' : item.unreadCount.toString()}
+                                    </ThemedText>
+                                </View>
+                            )}
+                        </View>
                     </View>
                     <ThemedText style={[styles.chatPreview, { color: lightTextColor }]} numberOfLines={1}>
-                        {item.messages?.[item.messages.length - 1]?.content || item.lastMessage || 'No messages'}
+                        {String(item.messages?.[item.messages.length - 1]?.content || item.lastMessage || 'No messages')}
                     </ThemedText>
                 </View>
             </TouchableOpacity>
@@ -272,7 +303,7 @@ export default function ChatScreen() {
                         renderItem={renderChatItem}
                         keyExtractor={item => item._id}
                         contentContainerStyle={styles.listContainer}
-                        ListEmptyComponent={<ThemedText style={{ textAlign: 'center', marginTop: spacing.xl, color: lightTextColor }}>No {activeTab === 'direct' ? 'messages' : 'groups'} yet.</ThemedText>}
+                        ListEmptyComponent={EmptyComponent}
                         refreshControl={
                             <RefreshControl
                                 refreshing={refreshing}
@@ -305,6 +336,7 @@ const styles = StyleSheet.create({
     chatAvatar: { width: '100%', height: '100%', borderRadius: borderRadius.round },
     chatInfo: { flex: 1 },
     chatHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
+    timeAndBadgeContainer: { flexDirection: 'row', alignItems: 'center' },
     chatName: { fontSize: typography.sizes.title, fontFamily: typography.families.bold },
     chatDate: { fontSize: typography.sizes.caption },
     chatPreview: { fontSize: typography.sizes.body2 },

@@ -7,7 +7,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // For physical devices, you MUST use your machine's actual local IP address (e.g., '192.168.1.X').
 // Ensure your backend server is running and accessible on the specified port.
 // If you encounter a 'Network Error', verify this URL is correct for your device/emulator and network.
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:5000/api';
+// Default to 10.0.2.2 for Android emulator (backend runs on port 5000)
+// For physical devices, use machine's IP (e.g., '192.168.1.61:5001')
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.61:5001/api';
 
 console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
@@ -77,7 +79,7 @@ uploadAPI.interceptors.request.use(
 
 // API Endpoints
 export const authAPI = {
-  register: (data: { username: string; email: string; password: string; age: number }) =>
+  register: (data: { username: string; email: string; password: string; birthYear: number }) =>
     api.post('/auth/register', data),
   login: (data: { email: string; password: string }) =>
     api.post('/auth/login', data),
@@ -90,10 +92,37 @@ export const authAPI = {
 export const userAPI = {
   getProfile: (userId: string) => api.get(`/users/${userId}`),
   updateProfile: (userId: string, data: any) => api.put(`/users/${userId}`, data),
-  uploadProfilePhoto: (userId: string, formData: FormData) =>
-    uploadAPI.post(`/users/${userId}/upload-profile-photo`, formData),
-  uploadProfilePhotoBase64: (userId: string, data: { imageData: string; filename: string }) =>
-    api.post(`/users/${userId}/upload-profile-photo-base64`, data),
+  uploadProfilePhoto: async (userId: string, formData: FormData) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/users/${userId}/upload-profile-photo`, {
+      method: 'POST',
+      headers: {
+        'x-auth-token': token || '',
+        'Accept': 'application/json',
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return { data };
+  },
+  uploadProfilePhotoBase64: async (userId: string, data: { imageData: string; filename: string }) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/users/${userId}/upload-profile-photo-base64`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-token': token || '',
+      },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  },
   searchUsers: (query: string) => api.get('/users/search/query', { params: { q: query } }),
   getNearbyUsers: () => api.get('/users/nearby/all'),
   sendFriendRequest: (userId: string, targetUserId: string) =>
@@ -107,12 +136,29 @@ export const userAPI = {
   unfriend: (userId: string, friendId: string) =>
     api.delete(`/users/${userId}/friends/${friendId}`),
   getAlbum: (userId: string) => api.get(`/posts/album/user/${userId}`),
-  uploadAlbumPhoto: (userId: string, data: { imageData: string; filename: string }) =>
-    api.post(`/posts/album`, data),
+  uploadAlbumPhoto: async (userId: string, data: { imageData: string; filename: string }) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/posts/album`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-token': token || '',
+      },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  },
   deleteAlbumPhoto: (userId: string, photoId: string) =>
     api.delete(`/posts/album/${photoId}`),
   addMatch: (userId: string, matchId: string) =>
     api.post(`/users/${userId}/matches/${matchId}`),
+  blockUser: (userId: string, targetUserId: string) =>
+    api.post(`/users/${userId}/block/${targetUserId}`),
+  unblockUser: (userId: string, targetUserId: string) =>
+    api.post(`/users/${userId}/unblock/${targetUserId}`),
 };
 
 export const notificationAPI = {
@@ -126,24 +172,33 @@ export const chatAPI = {
   getUserChats: (userId: string) => api.get(`/chats/user/${userId}`),
   getChat: (chatId: string) => api.get(`/chats/${chatId}`),
   createChat: (data: any) => api.post('/chats', data),
-  sendMessage: (chatId: string, data: { content: string; isAnonymous?: boolean }) =>
+  sendMessage: (chatId: string, data: { content?: string; isAnonymous?: boolean; replyTo?: string; attachment?: any }) =>
     api.post(`/chats/${chatId}/messages`, data),
+  deleteMessage: (chatId: string, messageId: string) =>
+    api.delete(`/chats/${chatId}/messages/${messageId}`),
   markAsRead: (chatId: string) => api.put(`/chats/${chatId}/read`),
-  uploadAttachment: async (formData: FormData) => {
+  leave: (chatId: string) => api.post(`/chats/${chatId}/leave`),
+  addMember: (chatId: string, userId: string) => api.post(`/chats/${chatId}/members`, { userId }),
+  removeMember: (chatId: string, userId: string) => api.delete(`/chats/${chatId}/members/${userId}`),
+  cancelPendingInvitation: (chatId: string, userId: string) => api.delete(`/chats/${chatId}/pending/${userId}`),
+  clearChat: (chatId: string) => api.post(`/chats/${chatId}/clear`),
+  acceptInvitation: (chatId: string) => api.post(`/chats/${chatId}/accept`),
+  rejectInvitation: (chatId: string) => api.post(`/chats/${chatId}/reject`),
+  uploadAttachment: async (formData: FormData, options?: any) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/chats/upload-attachment`, {
       method: 'POST',
       headers: {
         'x-auth-token': token || '',
+        'Accept': 'application/json',
       },
       body: formData,
     });
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Upload failed:', response.status, errorText);
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-    return { data: await response.json() };
+    const data = await response.json();
+    return { data };
   },
 };
 
@@ -151,7 +206,7 @@ export const postAPI = {
   getPosts: (isAnonymous?: boolean) => api.get('/posts', { params: { isAnonymous } }),
   getUserPosts: (userId: string) => api.get(`/posts/user/${userId}`),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
-  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean }) =>
+  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[] }) =>
     api.post('/posts', data),
   updatePost: (postId: string, data: { content?: string; image?: string; video?: string }) =>
     api.put(`/posts/${postId}`, data),
@@ -161,13 +216,21 @@ export const postAPI = {
     api.post(`/posts/${postId}/like`, {}),
   unlikePost: (postId: string) =>
     api.post(`/posts/${postId}/like`, {}),
-  addComment: (postId: string, data: { content: string; parent?: string; isAnonymous?: boolean }) =>
+  reactPost: (postId: string, data: { reactionType: string }) =>
+    api.post(`/posts/${postId}/react`, data),
+  addComment: (postId: string, data: { content: string; parent?: string; isAnonymous?: boolean; tags?: string[] }) =>
     api.post(`/posts/${postId}/comment`, data),
   likeComment: (postId: string, commentId: string) =>
     api.post(`/posts/${postId}/comment/${commentId}/like`, {}),
+  reactComment: (postId: string, commentId: string, data: { reactionType: string; sticker?: string }) =>
+    api.post(`/posts/${postId}/comment/${commentId}/react`, data),
   deleteComment: (postId: string, commentId: string) =>
     api.delete(`/posts/${postId}/comment/${commentId}`),
   getTrendingPosts: () => api.get('/posts/trending/hot'),
+  favoritePost: (postId: string) => api.post(`/posts/${postId}/favorite`, {}),
+  unfavoritePost: (postId: string) => api.delete(`/posts/${postId}/favorite`),
+  getFavoritePosts: () => api.get('/posts/favorites'),
+  sharePost: (postId: string) => api.post(`/posts/${postId}/share`, {}),
   uploadPostImage: async (formData: FormData) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/posts/upload-image`, {
@@ -228,18 +291,20 @@ export const postAPI = {
   },
 
   searchPosts: (query: string) => api.get('/posts/search', { params: { q: query } }),
+  votePoll: (postId: string, optionIndex: number) => api.post(`/posts/${postId}/vote-poll`, { optionIndex }),
 };
 
 export const storyAPI = {
   getStories: () => api.get('/stories'),
   getUserStories: (userId: string) => api.get(`/stories/user/${userId}`),
   getStory: (storyId: string) => api.get(`/stories/${storyId}`),
-  createStory: (data: { content?: string; image?: string; video?: string }) =>
+  createStory: (data: { content?: string; image?: string; video?: string; tags?: string[] }) =>
     api.post('/stories', data),
   viewStory: (storyId: string) =>
     api.post(`/stories/${storyId}/view`, {}),
   deleteStory: (storyId: string) =>
     api.delete(`/stories/${storyId}`),
+  reactStory: (storyId: string, data: { reactionType: string }) => api.post(`/stories/${storyId}/react`, data),
   uploadStoryImageBase64: async (data: { imageData: string; filename: string }) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/stories/upload-image-base64`, {
@@ -255,18 +320,26 @@ export const storyAPI = {
     }
     return response.json();
   },
+  votePoll: (storyId: string, optionIndex: number) => api.post(`/stories/${storyId}/vote-poll`, { optionIndex }),
 };
 
 export const communityAPI = {
   getAll: () => api.get('/communities'),
+  search: (query: string) => api.get('/communities/search', { params: { q: query } }),
   getCommunity: (communityId: string) => api.get(`/communities/${communityId}`),
   create: (data: { name: string; description: string; image?: string; requiresApproval?: boolean }) =>
     api.post('/communities', data),
   join: (communityId: string) => api.post(`/communities/${communityId}/join`),
+  leave: (communityId: string) => api.post(`/communities/${communityId}/leave`),
   approveMember: (communityId: string, userId: string) =>
     api.post(`/communities/${communityId}/approve/${userId}`),
   rejectMember: (communityId: string, userId: string) =>
     api.post(`/communities/${communityId}/reject/${userId}`),
+  delete: (communityId: string) => api.delete(`/communities/${communityId}`),
+  generateInvite: (communityId: string, data?: { maxUses?: number; expiresIn?: number }) =>
+    api.post(`/communities/${communityId}/invite`, data || {}),
+  getInviteInfo: (inviteToken: string) => api.get(`/communities/invite/${inviteToken}`),
+  joinViaInvite: (inviteToken: string) => api.post(`/communities/join/${inviteToken}`),
   uploadImageBase64: async (data: { imageData: string; filename: string }) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/communities/upload-image-base64`, {

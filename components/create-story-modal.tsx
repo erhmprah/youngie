@@ -1,7 +1,7 @@
 // components/create-story-modal.tsx
 
 import React, { useState } from 'react';
-import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
+import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
@@ -22,6 +22,8 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
     const [content, setContent] = useState('');
     const [image, setImage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [showPoll, setShowPoll] = useState(false);
+    const [pollOptions, setPollOptions] = useState(['Yes', 'No']);
 
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
@@ -48,6 +50,16 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
             return;
         }
 
+        let finalPollOptions = undefined;
+        if (showPoll) {
+            const validOptions = pollOptions.filter(o => o.trim().length > 0);
+            if (validOptions.length < 2) {
+                Alert.alert('Error', 'Poll must have at least 2 options.');
+                return;
+            }
+            finalPollOptions = validOptions.map(opt => ({ text: opt }));
+        }
+
         setIsLoading(true);
         try {
             let uploadedImageUrl = undefined;
@@ -68,11 +80,13 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
                 uploadedImageUrl = uploadResponse.imageUrl;
             }
 
-            await storyAPI.createStory({ content, image: uploadedImageUrl });
+            await storyAPI.createStory({ content, image: uploadedImageUrl, pollOptions: finalPollOptions });
             onCreate();
             onClose();
             setContent('');
             setImage(null);
+            setShowPoll(false);
+            setPollOptions(['Yes', 'No']);
         } catch (error) {
             console.error('Error creating story:', error);
             Alert.alert('Error', 'Failed to create story. Please try again.');
@@ -94,7 +108,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
                     </TouchableOpacity>
                 </View>
 
-                <View style={styles.content}>
+                <ScrollView style={styles.content}>
                     <View style={styles.userInfo}>
                         <Image source={{ uri: user?.profilePhoto || `https://i.pravatar.cc/150?u=${user?._id}` }} style={styles.avatar} />
                         <ThemedText style={{ fontFamily: typography.families.bold }}>{user?.username}</ThemedText>
@@ -107,13 +121,48 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
                         onChangeText={setContent}
                         multiline
                     />
+                    
+                    {showPoll && (
+                        <View style={styles.pollContainer}>
+                            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm}}>
+                                <ThemedText style={{fontWeight: 'bold'}}>Poll</ThemedText>
+                                <TouchableOpacity onPress={() => setShowPoll(false)}>
+                                    <IconSymbol name="x" size={20} color={lightTextColor} />
+                                </TouchableOpacity>
+                            </View>
+                            {pollOptions.map((option, index) => (
+                                <TextInput
+                                    key={index}
+                                    style={[styles.input, styles.pollInput, { color: textColor, borderColor: '#E0E0E0' }]}
+                                    placeholder={`Option ${index + 1}`}
+                                    placeholderTextColor={lightTextColor}
+                                    value={option}
+                                    onChangeText={(text) => {
+                                        const newOptions = [...pollOptions];
+                                        newOptions[index] = text;
+                                        setPollOptions(newOptions);
+                                    }}
+                                />
+                            ))}
+                            {pollOptions.length < 4 && (
+                                <TouchableOpacity onPress={() => setPollOptions([...pollOptions, ''])} style={{marginTop: spacing.xs}}>
+                                    <ThemedText style={{ color: primaryColor }}>+ Add Option</ThemedText>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    )}
+
                     {image && <Image source={{ uri: image }} style={styles.previewImage} />}
-                </View>
+                </ScrollView>
 
                 <View style={styles.actions}>
                     <TouchableOpacity onPress={handlePickImage} style={styles.actionButton}>
                         <IconSymbol name="camera" size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>Photo</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setShowPoll(!showPoll)} style={styles.actionButton}>
+                        <IconSymbol name="chart.bar.fill" size={24} color={primaryColor} />
+                        <ThemedText style={{ color: primaryColor }}>Poll</ThemedText>
                     </TouchableOpacity>
                 </View>
             </ThemedView>
@@ -152,6 +201,17 @@ const styles = StyleSheet.create({
         fontSize: typography.sizes.body1,
         minHeight: 100,
         textAlignVertical: 'top',
+    },
+    pollContainer: {
+        marginTop: spacing.md,
+        padding: spacing.sm,
+        backgroundColor: 'rgba(0,0,0,0.03)',
+        borderRadius: borderRadius.md,
+    },
+    pollInput: {
+        minHeight: 40,
+        marginBottom: spacing.sm,
+        paddingVertical: spacing.sm,
     },
     previewImage: {
         width: '100%',

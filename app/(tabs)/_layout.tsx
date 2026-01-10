@@ -6,6 +6,7 @@ import { StyleSheet } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { ChatTabIcon } from '@/components/chat-tab-icon';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { shadows, typography } from '@/constants/design-tokens';
 
@@ -56,14 +57,7 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: 'Chat',
-          tabBarIcon: ({ color }) => <IconSymbol size={24} name="message.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.fill" color={color} />,
+          tabBarIcon: ({ color }) => <ChatTabIcon color={color} />,
         }}
       />
       <Tabs.Screen
@@ -71,6 +65,13 @@ export default function TabLayout() {
         options={{
           title: 'Video Chat',
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="video.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.fill" color={color} />,
         }}
       />
     </Tabs>

@@ -3,13 +3,16 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 // Register
 router.post('/register', [
   body('username').isLength({ min: 3 }).trim().escape(),
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
-  body('age').isInt({ min: 13, max: 18 }),
+  body('birthYear').isInt({ min: 1997, max: new Date().getFullYear() }),
+  body('gender').isIn(['male', 'female', 'other']),
+  body('location').optional().isString().trim().escape(),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -17,7 +20,7 @@ router.post('/register', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { username, email, password, age } = req.body;
+    const { username, email, password, birthYear, gender, location } = req.body;
 
     // Check if user exists
     let user = await User.findOne({ $or: [{ email }, { username }] });
@@ -30,7 +33,9 @@ router.post('/register', [
       username,
       email,
       password,
-      age,
+      birthYear,
+      gender,
+      location: location || undefined,
       interests: [],
       friends: [],
       matches: [],
@@ -50,7 +55,8 @@ router.post('/register', [
         _id: user._id,
         username: user.username,
         email: user.email,
-        age: user.age,
+        birthYear: user.birthYear,
+        gender: user.gender,
         bio: user.bio,
         location: user.location,
         interests: user.interests,
@@ -59,6 +65,7 @@ router.post('/register', [
         followers: user.followers,
         following: user.following,
         posts: user.posts,
+        suspended: user.suspended,
       },
     });
   } catch (error) {
@@ -102,6 +109,22 @@ router.post('/login', [
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
+    // Check age and suspend if >28
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - user.birthYear;
+    if (age > 28 && !user.suspended) {
+      user.suspended = true;
+      await user.save();
+      // Create suspension notification
+      const notification = new Notification({
+        recipient: user._id,
+        sender: user._id, // Self-notification
+        type: 'suspension',
+        message: 'Your account has been suspended because you are over 28 years old.',
+      });
+      await notification.save();
+    }
+
     // Update last seen
     user.lastSeen = new Date();
     await user.save();
@@ -116,7 +139,8 @@ router.post('/login', [
         _id: user._id,
         username: user.username,
         email: user.email,
-        age: user.age,
+        birthYear: user.birthYear,
+        gender: user.gender,
         bio: user.bio,
         location: user.location,
         interests: user.interests,
@@ -124,7 +148,9 @@ router.post('/login', [
         friends: user.friends,
         followers: user.followers,
         following: user.following,
+        friendRequests: user.friendRequests,
         posts: user.posts,
+        suspended: user.suspended,
       },
     });
   } catch (error) {
@@ -146,6 +172,22 @@ router.get('/me', async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Check age and suspend if >28
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - user.birthYear;
+    if (age > 28 && !user.suspended) {
+      user.suspended = true;
+      await user.save();
+      // Create suspension notification
+      const notification = new Notification({
+        recipient: user._id,
+        sender: user._id, // Self-notification
+        type: 'suspension',
+        message: 'Your account has been suspended because you are over 28 years old.',
+      });
+      await notification.save();
     }
 
     res.json(user);

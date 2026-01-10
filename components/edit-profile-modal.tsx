@@ -1,7 +1,7 @@
 // components/edit-profile-modal.tsx
 
 import React, { useState } from 'react';
-import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Switch } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -20,6 +20,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
     const [bio, setBio] = useState(initialData?.bio || '');
     const [location, setLocation] = useState(initialData?.location || '');
     const [interests, setInterests] = useState((initialData?.interests || []).join(', '));
+    const [isPrivate, setIsPrivate] = useState(initialData?.isPrivate || false);
     const [isLoading, setIsLoading] = useState(false);
 
     const backgroundColor = useThemeColor('background');
@@ -38,6 +39,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                 bio,
                 location,
                 interests: interests.split(',').map(s => s.trim()).filter(Boolean),
+                isPrivate,
             });
             onClose();
         } catch (error) {
@@ -104,6 +106,20 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                         />
                          <ThemedText style={{fontSize: typography.sizes.caption, color: lightTextColor}}>Separate interests with a comma</ThemedText>
                     </View>
+                    <View style={styles.inputContainer}>
+                        <View style={styles.switchRow}>
+                            <ThemedText style={styles.label}>Private Profile</ThemedText>
+                            <Switch
+                                value={isPrivate}
+                                onValueChange={setIsPrivate}
+                                trackColor={{ false: inputBackgroundColor, true: primaryColor }}
+                                thumbColor={white}
+                            />
+                        </View>
+                        <ThemedText style={{ fontSize: typography.sizes.caption, color: lightTextColor }}>
+                            When your profile is private, only people you approve can see your posts and stories. Existing followers won't be affected.
+                        </ThemedText>
+                    </View>
                 </ScrollView>
             </ThemedView>
         </Modal>
@@ -142,5 +158,11 @@ const styles = StyleSheet.create({
     bioInput: {
         minHeight: 100,
         textAlignVertical: 'top',
+    },
+    switchRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: spacing.xs,
     },
 });
