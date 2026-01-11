@@ -8,7 +8,7 @@ import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
-import { storyAPI } from '@/utils/api';
+import { storyAPI, getImageUrl } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface CreateStoryModalProps {
@@ -110,7 +110,13 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
 
                 <ScrollView style={styles.content}>
                     <View style={styles.userInfo}>
-                        <Image source={{ uri: user?.profilePhoto || `https://i.pravatar.cc/150?u=${user?._id}` }} style={styles.avatar} />
+                        {user?.profilePhoto || user?.avatar ? (
+                            <Image source={{ uri: getImageUrl(user?.profilePhoto || user?.avatar) }} style={styles.avatar} />
+                        ) : (
+                            <View style={[styles.avatar, { backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'center', alignItems: 'center' }]}>
+                                <IconSymbol name="person.fill" size={20} color={textColor} />
+                            </View>
+                        )}
                         <ThemedText style={{ fontFamily: typography.families.bold }}>{user?.username}</ThemedText>
                     </View>
                     <TextInput

@@ -48,10 +48,9 @@ const PostSchema = new mongoose.Schema(
             },
             type: {
               type: String,
-              enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire', 'sticker'],
+              enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire'],
               default: 'like',
             },
-            sticker: String, // Optional sticker URL or identifier
             createdAt: {
               type: Date,
               default: Date.now,

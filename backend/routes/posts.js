@@ -209,12 +209,18 @@ router.get('/', auth, async (req, res) => {
 
     let query;
     if (isAnonymousFeed) {
-      query = { isAnonymous: true };
+      query = {
+        $and: [
+          { isAnonymous: true },
+          { author: { $nin: user.mutedUsers || [] } } // Exclude muted users
+        ]
+      };
     } else {
       query = {
         $and: [
           { $or: queryConditions },
-          { isAnonymous: { $ne: true } }
+          { isAnonymous: { $ne: true } },
+          { author: { $nin: user.mutedUsers || [] } } // Exclude muted users
         ]
       };
     }
@@ -920,7 +926,7 @@ router.post('/:postId/comment', auth, async (req, res) => {
 // React to a comment
 router.post('/:postId/comment/:commentId/react', auth, async (req, res) => {
   try {
-    const { reactionType = 'like', sticker } = req.body;
+    const { reactionType = 'like' } = req.body;
 
     const post = await Post.findById(req.params.postId);
     if (!post) {
@@ -942,7 +948,6 @@ router.post('/:postId/comment/:commentId/react', auth, async (req, res) => {
       comment.reactions.push({
         user: userId,
         type: reactionType,
-        sticker: reactionType === 'sticker' ? sticker : undefined,
       });
 
       // Create notification if not reacting to own comment

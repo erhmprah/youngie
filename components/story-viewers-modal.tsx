@@ -102,8 +102,10 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
 
     return (
         <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
-             <View style={styles.overlay}>
-                <ThemedView style={[styles.container, { backgroundColor }]}>
+              <TouchableOpacity style={styles.overlay} onPress={onClose} activeOpacity={1}>
+                <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                  <TouchableOpacity onPress={() => {}} activeOpacity={1}>
+                    <ThemedView style={[styles.container, { backgroundColor }]}>
                     <View style={styles.header}>
                         <ThemedText style={[styles.title, { color: textColor }]}>
                             Viewers & Reactions
@@ -179,8 +181,10 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
                             </View>
                         }
                     />
-                </ThemedView>
-             </View>
+                   </ThemedView>
+                 </TouchableOpacity>
+               </View>
+             </TouchableOpacity>
         </Modal>
     );
 }
@@ -254,7 +258,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: spacing.sm,
         paddingVertical: 4,
-        borderRadius: borderRadius.full,
+        borderRadius: borderRadius.round,
         gap: 4,
     },
     reactionCount: {

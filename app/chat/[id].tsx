@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert } from 'react-native';
+import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, Audio, ResizeMode, AVPlaybackStatus } from 'expo-av';
@@ -43,6 +43,7 @@ interface Message {
      url: string;
      type: string;
      size: number;
+     duration?: number;
    } | string;
    isSending?: boolean;
    sendError?: boolean;
@@ -1217,6 +1218,7 @@ export default function ChatScreen() {
               )}
             </TouchableOpacity>
           </View>
+
         </ThemedView>
       </KeyboardAvoidingView>
 

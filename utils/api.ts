@@ -159,12 +159,16 @@ export const userAPI = {
     api.post(`/users/${userId}/block/${targetUserId}`),
   unblockUser: (userId: string, targetUserId: string) =>
     api.post(`/users/${userId}/unblock/${targetUserId}`),
+  getMutedUsers: () => api.get('/users/muted'),
+  muteUser: (userId: string) => api.post(`/users/mute/${userId}`),
+  unmuteUser: (userId: string) => api.post(`/users/unmute/${userId}`),
 };
 
 export const notificationAPI = {
   getNotifications: () => api.get('/notifications'),
   markAsRead: (notificationId: string) => api.put(`/notifications/${notificationId}/read`),
   markAllAsRead: () => api.put('/notifications/read-all'),
+  clearAll: () => api.delete('/notifications'),
   getUnreadCount: () => api.get('/notifications/unread-count'),
 };
 
@@ -218,11 +222,11 @@ export const postAPI = {
     api.post(`/posts/${postId}/like`, {}),
   reactPost: (postId: string, data: { reactionType: string }) =>
     api.post(`/posts/${postId}/react`, data),
-  addComment: (postId: string, data: { content: string; parent?: string; isAnonymous?: boolean; tags?: string[] }) =>
+  addComment: (postId: string, data: { content?: string; parent?: string; isAnonymous?: boolean; tags?: string[] }) =>
     api.post(`/posts/${postId}/comment`, data),
   likeComment: (postId: string, commentId: string) =>
     api.post(`/posts/${postId}/comment/${commentId}/like`, {}),
-  reactComment: (postId: string, commentId: string, data: { reactionType: string; sticker?: string }) =>
+  reactComment: (postId: string, commentId: string, data: { reactionType: string }) =>
     api.post(`/posts/${postId}/comment/${commentId}/react`, data),
   deleteComment: (postId: string, commentId: string) =>
     api.delete(`/posts/${postId}/comment/${commentId}`),
@@ -298,13 +302,18 @@ export const storyAPI = {
   getStories: () => api.get('/stories'),
   getUserStories: (userId: string) => api.get(`/stories/user/${userId}`),
   getStory: (storyId: string) => api.get(`/stories/${storyId}`),
-  createStory: (data: { content?: string; image?: string; video?: string; tags?: string[] }) =>
+  createStory: (data: { content?: string; image?: string; video?: string; tags?: string[]; pollOptions?: { text: string }[] }) =>
     api.post('/stories', data),
   viewStory: (storyId: string) =>
     api.post(`/stories/${storyId}/view`, {}),
   deleteStory: (storyId: string) =>
     api.delete(`/stories/${storyId}`),
   reactStory: (storyId: string, data: { reactionType: string }) => api.post(`/stories/${storyId}/react`, data),
+  muteUser: (userId: string) =>
+    api.post(`/stories/mute/${userId}`, {}),
+  unmuteUser: (userId: string) =>
+    api.post(`/stories/unmute/${userId}`, {}),
+  getMutedUsers: () => api.get('/stories/muted/list'),
   uploadStoryImageBase64: async (data: { imageData: string; filename: string }) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/stories/upload-image-base64`, {

@@ -138,6 +138,7 @@ export default function TestingScreen() {
     return `Added comment to post: ${postId}`;
   }
 
+
   async function testDeletePost() {
     // Create and delete a test post
     const createRes = await postAPI.createPost({
@@ -198,11 +199,11 @@ export default function TestingScreen() {
     if (!chatsRes.data?.length) throw new Error('No chats found');
     const chatId = chatsRes.data[0]._id;
     await chatAPI.sendMessage(chatId, {
-      sender: user._id,
       content: `Test message at ${new Date().toISOString()}`,
     });
     return `Sent message to chat: ${chatId}`;
   }
+
 
   async function testGetStories() {
     const response = await storyAPI.getStories();

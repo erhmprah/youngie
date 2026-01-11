@@ -18,6 +18,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { postAPI, storyAPI, getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { getSocket } from '@/utils/socket';
 
 interface User {
     _id: string;
@@ -57,6 +58,8 @@ interface Story {
     viewers: Array<{ user: User; viewedAt: string }>;
     createdAt: string;
     expiresAt: string;
+    pollOptions?: { text: string; votes: string[] }[];
+    reactions?: Array<{ user: User; type: string }>;
 }
 
 interface StoryGroup {
@@ -67,7 +70,7 @@ interface StoryGroup {
 }
 
 export default function FeedScreen() {
-    const { user } = useAuth();
+    const { user, isSignedIn } = useAuth();
     const router = useRouter();
     const { postId } = useLocalSearchParams();
     
@@ -75,6 +78,9 @@ export default function FeedScreen() {
     const [stories, setStories] = useState<StoryGroup[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [postsPage, setPostsPage] = useState(1);
+    const [hasMorePosts, setHasMorePosts] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -116,9 +122,55 @@ export default function FeedScreen() {
         }
     }, [isIncognito]);
 
+    const fetchFeedIfLoggedIn = useCallback(async () => {
+        if (isSignedIn) {
+            await fetchData();
+        } else {
+            // Clear data when not logged in
+            setPosts([]);
+            setStories([]);
+            setIsLoading(false);
+            setIsRefreshing(false);
+        }
+    }, [isSignedIn, fetchData]);
+
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        fetchFeedIfLoggedIn();
+    }, [fetchFeedIfLoggedIn]);
+
+    // Listen for story updates via socket
+    useEffect(() => {
+        const socket = getSocket();
+        if (!socket) return;
+
+        const handleStoryUpdate = (updatedStory: Story) => {
+            setStories(prevStories =>
+                prevStories.map(group => {
+                    if (group.stories.some(s => s._id === updatedStory._id)) {
+                        const updatedStories = group.stories.map(s => s._id === updatedStory._id ? updatedStory : s);
+                        // Recalculate allViewed
+                        const allViewed = updatedStories.every(story => {
+                            const isAuthor = story.author._id === user?._id;
+                            if (isAuthor) return true;
+                            return story.viewers.some(viewer => viewer.user._id === user?._id);
+                        });
+                        return {
+                            ...group,
+                            stories: updatedStories,
+                            allViewed
+                        };
+                    }
+                    return group;
+                })
+            );
+        };
+
+        socket.on('story:updated', handleStoryUpdate);
+
+        return () => {
+            socket.off('story:updated', handleStoryUpdate);
+        };
+    }, [user?._id]);
 
     useEffect(() => {
         if (postId && posts.length > 0 && flatListRef.current) {
@@ -142,7 +194,7 @@ export default function FeedScreen() {
 
     const onRefresh = () => {
         setIsRefreshing(true);
-        fetchData();
+        fetchFeedIfLoggedIn();
     };
 
     const handleLikePost = async (postId: string) => {
@@ -178,6 +230,50 @@ export default function FeedScreen() {
         setShowStoryViewer(true);
     };
 
+    const handleStoryViewed = (storyId: string) => {
+        setStories(prevStories =>
+            prevStories.map(group => {
+                const storyIndex = group.stories.findIndex(s => s._id === storyId);
+                if (storyIndex !== -1) {
+                    const updatedStories = [...group.stories];
+                    const story = updatedStories[storyIndex];
+                    
+                    const isAlreadyViewed = story.viewers?.some(v => v.user?._id === user?._id);
+
+                    if (user && !isAlreadyViewed) {
+                         updatedStories[storyIndex] = {
+                            ...story,
+                            viewers: [
+                                ...(story.viewers || []),
+                                { 
+                                    user: { 
+                                        _id: user._id, 
+                                        username: user.username, 
+                                        profilePhoto: user.profilePhoto,
+                                        avatar: user.avatar 
+                                    }, 
+                                    viewedAt: new Date().toISOString() 
+                                }
+                            ]
+                        };
+                    }
+
+                    const allViewed = updatedStories.every(s => {
+                        if (s.author._id === user?._id) return true;
+                        return s.viewers?.some(v => v.user?._id === user?._id);
+                    });
+
+                    return {
+                        ...group,
+                        stories: updatedStories,
+                        allViewed
+                    };
+                }
+                return group;
+            })
+        );
+    };
+
     const viewabilityConfig = useRef({
         itemVisiblePercentThreshold: 50,
     }).current;
@@ -189,50 +285,94 @@ export default function FeedScreen() {
     }, []);
 
     const renderHeader = () => {
-        const yourStoryItem: StoryGroup = {
-            user: user ? { _id: user._id, username: 'Your Story', profilePhoto: user.profilePhoto } : { _id: '', username: 'Your Story' },
-            stories: [],
-            allViewed: true,
-            isYourStory: true,
-        };
-        const allStories = [yourStoryItem, ...stories];
+        let allStories = [...stories];
+        const userGroupIndex = allStories.findIndex(group => group.user._id === user?._id);
+        if (userGroupIndex !== -1) {
+            allStories[userGroupIndex].isYourStory = true;
+            allStories[userGroupIndex].user.username = 'Your Story';
+        } else {
+            const yourStoryItem: StoryGroup = {
+                user: user ? { _id: user._id, username: 'Your Story', profilePhoto: user.profilePhoto } : { _id: '', username: 'Your Story' },
+                stories: [],
+                allViewed: true,
+                isYourStory: true,
+            };
+            allStories.unshift(yourStoryItem);
+        }
+
+        const renderAvatar = (user: User) => (
+            <View style={[styles.storyAvatarContainer, { backgroundColor: surfaceColor }]}>
+                {user.profilePhoto ? (
+                    <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.storyAvatar} />
+                ) : (
+                    <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
+                        <IconSymbol name="person.fill" size={30} color={lightTextColor} />
+                    </View>
+                )}
+            </View>
+        );
 
         return (
             <View style={[styles.storiesContainer, { borderBottomColor: borderColor }]}>
                 <FlatList
                     data={allStories}
-                    renderItem={({ item, index }) => (
-                        item.isYourStory ? (
-                            <TouchableOpacity style={styles.storyItem} onPress={() => setShowCreateStoryModal(true)}>
-                                <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
-                                    {item.user.profilePhoto ? (
-                                        <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.storyAvatar} />
-                                    ) : (
-                                        <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
-                                            <IconSymbol name="person.fill" size={30} color={lightTextColor} />
-                                        </View>
-                                    )}
-                                    <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
-                                        <IconSymbol name="plus" size={12} color={white} />
+                    renderItem={({ item, index }) => {
+                        if (item.isYourStory) {
+                            if (item.stories.length > 0) {
+                                // Render user's stories with add button
+                                return (
+                                    <View style={styles.storyItem}>
+                                        <TouchableOpacity onPress={() => handleStoryPress(index)}>
+                                            <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
+                                                {renderAvatar(item.user)}
+                                            </View>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]} onPress={() => setShowCreateStoryModal(true)}>
+                                            <IconSymbol name="plus" size={12} color={white} />
+                                        </TouchableOpacity>
+                                        <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
                                     </View>
-                                </View>
-                                <ThemedText style={styles.storyUsername}>{item.user.username}</ThemedText>
-                            </TouchableOpacity>
-                        ) : (
-                            <TouchableOpacity style={styles.storyItem} onPress={() => handleStoryPress(index - 1)}>
-                                <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
-                                    {item.user.profilePhoto ? (
-                                        <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.storyAvatar} />
+                                );
+                            } else {
+                                // Render create story button
+                                return (
+                                    <TouchableOpacity style={styles.storyItem} onPress={() => setShowCreateStoryModal(true)}>
+                                        <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
+                                            {renderAvatar(item.user)}
+                                            <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
+                                                <IconSymbol name="plus" size={12} color={white} />
+                                            </View>
+                                        </View>
+                                        <ThemedText style={styles.storyUsername}>{item.user.username}</ThemedText>
+                                    </TouchableOpacity>
+                                );
+                            }
+                        } else {
+                            // Render other users' stories
+                            const isUnviewed = !item.allViewed;
+                            return (
+                                <TouchableOpacity style={styles.storyItem} onPress={() => handleStoryPress(index)}>
+                                    {isUnviewed ? (
+                                        <LinearGradient
+                                            colors={[primaryColor, '#d62976', '#fa7e1e']}
+                                            start={{ x: 0, y: 1 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={[styles.storyRing, { borderWidth: 0, padding: 2.5 }]}
+                                        >
+                                            <View style={[styles.storyAvatarGap, { backgroundColor }]}>
+                                                {renderAvatar(item.user)}
+                                            </View>
+                                        </LinearGradient>
                                     ) : (
-                                        <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
-                                            <IconSymbol name="person.fill" size={30} color={lightTextColor} />
+                                        <View style={[styles.storyRing, { borderColor: lightTextColor }]}>
+                                            {renderAvatar(item.user)}
                                         </View>
                                     )}
-                                </View>
-                                <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
-                            </TouchableOpacity>
-                        )
-                    )}
+                                    <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
+                                </TouchableOpacity>
+                            );
+                        }
+                    }}
                     keyExtractor={(item) => item.isYourStory ? 'your-story' : item.user._id}
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -311,9 +451,9 @@ export default function FeedScreen() {
                     </LinearGradient>
                 </TouchableOpacity>
                 
-                <CreatePostModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} onPost={fetchData} initialAnonymous={isIncognito} />
-                <CreateStoryModal visible={showCreateStoryModal} onClose={() => setShowCreateStoryModal(false)} onCreate={fetchData} />
-                <StoryViewer visible={showStoryViewer} onClose={() => setShowStoryViewer(false)} storyGroups={stories} initialGroupIndex={selectedStoryGroupIndex} onStoryDeleted={fetchData} />
+                <CreatePostModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} onPost={fetchFeedIfLoggedIn} initialAnonymous={isIncognito} />
+                <CreateStoryModal visible={showCreateStoryModal} onClose={() => setShowCreateStoryModal(false)} onCreate={fetchFeedIfLoggedIn} />
+                <StoryViewer visible={showStoryViewer} onClose={() => setShowStoryViewer(false)} storyGroups={stories} initialGroupIndex={selectedStoryGroupIndex} onStoryDeleted={fetchFeedIfLoggedIn} onStoryViewed={handleStoryViewed} />
                 <CommentModal visible={showCommentModal} onClose={() => setShowCommentModal(false)} post={selectedPostForComments} initialAnonymous={isIncognito} />
             </ThemedView>
         </SafeAreaView>
@@ -360,17 +500,32 @@ const styles = StyleSheet.create({
         width: 70,
     },
     storyRing: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: 68,
+        height: 68,
+        borderRadius: 34,
         borderWidth: 2,
         padding: 2,
         marginBottom: spacing.xs,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    storyAvatarGap: {
+        flex: 1,
+        width: '100%',
+        borderRadius: 32,
+        padding: 2,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    storyAvatarContainer: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 30,
+        overflow: 'hidden',
     },
     storyAvatar: {
         width: '100%',
         height: '100%',
-        borderRadius: 30,
     },
     storyUsername: {
         fontSize: typography.sizes.caption,
@@ -386,6 +541,7 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         justifyContent: 'center',
         alignItems: 'center',
+        zIndex: 1,
     },
     fab: {
         position: 'absolute',

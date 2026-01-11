@@ -1,12 +1,12 @@
 // components/story-viewer.tsx
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal, StyleSheet, View, Image, TouchableOpacity, Dimensions, Animated, Easing, Alert } from 'react-native';
+import { Modal, StyleSheet, View, Image, TouchableOpacity, Dimensions, Animated, Easing, Alert, TouchableWithoutFeedback } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
-import { PollView } from './poll-view';
+import { PollView, PollOption } from './poll-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
@@ -48,11 +48,12 @@ interface StoryViewerProps {
     storyGroups: StoryGroup[];
     initialGroupIndex: number;
     onStoryDeleted?: () => void;
+    onStoryViewed?: (storyId: string) => void;
 }
 
 const { width, height } = Dimensions.get('window');
 
-export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, onStoryDeleted }: StoryViewerProps) {
+export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, onStoryDeleted, onStoryViewed }: StoryViewerProps) {
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
     const router = useRouter();
@@ -60,10 +61,25 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
     const [showReactions, setShowReactions] = useState(false);
     const [showViewersModal, setShowViewersModal] = useState(false);
+    const [currentPollOptions, setCurrentPollOptions] = useState<PollOption[]>([]);
     const progressAnim = useRef(new Animated.Value(0)).current;
+    const currentValueRef = useRef(0);
 
     const group = storyGroups[currentGroupIndex];
     const story = group?.stories[currentStoryIndex];
+
+    useEffect(() => {
+        setCurrentPollOptions(story?.pollOptions || []);
+    }, [story?.pollOptions]);
+
+    useEffect(() => {
+        const listener = progressAnim.addListener(({ value }) => {
+            currentValueRef.current = value;
+        });
+        return () => {
+            progressAnim.removeListener(listener);
+        };
+    }, [progressAnim]);
 
     const primaryColor = useThemeColor('primary');
     const white = useThemeColor('white');
@@ -71,12 +87,21 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
     const isOwnStory = story && user && story.author._id === user._id;
 
-    const startProgressAnimation = useCallback(() => {
+    const handlePressIn = () => {
+        progressAnim.stopAnimation();
+    };
+
+    const handlePressOut = () => {
+        startProgressAnimation(currentValueRef.current);
+    };
+
+    const startProgressAnimation = useCallback((fromValue?: number) => {
         if (showReactions || showViewersModal) return; // Pause when reacting or viewing viewers
-        progressAnim.setValue(0);
+        const startValue = fromValue !== undefined ? fromValue : 0;
+        progressAnim.setValue(startValue);
         Animated.timing(progressAnim, {
             toValue: 1,
-            duration: 5000, // 5 seconds per story
+            duration: (1 - startValue) * 5000, // remaining time
             easing: Easing.linear,
             useNativeDriver: false,
         }).start(({ finished }) => {
@@ -90,11 +115,22 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         if (visible && story) {
             // Mark as viewed if not already viewed
             if (user && !story.viewers?.some(v => v.user._id === user._id)) {
-                 storyAPI.viewStory(story._id).catch(() => {});
+                 storyAPI.viewStory(story._id).then(() => {
+                     onStoryViewed?.(story._id);
+                 }).catch(() => {});
             }
-            startProgressAnimation();
+            if (showReactions || showViewersModal) {
+                progressAnim.stopAnimation();
+            } else {
+                startProgressAnimation();
+            }
         }
-    }, [visible, story, startProgressAnimation, showReactions, showViewersModal, user]);
+    }, [visible, story, startProgressAnimation, showReactions, showViewersModal, user, progressAnim, onStoryViewed]);
+
+    // Reset viewers modal when story changes or viewer is closed
+    useEffect(() => {
+        setShowViewersModal(false);
+    }, [currentStoryIndex, currentGroupIndex, visible]);
 
     const handleNextStory = () => {
         if (group && currentStoryIndex < group.stories.length - 1) {
@@ -148,6 +184,33 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         );
     };
 
+    const handleMuteUser = () => {
+        if (!group) return;
+        
+        Alert.alert(
+            `Mute ${group.user.username}?`,
+            "You won't see their stories in your feed anymore.",
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Mute',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await storyAPI.muteUser(group.user._id);
+                            Alert.alert('Success', `Muted ${group.user.username}'s stories`);
+                            onClose();
+                            onStoryDeleted?.(); // Refresh feed
+                        } catch (error) {
+                            console.error('Failed to mute user:', error);
+                            Alert.alert('Error', 'Failed to mute user.');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleReaction = async (type: ReactionType) => {
         setShowReactions(false);
         try {
@@ -160,108 +223,118 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
     if (!group || !story) return null;
 
+    const storyContent = (
+        <ThemedView style={styles.container}>
+            {/* Story Media */}
+            {story.image && <Image source={{ uri: getImageUrl(story.image) }} style={styles.media} />}
+            {story.video && getImageUrl(story.video) && (
+                <Video
+                    source={{ uri: getImageUrl(story.video)! }}
+                    style={styles.media}
+                    shouldPlay
+                    isLooping
+                    resizeMode={ResizeMode.COVER}
+                />
+            )}
+            {story.content && (
+                <View style={styles.contentOverlay}>
+                    <ThemedText style={styles.storyContentText}>{story.content}</ThemedText>
+                </View>
+            )}
+
+            {/* Progress Indicators */}
+            <View style={[styles.progressContainer, { top: insets.top + spacing.sm }]}>
+                {group.stories.map((_, index) => (
+                    <View key={index} style={styles.progressBarBackground}>
+                        {index === currentStoryIndex && (
+                            <Animated.View style={[styles.progressBarFill, { width: progressAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['0%', '100%'],
+                            }) }]} />
+                        )}
+                        {index < currentStoryIndex && <View style={[styles.progressBarFill, { width: '100%' }]} />}
+                    </View>
+                ))}
+            </View>
+
+            {/* User Info */}
+            <View style={[styles.userInfoContainer, { top: insets.top + spacing.xl }]}>
+                <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                    onPress={() => {
+                        onClose();
+                        router.push(`/user/${group.user._id}`);
+                    }}
+                >
+                    <Image source={{ uri: getImageUrl(group.user.profilePhoto) }} style={styles.avatar} />
+                    <ThemedText style={styles.username}>{group.user.username}</ThemedText>
+                </TouchableOpacity>
+                <ThemedText style={styles.time}>{getRelativeTime(story.createdAt)}</ThemedText>
+                {!isOwnStory && (
+                    <TouchableOpacity onPress={handleMuteUser} style={styles.moreButton}>
+                        <IconSymbol name="ellipsis" size={24} color={white} />
+                    </TouchableOpacity>
+                )}
+                {isOwnStory && (
+                    <TouchableOpacity onPress={handleDeleteStory} style={styles.deleteButton}>
+                        <IconSymbol name="trash" size={20} color={white} />
+                    </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                    <IconSymbol name="x" size={24} color={white} />
+                </TouchableOpacity>
+            </View>
+
+            {/* Navigation Gestures */}
+            <View style={styles.navigationOverlay}>
+                <TouchableOpacity style={styles.navButton} onPress={handlePrevStory} />
+                <TouchableOpacity style={styles.navButton} onPress={handleNextStory} />
+            </View>
+
+            {/* Poll */}
+            {currentPollOptions && currentPollOptions.length > 0 && (
+                <View style={styles.pollContainer}>
+                    <PollView
+                        postId={story._id}
+                        options={currentPollOptions}
+                        voteAPI={storyAPI.votePoll}
+                        onVote={setCurrentPollOptions}
+                    />
+                </View>
+            )}
+
+            {isOwnStory && (
+                <TouchableOpacity
+                    style={[styles.viewersButton, { paddingBottom: insets.bottom + spacing.md }]}
+                    onPress={() => setShowViewersModal(true)}
+                >
+                    <IconSymbol name="eye.fill" size={24} color={white} />
+                    <ThemedText style={styles.viewersCount}>
+                        {story.viewers?.length || 0}
+                    </ThemedText>
+                </TouchableOpacity>
+            )}
+        </ThemedView>
+    );
+
     return (
         <Modal visible={visible} animationType="fade" transparent={true} onRequestClose={onClose}>
-            <ThemedView style={styles.container}>
-                {/* Story Media */}
-                {story.image && <Image source={{ uri: getImageUrl(story.image) }} style={styles.media} />}
-                {story.video && getImageUrl(story.video) && (
-                    <Video
-                        source={{ uri: getImageUrl(story.video)! }}
-                        style={styles.media}
-                        shouldPlay
-                        isLooping
-                        resizeMode={ResizeMode.COVER}
-                    />
-                )}
-                {story.content && (
-                    <View style={styles.contentOverlay}>
-                        <ThemedText style={styles.storyContentText}>{story.content}</ThemedText>
-                    </View>
-                )}
-
-                {/* Progress Indicators */}
-                <View style={[styles.progressContainer, { top: insets.top + spacing.sm }]}>
-                    {group.stories.map((_, index) => (
-                        <View key={index} style={styles.progressBarBackground}>
-                            {index === currentStoryIndex && (
-                                <Animated.View style={[styles.progressBarFill, { width: progressAnim.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: ['0%', '100%'],
-                                }) }]} />
-                            )}
-                            {index < currentStoryIndex && <View style={[styles.progressBarFill, { width: '100%' }]} />}
-                        </View>
-                    ))}
-                </View>
-
-                {/* User Info */}
-                <View style={[styles.userInfoContainer, { top: insets.top + spacing.xl }]}>
-                    <TouchableOpacity 
-                        style={{ flexDirection: 'row', alignItems: 'center' }}
-                        onPress={() => {
-                            onClose();
-                            router.push(`/user/${group.user._id}`);
-                        }}
-                    >
-                        <Image source={{ uri: getImageUrl(group.user.profilePhoto) }} style={styles.avatar} />
-                        <ThemedText style={styles.username}>{group.user.username}</ThemedText>
-                    </TouchableOpacity>
-                    <ThemedText style={styles.time}>{getRelativeTime(story.createdAt)}</ThemedText>
-                    {isOwnStory && (
-                        <TouchableOpacity onPress={handleDeleteStory} style={styles.deleteButton}>
-                            <IconSymbol name="trash" size={20} color={white} />
-                        </TouchableOpacity>
-                    )}
-                    <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                        <IconSymbol name="x" size={24} color={white} />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Poll */}
-                {story.pollOptions && story.pollOptions.length > 0 && (
-                    <View style={styles.pollContainer}>
-                        <PollView
-                            postId={story._id}
-                            options={story.pollOptions}
-                            voteAPI={storyAPI.votePoll}
-                            onVote={(updatedOptions) => {
-                                // Update the story with new poll options
-                                // Since stories are refreshed, this might not be necessary
-                            }}
-                        />
-                    </View>
-                )}
-
-                {/* Navigation Gestures */}
-                <View style={styles.navigationOverlay}>
-                    <TouchableOpacity style={styles.navButton} onPress={handlePrevStory} />
-                    <TouchableOpacity style={styles.navButton} onPress={handleNextStory} />
-                </View>
-
-                {isOwnStory && (
-                    <TouchableOpacity 
-                        style={[styles.viewersButton, { paddingBottom: insets.bottom + spacing.md }]}
-                        onPress={() => setShowViewersModal(true)}
-                    >
-                        <IconSymbol name="eye.fill" size={24} color={white} />
-                        <ThemedText style={styles.viewersCount}>
-                            {story.viewers?.length || 0}
-                        </ThemedText>
-                    </TouchableOpacity>
-                )}
-            </ThemedView>
+            {showViewersModal || showReactions ? storyContent : (
+                <TouchableWithoutFeedback onPressIn={handlePressIn} onPressOut={handlePressOut}>
+                    {storyContent}
+                </TouchableWithoutFeedback>
+            )}
 
             {/* Reaction Controls */}
             {!isOwnStory && (
                 <View style={[styles.footerControls, { paddingBottom: insets.bottom + spacing.md }]}>
                     {showReactions ? (
-                        <ReactionPicker 
-                            onSelect={handleReaction} 
-                            onClose={() => setShowReactions(false)} 
+                        <ReactionPicker
+                            onSelect={handleReaction}
+                            onClose={() => setShowReactions(false)}
                         />
                     ) : (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.reactButton}
                             onPress={() => setShowReactions(true)}
                         >
@@ -356,6 +429,11 @@ const styles = StyleSheet.create({
         fontSize: typography.sizes.caption,
         marginLeft: spacing.sm,
         opacity: 0.8,
+    },
+    moreButton: {
+        position: 'absolute',
+        right: spacing.md + 40,
+        padding: spacing.xs,
     },
     deleteButton: {
         position: 'absolute',

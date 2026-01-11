@@ -22,6 +22,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Initialize Passport and session
+const passport = require('passport');
+const session = require('express-session');
+
+app.use(
+  session({
+    secret: process.env.JWT_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production' },
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Attach Socket.IO to request object
 app.use((req, res, next) => {
   req.io = io;
@@ -45,6 +60,9 @@ const connectDB = async () => {
 };
 
 connectDB();
+
+// Initialize Passport
+require('./config/passport');
 
 // Import Routes
 const authRoutes = require('./routes/auth');

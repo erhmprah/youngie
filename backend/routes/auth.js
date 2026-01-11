@@ -22,13 +22,11 @@ router.post('/register', [
 
     const { username, email, password, birthYear, gender, location } = req.body;
 
-    // Check if user exists
     let user = await User.findOne({ $or: [{ email }, { username }] });
     if (user) {
       return res.status(400).json({ msg: 'User already exists' });
     }
 
-    // Create new user
     user = new User({
       username,
       email,
@@ -36,20 +34,16 @@ router.post('/register', [
       birthYear,
       gender,
       location: location || undefined,
-      interests: [],
-      friends: [],
-      matches: [],
-      followers: [],
-      following: [],
     });
 
     await user.save();
 
-    // Create JWT token
+    // Auto-login after registration
     const payload = { userId: user._id };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-    res.json({
+    res.status(201).json({
+      msg: 'Registration successful. You are now logged in.',
       token,
       user: {
         _id: user._id,
@@ -68,6 +62,7 @@ router.post('/register', [
         suspended: user.suspended,
       },
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
@@ -80,35 +75,23 @@ router.post('/login', [
   body('password').exists(),
 ], async (req, res) => {
   try {
-    console.log('Login attempt for email:', req.body.email);
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      console.log('Validation errors:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
     const { email, password } = req.body;
-    console.log('Entered email:', email);
-    console.log('Entered password length:', password.length);
 
-    // Find user
     const user = await User.findOne({ email }).select('+password');
-    console.log('User found:', !!user);
     if (!user) {
-      console.log('No user found with email:', email);
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
-    console.log('User email in DB:', user.email);
-    console.log('User password hash exists:', !!user.password);
 
-    // Check password
     const isMatch = await user.comparePassword(password);
-    console.log('Password match:', isMatch);
     if (!isMatch) {
-      console.log('Password does not match for user:', email);
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
-
+    
     // Check age and suspend if >28
     const currentYear = new Date().getFullYear();
     const age = currentYear - user.birthYear;
@@ -129,7 +112,6 @@ router.post('/login', [
     user.lastSeen = new Date();
     await user.save();
 
-    // Create JWT token
     const payload = { userId: user._id };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
@@ -148,7 +130,6 @@ router.post('/login', [
         friends: user.friends,
         followers: user.followers,
         following: user.following,
-        friendRequests: user.friendRequests,
         posts: user.posts,
         suspended: user.suspended,
       },
@@ -158,6 +139,7 @@ router.post('/login', [
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // Get current user
 router.get('/me', async (req, res) => {
@@ -230,5 +212,6 @@ router.get('/check-email/:email', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 module.exports = router;

@@ -1,5 +1,3 @@
-// app/signup.tsx
-
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -11,7 +9,6 @@ import { authAPI } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-
 
 export default function SignupScreen() {
   const [username, setUsername] = useState('');
@@ -35,10 +32,10 @@ export default function SignupScreen() {
   const primaryColor = useThemeColor('primary');
   const textColor = useThemeColor('text');
   const lightTextColor = useThemeColor('lightText');
+  const successColor = useThemeColor('success');
+  const errorColor = useThemeColor('error');
   const inputBackgroundColor = useThemeColor('inputBackground');
   const inputBorderColor = useThemeColor('inputBorder');
-  const errorColor = useThemeColor('error');
-  const successColor = useThemeColor('success');
   const white = useThemeColor('white');
 
   // Check username availability with debounce
@@ -150,14 +147,18 @@ export default function SignupScreen() {
         locationData = await Promise.race([locationPromise, timeoutPromise]) as any;
       }
 
-      let address = await Location.reverseGeocodeAsync({
-        latitude: locationData.coords.latitude,
-        longitude: locationData.coords.longitude,
-      });
-      if (address.length > 0) {
-        const addr = address[0];
-        const loc = `${addr.city || addr.region || ''}, ${addr.country || ''}`.trim();
-        setLocation(loc || 'Unknown Location');
+      if (locationData && locationData.coords) {
+        let address = await Location.reverseGeocodeAsync({
+          latitude: locationData.coords.latitude,
+          longitude: locationData.coords.longitude,
+        });
+        if (address.length > 0) {
+          const addr = address[0];
+          const loc = `${addr.city || addr.region || ''}, ${addr.country || ''}`.trim();
+          setLocation(loc || 'Unknown Location');
+        } else {
+          setLocation('Unknown Location');
+        }
       } else {
         setLocation('Unknown Location');
       }
@@ -182,7 +183,12 @@ export default function SignupScreen() {
   };
 
   const handleSignup = async () => {
-    if (!username || !email || !password || !birthYear || !gender) {
+    if (!username || !email || !birthYear || !gender) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    
+    if (!password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -194,22 +200,24 @@ export default function SignupScreen() {
       Alert.alert('Error', 'Email is already registered');
       return;
     }
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+    
     const birthYearNum = parseInt(birthYear);
     const currentYear = new Date().getFullYear();
     if (birthYearNum < 1997 || birthYearNum > currentYear) {
       Alert.alert('Error', `Birth year must be between 1997 and ${currentYear}`);
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
 
     try {
       await register(username, email, password, birthYearNum, gender, location);
+      // User is automatically logged in after registration
       router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Signup Failed', error.message || 'Please try again');
+      Alert.alert('Signup Failed', error.toString());
     }
   };
 
@@ -251,10 +259,15 @@ export default function SignupScreen() {
 
             <View style={styles.inputContainer}>
               <View style={styles.labelRow}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
+                <ThemedText type="body2" style={{ fontWeight: '600' }}>
+                  Email
+                </ThemedText>
                 {validatingEmail && <ActivityIndicator size="small" color={primaryColor} />}
               </View>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: emailError ? errorColor : inputBorderColor }]}>
+              <View style={[styles.inputWrapper, {
+                backgroundColor: inputBackgroundColor,
+                borderColor: emailError ? errorColor : inputBorderColor
+              }]}>
                 <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
@@ -356,6 +369,7 @@ export default function SignupScreen() {
               </View>
             </View>
 
+            {/* Create Account Button */}
             <TouchableOpacity
               style={[styles.button, { backgroundColor: primaryColor }, (isLoading || !!usernameError || !!emailError) && styles.buttonDisabled]}
               onPress={handleSignup}
@@ -369,6 +383,7 @@ export default function SignupScreen() {
               )}
             </TouchableOpacity>
 
+            {/* Login Link */}
             <View style={styles.footer}>
               <ThemedText style={{ color: lightTextColor }}>Already have an account? </ThemedText>
               <TouchableOpacity onPress={() => router.push('/login')} disabled={isLoading}>
@@ -483,7 +498,6 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: borderRadius.md,
     zIndex: 1000,
     marginTop: -2, // Overlap slightly with input border
-    elevation: 10,
     ...shadows.md,
   },
   suggestionItem: {

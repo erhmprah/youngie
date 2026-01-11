@@ -13,7 +13,7 @@ import { ReactionPicker, ReactionType } from '@/components/reaction-picker';
 import { ReactionModal } from '@/components/reaction-modal';
 import { LikesModal } from '@/components/likes-modal';
 import { CommentModal } from '@/components/comment-modal';
-import { postAPI, getImageUrl } from '@/utils/api';
+import { postAPI, userAPI, getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSocket } from '@/utils/socket';
@@ -193,6 +193,29 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
                     onPress: () => {
                         onReport?.(post._id);
                         Alert.alert("Reported", "Thanks for letting us know. We will review this post.");
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleMute = async () => {
+        setOptionsVisible(false);
+        Alert.alert(
+            "Mute User",
+            `Are you sure you want to mute ${post.author.username}? You won't see their posts in your feed anymore.`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Mute",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await userAPI.muteUser(post.author._id);
+                            Alert.alert("Muted", `You have muted ${post.author.username}.`);
+                        } catch (error: any) {
+                            Alert.alert("Error", error.message || "Failed to mute user");
+                        }
                     }
                 }
             ]
@@ -413,6 +436,7 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onReport={handleReport}
+                onMute={handleMute}
             />
 
             <EditPostModal

@@ -93,6 +93,16 @@ router.put('/read-all', auth, async (req, res) => {
   }
 });
 
+// Clear all notifications
+router.delete('/', auth, async (req, res) => {
+  try {
+    await Notification.deleteMany({ recipient: req.userId });
+    res.json({ msg: 'All notifications cleared successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get unread count
 router.get('/unread-count', auth, async (req, res) => {
   try {

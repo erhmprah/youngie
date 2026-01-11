@@ -70,6 +70,18 @@ const UserSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    mutedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    mutedStoryAuthors: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
     likes: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -116,13 +128,17 @@ const UserSchema = new mongoose.Schema(
       enum: ['everyone', 'matches', 'friends', 'none'],
       default: 'friends',
     },
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
 
-// Hash password before saving
+// Hash password before saving (only if password exists and is modified)
 UserSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) return next();
   
   try {
     const salt = await bcrypt.genSalt(10);

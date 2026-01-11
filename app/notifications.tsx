@@ -166,6 +166,30 @@ export default function NotificationsScreen() {
     }
   };
 
+  const handleClearAllNotifications = () => {
+    Alert.alert(
+      'Clear All Notifications',
+      'Are you sure you want to clear all notifications?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await notificationAPI.clearAll();
+              setNotifications([]);
+              Alert.alert('Success', 'All notifications cleared');
+            } catch (error) {
+              console.error('Failed to clear notifications:', error);
+              Alert.alert('Error', 'Failed to clear notifications');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const groupedNotifications = useMemo(() => {
     const today = new Date();
     const yesterday = new Date(today);
@@ -340,6 +364,9 @@ export default function NotificationsScreen() {
     );
   }
 
+  const hasUnread = notifications.some(n => !n.isRead);
+  const hasNotifications = notifications.length > 0;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ThemedView style={styles.container}>
@@ -348,12 +375,24 @@ export default function NotificationsScreen() {
              <Ionicons name="chevron-back" size={28} color={colors.text} />
            </TouchableOpacity>
            <ThemedText type="title" style={styles.title}>Notifications</ThemedText>
-           {notifications.some(n => !n.isRead) && (
-             <TouchableOpacity onPress={handleMarkAllAsRead}>
-               <ThemedText style={styles.markAllText}>Mark all read</ThemedText>
-             </TouchableOpacity>
-           )}
          </View>
+
+        {(hasUnread || hasNotifications) && (
+          <View style={styles.optionsBar}>
+            {hasUnread && (
+              <TouchableOpacity onPress={handleMarkAllAsRead} style={styles.optionButton}>
+                <Ionicons name="checkmark-done-outline" size={18} color={colors.primary} />
+                <ThemedText style={styles.markAllText}>Mark all read</ThemedText>
+              </TouchableOpacity>
+            )}
+            {hasNotifications && (
+              <TouchableOpacity onPress={handleClearAllNotifications} style={styles.optionButton}>
+                <Ionicons name="trash-outline" size={18} color={colors.lightText} />
+                <ThemedText style={[styles.markAllText, { color: colors.lightText }]}>Clear all</ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {notifications.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -406,8 +445,20 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     fontWeight: typography.weights.bold,
     color: colors.text,
   },
+  optionsBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    gap: spacing.md,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   markAllText: {
-    fontSize: typography.sizes.body2,
+    fontSize: typography.sizes.caption,
     color: colors.primary,
     fontWeight: typography.weights.semibold,
   },

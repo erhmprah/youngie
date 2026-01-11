@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback } from 'react';
+import React, { createContext, useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '@/utils/api';
 
@@ -6,7 +6,7 @@ interface User {
   _id: string;
   username: string;
   email: string;
-  birthYear: number;
+  birthYear?: number;
   gender?: string;
   suspended?: boolean;
   bio?: string;
@@ -43,9 +43,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => {
       setIsLoading(true);
       try {
-        const response = await authAPI.register({ username, email, password, birthYear, gender, location });
+        const response = await authAPI.register({ username, email, password, birthYear, gender, location } as any);
+        // Auto-login after successful registration
         const { token, user } = response.data;
-
         await AsyncStorage.setItem('authToken', token);
         setToken(token);
         setUser(user);
@@ -61,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
+      // Call backend to get token and user data
       const response = await authAPI.login({ email, password });
       const { token, user } = response.data;
 
@@ -120,6 +121,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Failed to restore token:', error);
     }
   }, []);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      await restoreToken();
+      setIsLoading(false);
+    };
+    initAuth();
+  }, [restoreToken]);
 
   const updateUser = useCallback((updatedUser: Partial<User>) => {
     setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : null);

@@ -283,6 +283,12 @@ export default function ProfileScreen() {
                             <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{new Date().getFullYear() - user.birthYear} years old</ThemedText>
                         </View>
                     )}
+                    {user?.interests && user.interests.length > 0 && (
+                        <View style={styles.detailRow}>
+                            <IconSymbol name="star.fill" size={16} color={lightTextColor} />
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.interests.join(', ')}</ThemedText>
+                        </View>
+                    )}
                 </View>
 
                 <View style={[styles.statsBar, { backgroundColor: cardBackgroundColor, borderColor }]}>
@@ -305,6 +311,9 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => router.push('/chat/favorites')}>
                         <IconSymbol name="heart.fill" size={20} color={textColor} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => router.push('/settings')}>
+                        <IconSymbol name="gear" size={20} color={textColor} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => logout()}>
                         <IconSymbol name="x" size={20} color={textColor} />

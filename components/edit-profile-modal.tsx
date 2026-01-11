@@ -1,6 +1,6 @@
 // components/edit-profile-modal.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Switch } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
@@ -22,6 +22,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
     const [interests, setInterests] = useState((initialData?.interests || []).join(', '));
     const [isPrivate, setIsPrivate] = useState(initialData?.isPrivate || false);
     const [isLoading, setIsLoading] = useState(false);
+    const [suggestions, setSuggestions] = useState<string[]>([]);
 
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
@@ -38,7 +39,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                 username,
                 bio,
                 location,
-                interests: interests.split(',').map(s => s.trim()).filter(Boolean),
+                interests: interests.split(',').map((s: string) => s.trim()).filter(Boolean),
                 isPrivate,
             });
             onClose();
@@ -48,6 +49,44 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // Search location with debounce
+    useEffect(() => {
+        if (location.length < 3) {
+            setSuggestions([]);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            try {
+                // Using OpenStreetMap Nominatim API (No API key required)
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&addressdetails=1&limit=5`,
+                    { headers: { 'User-Agent': 'YoungieApp/1.0' } }
+                );
+                const data = await response.json();
+
+                if (Array.isArray(data)) {
+                    const places = data.map((item: any) => {
+                        const addr = item.address;
+                        const city = addr.city || addr.town || addr.village || addr.municipality || item.name;
+                        const country = addr.country;
+                        return city && country ? `${city}, ${country}` : item.display_name.split(',').slice(0, 2).join(',');
+                    });
+                    setSuggestions([...new Set(places)] as string[]);
+                }
+            } catch (error) {
+                console.log('Location search error:', error);
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [location]);
+
+    const selectSuggestion = (city: string) => {
+        setLocation(city);
+        setSuggestions([]);
     };
 
     return (
@@ -85,7 +124,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                             multiline
                         />
                     </View>
-                    <View style={styles.inputContainer}>
+                    <View style={[styles.inputContainer, { zIndex: 1000 }]}>
                         <ThemedText style={styles.label}>Location</ThemedText>
                         <TextInput
                             style={[styles.input, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor, color: textColor }]}
@@ -94,6 +133,15 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                             placeholder="Your location"
                             placeholderTextColor={lightTextColor}
                         />
+                        {suggestions.length > 0 && (
+                            <View style={[styles.suggestionsDropdown, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                                {suggestions.map((city, index) => (
+                                    <TouchableOpacity key={index} style={styles.suggestionItem} onPress={() => selectSuggestion(city)}>
+                                        <ThemedText>{city}</ThemedText>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
                     </View>
                     <View style={styles.inputContainer}>
                         <ThemedText style={styles.label}>Interests</ThemedText>
@@ -164,5 +212,27 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: spacing.xs,
+    },
+    suggestionsDropdown: {
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
+        borderWidth: 1,
+        borderTopWidth: 0,
+        borderBottomLeftRadius: borderRadius.md,
+        borderBottomRightRadius: borderRadius.md,
+        zIndex: 1000,
+        marginTop: -2, // Overlap slightly with input border
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    suggestionItem: {
+        padding: spacing.md,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: '#ccc',
     },
 });

@@ -13,15 +13,17 @@ interface FeedPostOptionsProps {
     onEdit?: () => void;
     onDelete?: () => void;
     onReport?: () => void;
+    onMute?: () => void;
 }
 
-export function FeedPostOptions({ 
-    visible, 
-    onClose, 
-    isOwner, 
-    onEdit, 
-    onDelete, 
-    onReport 
+export function FeedPostOptions({
+    visible,
+    onClose,
+    isOwner,
+    onEdit,
+    onDelete,
+    onReport,
+    onMute
 }: FeedPostOptionsProps) {
     const backgroundColor = useThemeColor('surface');
     const textColor = useThemeColor('text');
@@ -50,10 +52,16 @@ export function FeedPostOptions({
                                     </TouchableOpacity>
                                 </>
                             ) : (
-                                <TouchableOpacity style={styles.option} onPress={() => { onClose(); onReport?.(); }}>
-                                    <Ionicons name="flag" size={24} color={textColor} style={styles.icon} />
-                                    <ThemedText>Report Post</ThemedText>
-                                </TouchableOpacity>
+                                <>
+                                    <TouchableOpacity style={styles.option} onPress={() => { onClose(); onMute?.(); }}>
+                                        <Ionicons name="volume-off" size={24} color={textColor} style={styles.icon} />
+                                        <ThemedText>Mute User</ThemedText>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.option} onPress={() => { onClose(); onReport?.(); }}>
+                                        <Ionicons name="flag" size={24} color={textColor} style={styles.icon} />
+                                        <ThemedText>Report Post</ThemedText>
+                                    </TouchableOpacity>
+                                </>
                             )}
                         </ThemedView>
                     </TouchableWithoutFeedback>

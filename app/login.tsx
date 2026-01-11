@@ -10,6 +10,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,9 +36,10 @@ export default function LoginScreen() {
       await login(email, password);
       router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Please check your credentials');
+      Alert.alert('Login Failed', error.toString());
     }
   };
+
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor }}>

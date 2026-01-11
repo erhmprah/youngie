@@ -12,7 +12,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.youngie.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "This app needs access to camera for video chat functionality.",
+        "NSMicrophoneUsageDescription": "This app needs access to microphone for video chat functionality.",
+        "NSLocalNetworkUsageDescription": "This app needs access to local network for peer-to-peer video chat."
       }
     },
     "android": {
@@ -24,7 +27,14 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK"
+      ]
     },
     "web": {
       "output": "static",

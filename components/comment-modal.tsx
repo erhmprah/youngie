@@ -1,7 +1,7 @@
 // components/comment-modal.tsx
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Modal, StyleSheet, View, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, Image, TouchableWithoutFeedback } from 'react-native';
+import { Modal, StyleSheet, View, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, Image, TouchableWithoutFeedback, Text } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -286,7 +286,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                 </TouchableOpacity>
                 <View style={{ flex: 1 }}>
                     <ThemedText>
-                        <ThemedText 
+                        <ThemedText
                             style={{ fontFamily: typography.families.bold }}
                             onPress={() => {
                                 onClose();
@@ -333,7 +333,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                             {Object.entries(reactionCounts).map(([type, count]) => (
                                 <TouchableOpacity
                                     key={type}
-                                    onPress={() => handleReactComment(item._id, userReaction?.type === type ? 'remove' : type)}
+                                    onPress={() => handleReactComment(item._id, userReaction?.type === type ? 'remove' : (type as ReactionType | 'sticker'))}
                                     style={styles.reactionButton}
                                 >
                                     <Ionicons
@@ -559,11 +559,12 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                     </View>
                 </Modal>
 
+
                 {/* Reaction Picker Modal */}
                 <Modal visible={showReactionPicker} animationType="fade" transparent={true} onRequestClose={() => setShowReactionPicker(false)}>
                     <TouchableWithoutFeedback onPress={() => setShowReactionPicker(false)}>
                         <View style={styles.modalOverlay}>
-                            <ReactionPicker 
+                            <ReactionPicker
                                 onSelect={(type) => selectedCommentForReaction && handleReactComment(selectedCommentForReaction, type)}
                                 onClose={() => setShowReactionPicker(false)}
                             />

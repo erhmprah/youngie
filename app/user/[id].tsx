@@ -135,74 +135,138 @@ export default function UserProfileScreen() {
         }
     };
 
-    const renderHeader = () => (
-        <ThemedView style={styles.container}>
-            <LinearGradient colors={[primaryColor + '20', 'transparent']} style={styles.headerBackground} />
-            <View style={styles.headerContent}>
-                <View style={styles.avatarWrapper}>
-                    {userProfile?.profilePhoto ? (
-                        <Image source={{ uri: getImageUrl(userProfile.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
-                    ) : (
-                        <View style={[styles.avatarImage, { borderColor: primaryColor, backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center' }]}>
-                            <IconSymbol name="person.fill" size={60} color={lightTextColor} />
+    const renderHeader = () => {
+        if (userProfile?.isPrivate && !isFriend) {
+            return (
+                <ThemedView style={styles.container}>
+                    <LinearGradient colors={[primaryColor + '20', 'transparent']} style={styles.headerBackground} />
+                    <View style={styles.headerContent}>
+                        <View style={styles.avatarWrapper}>
+                            {userProfile?.profilePhoto ? (
+                                <Image source={{ uri: getImageUrl(userProfile.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
+                            ) : (
+                                <View style={[styles.avatarImage, { borderColor: primaryColor, backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center' }]}>
+                                    <IconSymbol name="person.fill" size={60} color={lightTextColor} />
+                                </View>
+                            )}
                         </View>
-                    )}
-                </View>
-                <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>{userProfile?.username}</ThemedText>
-                <ThemedText style={{ color: lightTextColor, marginBottom: spacing.md }}>{userProfile?.bio || 'No bio provided'}</ThemedText>
+                        <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>{userProfile?.username}</ThemedText>
+                        <ThemedText style={{ color: lightTextColor, marginBottom: spacing.md }}>{userProfile?.bio || 'No bio provided'}</ThemedText>
 
-                <View style={[styles.statsBar, { backgroundColor: cardBackgroundColor, borderColor }]}>
-                    <View style={[styles.statBox, { borderRightColor: borderColor }]}>
-                        <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{userPosts.length}</ThemedText>
-                        <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
+                        <View style={[styles.privateMessage, { backgroundColor: cardBackgroundColor, borderColor }]}>
+                            <IconSymbol name="lock.fill" size={24} color={primaryColor} />
+                            <ThemedText style={{ color: textColor, fontFamily: typography.families.medium, marginLeft: spacing.sm }}>
+                                This account is private
+                            </ThemedText>
+                        </View>
+
+                        <View style={styles.actionRow}>
+                            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={handleAddFriend}>
+                                <IconSymbol name="person.badge.plus" size={20} color={white} />
+                                <ThemedText style={{ color: white, fontFamily: typography.families.bold, marginLeft: spacing.xs }}>Send Friend Request</ThemedText>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                    <View style={[styles.statBox, { borderRightColor: borderColor }]}>
-                        <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{userProfile?.friends?.length || 0}</ThemedText>
-                        <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
+                </ThemedView>
+            );
+        }
+
+        return (
+            <ThemedView style={styles.container}>
+                <LinearGradient colors={[primaryColor + '20', 'transparent']} style={styles.headerBackground} />
+                <View style={styles.headerContent}>
+                    <View style={styles.avatarWrapper}>
+                        {userProfile?.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(userProfile.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
+                        ) : (
+                            <View style={[styles.avatarImage, { borderColor: primaryColor, backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center' }]}>
+                                <IconSymbol name="person.fill" size={60} color={lightTextColor} />
+                            </View>
+                        )}
                     </View>
-                    <View style={styles.statBox}>
-                        <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{userProfile?.matches?.length || 0}</ThemedText>
-                        <ThemedText style={{ color: lightTextColor }}>Matches</ThemedText>
+                    <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>{userProfile?.username}</ThemedText>
+                    <ThemedText style={{ color: lightTextColor, marginBottom: spacing.md }}>{userProfile?.bio || 'No bio provided'}</ThemedText>
+
+                    <View style={styles.profileDetails}>
+                        {userProfile?.location && userProfile.location.trim() && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="location.fill" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{userProfile.location}</ThemedText>
+                            </View>
+                        )}
+                        {userProfile?.gender && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="person.fill" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2, textTransform: 'capitalize' }}>{userProfile.gender}</ThemedText>
+                            </View>
+                        )}
+                        {userProfile?.birthYear && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="calendar" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{new Date().getFullYear() - userProfile.birthYear} years old</ThemedText>
+                            </View>
+                        )}
+                        {userProfile?.interests && userProfile.interests.length > 0 && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="star.fill" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{userProfile.interests.join(', ')}</ThemedText>
+                            </View>
+                        )}
+                    </View>
+
+                    <View style={[styles.statsBar, { backgroundColor: cardBackgroundColor, borderColor }]}>
+                        <View style={[styles.statBox, { borderRightColor: borderColor }]}>
+                            <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{userPosts.length}</ThemedText>
+                            <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
+                        </View>
+                        <View style={[styles.statBox, { borderRightColor: borderColor }]}>
+                            <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{userProfile?.friends?.length || 0}</ThemedText>
+                            <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
+                        </View>
+                        <View style={styles.statBox}>
+                            <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{userProfile?.matches?.length || 0}</ThemedText>
+                            <ThemedText style={{ color: lightTextColor }}>Matches</ThemedText>
+                        </View>
+                    </View>
+
+                    <View style={styles.actionRow}>
+                        {isFriend ? (
+                            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: cardBackgroundColor, borderWidth: 1, borderColor }]} onPress={handleUnfriend}>
+                                <IconSymbol name="checkmark" size={20} color={textColor} />
+                                <ThemedText style={{ color: textColor, fontFamily: typography.families.bold, marginLeft: spacing.xs }}>Friend</ThemedText>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={handleAddFriend}>
+                                <IconSymbol name="person.badge.plus" size={20} color={white} />
+                                <ThemedText style={{ color: white, fontFamily: typography.families.bold, marginLeft: spacing.xs }}>Add Friend</ThemedText>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={handleMessage}>
+                            <IconSymbol name="message.fill" size={20} color={textColor} />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
-                <View style={styles.actionRow}>
-                    {isFriend ? (
-                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: cardBackgroundColor, borderWidth: 1, borderColor }]} onPress={handleUnfriend}>
-                            <IconSymbol name="checkmark" size={20} color={textColor} />
-                            <ThemedText style={{ color: textColor, fontFamily: typography.families.bold, marginLeft: spacing.xs }}>Friend</ThemedText>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={handleAddFriend}>
-                            <IconSymbol name="person.badge.plus" size={20} color={white} />
-                            <ThemedText style={{ color: white, fontFamily: typography.families.bold, marginLeft: spacing.xs }}>Add Friend</ThemedText>
-                        </TouchableOpacity>
-                    )}
-                    
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={handleMessage}>
-                        <IconSymbol name="message.fill" size={20} color={textColor} />
+                <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
+                        onPress={() => setActiveTab('posts')}
+                    >
+                        <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
+                        onPress={() => setActiveTab('album')}
+                    >
+                        <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
                     </TouchableOpacity>
                 </View>
-            </View>
-
-            <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
-                    onPress={() => setActiveTab('posts')}
-                >
-                    <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
-                    <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
-                    onPress={() => setActiveTab('album')}
-                >
-                    <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
-                    <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
-                </TouchableOpacity>
-            </View>
-        </ThemedView>
-    );
+            </ThemedView>
+        );
+    };
 
     const renderItem = ({ item }: { item: any }) => {
         if (item.type === 'empty') {
@@ -252,6 +316,20 @@ export default function UserProfileScreen() {
         );
     }
 
+    if (userProfile?.isPrivate && !isFriend) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor }}>
+                <Stack.Screen options={{ headerShown: false }} />
+                <View style={styles.navHeader}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <IconSymbol name="chevron.left" size={24} color={textColor} />
+                    </TouchableOpacity>
+                </View>
+                {renderHeader()}
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor }}>
             <Stack.Screen options={{ headerShown: false }} />
@@ -281,6 +359,8 @@ const styles = StyleSheet.create({
     headerBackground: { position: 'absolute', top: 0, left: 0, right: 0, height: 200 },
     headerContent: { alignItems: 'center', paddingTop: 40, paddingHorizontal: spacing.xl },
     avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
+    profileDetails: { gap: spacing.xs, marginBottom: spacing.md },
+    detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     avatarImage: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
     statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.lg, borderWidth: 1 },
     statBox: { flex: 1, alignItems: 'center', borderRightWidth: 1 },
@@ -299,4 +379,5 @@ const styles = StyleSheet.create({
     statText: { fontSize: typography.sizes.caption, fontFamily: typography.families.bold },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 50 },
     emptyText: { marginTop: spacing.md, fontSize: typography.sizes.title, fontFamily: typography.families.bold },
+    privateMessage: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, marginBottom: spacing.lg },
 });

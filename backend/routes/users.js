@@ -16,6 +16,78 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+// Get muted users list
+router.get('/muted', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Get muted users details
+    const mutedUsers = await User.find({
+      _id: { $in: user.mutedUsers || [] }
+    }).select('username profilePhoto avatar');
+
+    res.json(mutedUsers);
+  } catch (error) {
+    console.error('Error fetching muted users:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mute user
+router.post('/mute/:userId', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    const targetUserId = req.params.userId;
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ msg: 'Target user not found' });
+    }
+
+    // Check if already muted
+    if (user.mutedUsers.includes(targetUserId)) {
+      return res.status(400).json({ msg: 'User already muted' });
+    }
+
+    // Add to muted users list
+    user.mutedUsers.push(targetUserId);
+    await user.save();
+
+    res.json({ msg: 'User muted successfully' });
+  } catch (error) {
+    console.error('Error muting user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unmute user
+router.post('/unmute/:userId', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    const targetUserId = req.params.userId;
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Remove from muted users list
+    user.mutedUsers = user.mutedUsers.filter(id => id.toString() !== targetUserId);
+    await user.save();
+
+    res.json({ msg: 'User unmuted successfully' });
+  } catch (error) {
+    console.error('Error unmuting user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get user profile
 router.get('/:userId', auth, async (req, res) => {
   try {

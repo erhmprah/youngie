@@ -28,12 +28,16 @@ const upload = multer({ storage, fileFilter });
 // Get stories for feed (from users you follow + your own)
 router.get('/', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.userId).populate('friends', '_id');
+    const user = await User.findById(req.userId).populate('friends', '_id').lean();
     const followingIds = (user.friends || []).filter(f => f).map(friend => friend._id);
     followingIds.push(req.userId); // Include own stories
 
+    // Filter out muted authors
+    const mutedAuthors = (user.mutedStoryAuthors || []).map(id => id.toString());
+    const filteredFollowingIds = followingIds.filter(id => !mutedAuthors.includes(id.toString()));
+
     const stories = await Story.find({
-      author: { $in: followingIds },
+      author: { $in: filteredFollowingIds },
       expiresAt: { $gt: new Date() }, // Not expired
     })
       .populate('author', 'username avatar profilePhoto')
@@ -215,6 +219,11 @@ router.post('/:storyId/view', auth, async (req, res) => {
     await story.populate('tags', 'username');
     await story.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
 
+    // Emit socket event for real-time updates
+    if (req.io) {
+      req.io.emit('story:updated', story);
+    }
+
     res.json(story);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -370,6 +379,42 @@ router.delete('/:storyId', auth, async (req, res) => {
 
     await Story.findByIdAndDelete(req.params.storyId);
     res.json({ msg: 'Story deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mute user stories
+router.post('/mute/:userId', auth, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.userId, {
+      $addToSet: { mutedStoryAuthors: req.params.userId }
+    }, { strict: false });
+    
+    res.json({ msg: 'User stories muted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unmute user stories
+router.post('/unmute/:userId', auth, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.userId, {
+      $pull: { mutedStoryAuthors: req.params.userId }
+    });
+    res.json({ msg: 'User stories unmuted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get muted users
+router.get('/muted/list', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).populate('mutedStoryAuthors', 'username profilePhoto avatar');
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+    res.json(user.mutedStoryAuthors || []);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
