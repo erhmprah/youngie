@@ -154,10 +154,14 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
       console.log('Received answer from:', peerId);
-      if (peerConnection.current?.signalingState === 'have-local-offer') {
-        await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+      if (peerConnection.current && !peerConnection.current.remoteDescription) {
+        if (peerConnection.current.signalingState === 'have-local-offer') {
+          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+      } else if (peerConnection.current?.remoteDescription) {
+        console.warn('Ignoring answer: remote description already set.');
       } else {
-        console.warn('Ignoring answer: signaling state is', peerConnection.current?.signalingState);
+        console.warn('Ignoring answer: no peer connection.');
       }
     });
 
