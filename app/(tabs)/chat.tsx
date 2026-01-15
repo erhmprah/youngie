@@ -13,11 +13,14 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { onNewNotification, offNewNotification, getSocket } from '@/utils/socket';
 import { SelectFriendModal } from '@/components/select-friend-modal';
+import * as Haptics from 'expo-haptics';
 
 interface User {
     _id: string;
     username: string;
     profilePhoto?: string;
+    isOnline?: boolean;
+    lastSeen?: string;
 }
 
 interface ChatMessage {
@@ -193,10 +196,20 @@ export default function ChatScreen() {
             }
         };
 
+        const handleStatusChange = (data: { userId: string; isOnline: boolean }) => {
+            setChats(prev => prev.map(chat => {
+                const updatedParticipants = chat.participants.map(p => 
+                    p._id === data.userId ? { ...p, isOnline: data.isOnline } : p
+                );
+                return { ...chat, participants: updatedParticipants };
+            }));
+        };
+
         if (socket) {
             socket.on('chatUpdated', handleChatUpdated);
             socket.on('newChat', handleNewChat);
             socket.on('messages-read', handleMessagesRead);
+            socket.on('user_status_change', handleStatusChange);
         }
         onNewNotification(handleNotification);
 
@@ -205,6 +218,7 @@ export default function ChatScreen() {
                 socket.off('chatUpdated', handleChatUpdated);
                 socket.off('newChat', handleNewChat);
                 socket.off('messages-read', handleMessagesRead);
+                socket.off('user_status_change', handleStatusChange);
             }
             offNewNotification();
         };
@@ -232,10 +246,13 @@ export default function ChatScreen() {
         return (
             <TouchableOpacity 
                 style={[styles.chatRow, { borderBottomColor: borderColor }]} 
-                onPress={() => router.push({
-                    pathname: '/chat/[id]',
-                    params: { id: item._id }
-                })}
+                onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push({
+                        pathname: '/chat/[id]',
+                        params: { id: item._id }
+                    });
+                }}
             >
                 <View style={[styles.avatarCircle, { backgroundColor: surfaceColor }]}>
                     {avatarSource ? (
@@ -243,6 +260,7 @@ export default function ChatScreen() {
                     ) : (
                         <IconSymbol name={isGroup ? "person.2.fill" : "person.fill"} size={24} color={lightTextColor} />
                     )}
+                    {!isGroup && participant?.isOnline && <View style={[styles.onlineIndicator, { borderColor: surfaceColor }]} />}
                 </View>
                 <View style={styles.chatInfo}>
                     <View style={styles.chatHeader}>
@@ -275,7 +293,7 @@ export default function ChatScreen() {
             <ThemedView style={styles.container}>
                 <ThemedView style={[styles.listHeader, { borderBottomColor: borderColor }]}>
                     <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Messages</ThemedText>
-                    <TouchableOpacity style={[styles.editBtn, { backgroundColor: primaryColor }]} onPress={handleNewChat}>
+                    <TouchableOpacity style={[styles.editBtn, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleNewChat(); }}>
                         <IconSymbol name="plus" size={24} color={white} />
                     </TouchableOpacity>
                 </ThemedView>
@@ -283,13 +301,13 @@ export default function ChatScreen() {
                 <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
                     <TouchableOpacity
                         style={[styles.tab, activeTab === 'direct' && { borderBottomColor: primaryColor }]}
-                        onPress={() => setActiveTab('direct')}
+                        onPress={() => { Haptics.selectionAsync(); setActiveTab('direct'); }}
                     >
                         <ThemedText style={[styles.tabText, { color: activeTab === 'direct' ? primaryColor : lightTextColor }]}>Direct</ThemedText>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.tab, activeTab === 'groups' && { borderBottomColor: primaryColor }]}
-                        onPress={() => setActiveTab('groups')}
+                        onPress={() => { Haptics.selectionAsync(); setActiveTab('groups'); }}
                     >
                         <ThemedText style={[styles.tabText, { color: activeTab === 'groups' ? primaryColor : lightTextColor }]}>Groups</ThemedText>
                     </TouchableOpacity>
@@ -345,4 +363,14 @@ const styles = StyleSheet.create({
     tabText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
     unreadBadge: { minWidth: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, marginLeft: spacing.sm },
     unreadText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+    onlineIndicator: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        backgroundColor: '#4CAF50',
+        borderWidth: 2,
+    },
 });

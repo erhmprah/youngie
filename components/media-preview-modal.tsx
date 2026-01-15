@@ -3,6 +3,7 @@ import { Modal, StyleSheet, View, TouchableOpacity, Image, Dimensions, Text, Ale
 import { Video, ResizeMode } from 'expo-av';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from './ui/icon-symbol';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -18,6 +19,7 @@ interface MediaPreviewModalProps {
 
 export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreviewModalProps) {
     const white = useThemeColor('white');
+    const insets = useSafeAreaInsets();
 
     if (!attachment) return null;
 
@@ -76,25 +78,27 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
     return (
         <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
             <View style={styles.container}>
-                <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                <TouchableOpacity style={[styles.closeButton, { top: insets.top + 10 }]} onPress={onClose}>
                     <IconSymbol name="xmark" size={30} color={white} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                <TouchableOpacity style={[styles.saveButton, { top: insets.top + 10 }]} onPress={handleSave}>
                     <IconSymbol name="square.and.arrow.down" size={30} color={white} />
                 </TouchableOpacity>
 
                 <View style={styles.mediaContainer}>
-                    {isVideo ? (
-                        <Video
-                            source={{ uri }}
-                            style={styles.media}
-                            useNativeControls
-                            resizeMode={ResizeMode.CONTAIN}
-                            shouldPlay={false}
-                        />
-                    ) : (
-                        <Image source={{ uri }} style={styles.media} resizeMode="contain" />
-                    )}
+                    <View style={styles.mediaWrapper}>
+                        {isVideo ? (
+                            <Video
+                                source={{ uri }}
+                                style={styles.media}
+                                useNativeControls
+                                resizeMode={ResizeMode.CONTAIN}
+                                shouldPlay={false}
+                            />
+                        ) : (
+                            <Image source={{ uri }} style={styles.media} resizeMode="contain" />
+                        )}
+                    </View>
                 </View>
 
                 <View style={styles.infoContainer}>
@@ -119,14 +123,12 @@ const styles = StyleSheet.create({
     },
     closeButton: {
         position: 'absolute',
-        top: 50,
         right: 20,
         zIndex: 1,
         padding: 10,
     },
     saveButton: {
         position: 'absolute',
-        top: 50,
         right: 70,
         zIndex: 1,
         padding: 10,
@@ -137,9 +139,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         maxHeight: height * 0.8,
     },
+    mediaWrapper: {
+        maxWidth: height * 0.7,
+        maxHeight: height * 0.7,
+    },
     media: {
-        width: width * 0.9,
-        height: height * 0.7,
+        width: '100%',
+        height: '100%',
         borderRadius: 10,
     },
     infoContainer: {

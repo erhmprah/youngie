@@ -87,7 +87,7 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
 
     return (
         <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-            <ThemedView style={[styles.container, { backgroundColor }]}>
+            <ThemedView style={[styles.container, { backgroundColor }]} safe>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={onClose}>
                         <IconSymbol name="x" size={24} color={textColor} />

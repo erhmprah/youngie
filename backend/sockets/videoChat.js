@@ -5,6 +5,23 @@ module.exports = (io) => {
   io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id}`);
 
+    // Voice call signaling for private chats
+    socket.on('voice-call-offer', ({ chatId, offer, caller }) => {
+      socket.to(chatId).emit('voice-call-offer', { offer, caller });
+    });
+
+    socket.on('voice-call-answer', ({ chatId, answer }) => {
+      socket.to(chatId).emit('voice-call-answer', { answer });
+    });
+
+    socket.on('voice-call-ice-candidate', ({ chatId, candidate }) => {
+      socket.to(chatId).emit('voice-call-ice-candidate', { candidate });
+    });
+
+    socket.on('voice-call-end', ({ chatId }) => {
+      socket.to(chatId).emit('voice-call-end');
+    });
+
     // Add user to waiting list
     socket.on('join_room', () => {
       console.log(`User ${socket.id} joined waiting room.`);
@@ -72,8 +89,8 @@ module.exports = (io) => {
           activeChats.set(user1Id, user2Id);
           activeChats.set(user2Id, user1Id);
 
-          io.to(user1Id).emit('match_found', user2Id);
-          io.to(user2Id).emit('match_found', user1Id);
+          io.to(user1Id).emit('match_found', { peerId: user2Id, initiator: true });
+          io.to(user2Id).emit('match_found', { peerId: user1Id, initiator: false });
         } else {
           // One or both disconnected while waiting, put remaining back
           if (user1Socket) waitingUsers.push(user1Id);

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { borderRadius, spacing, shadows } from '@/constants/design-tokens';
+import * as Haptics from 'expo-haptics';
 
 export type ReactionType = 'like' | 'heart' | 'laugh' | 'wow' | 'sad' | 'fire';
 
@@ -37,6 +38,7 @@ export function ReactionPicker({ onSelect, onClose }: ReactionPickerProps) {
           <TouchableOpacity
             style={styles.reactionButton}
             onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onSelect(reaction.type);
               onClose?.();
             }}

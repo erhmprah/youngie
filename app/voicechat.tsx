@@ -122,28 +122,30 @@ const VoiceChatScreen: React.FC = () => {
       socket.current?.emit('join_room');
     });
 
-    socket.current.on('match_found', async (peerId: string) => {
-      console.log('Match found with peer:', peerId);
+    socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+      const { peerId, initiator } = data;
+      console.log('Match found with peer:', peerId, 'initiator:', initiator);
       setIsConnecting(false);
       setIsChatting(true);
 
       peerConnection.current = createPeerConnection();
-      stream.getTracks().forEach(track => {
+      stream.getTracks().forEach((track: MediaStreamTrack) => {
         peerConnection.current?.addTrack(track, stream);
       });
 
-      const offer = await peerConnection.current.createOffer();
-      await peerConnection.current.setLocalDescription(offer);
-      socket.current?.emit('offer', offer, peerId);
+      if (initiator) {
+        const offer = await peerConnection.current.createOffer();
+        await peerConnection.current.setLocalDescription(offer);
+        socket.current?.emit('offer', offer, peerId);
+      }
     });
 
     socket.current.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
       console.log('Received offer from:', peerId);
-      peerConnection.current = createPeerConnection();
-      stream.getTracks().forEach(track => {
-        peerConnection.current?.addTrack(track, stream);
-      });
-
+      if (peerConnection.current?.signalingState !== 'stable') {
+        console.warn('Ignoring offer: signaling state is', peerConnection.current?.signalingState);
+        return;
+      }
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerConnection.current.createAnswer();
       await peerConnection.current.setLocalDescription(answer);
@@ -152,7 +154,11 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
       console.log('Received answer from:', peerId);
-      await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(answer));
+      if (peerConnection.current?.signalingState === 'have-local-offer') {
+        await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+      } else {
+        console.warn('Ignoring answer: signaling state is', peerConnection.current?.signalingState);
+      }
     });
 
     socket.current.on('ice_candidate', async (candidate: RTCIceCandidate, peerId: string) => {

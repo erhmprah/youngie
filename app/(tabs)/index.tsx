@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -38,7 +39,7 @@ interface Post {
     _id: string;
     author: User;
     content?: string;
-    image?: string;
+    images?: string[];
     video?: string;
     likes: { _id: string; username: string }[];
     comments: Comment[];
@@ -199,6 +200,7 @@ export default function FeedScreen() {
 
     const handleLikePost = async (postId: string) => {
         try {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             const response = await postAPI.likePost(postId);
             const updatedPost = response?.data?.post ?? response?.data;
             setPosts(posts.map(p => (p._id === postId ? updatedPost : p)));
@@ -208,6 +210,7 @@ export default function FeedScreen() {
     };
 
     const handleDeletePost = async (postId: string) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         try {
             await postAPI.deletePost(postId);
             setPosts(posts.filter(p => p._id !== postId));
@@ -226,6 +229,7 @@ export default function FeedScreen() {
     };
 
     const handleStoryPress = (index: number) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setSelectedStoryGroupIndex(index);
         setShowStoryViewer(true);
     };
@@ -322,12 +326,12 @@ export default function FeedScreen() {
                                 // Render user's stories with add button
                                 return (
                                     <View style={styles.storyItem}>
-                                        <TouchableOpacity onPress={() => handleStoryPress(index)}>
+                                        <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(index); }}>
                                             <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
                                                 {renderAvatar(item.user)}
                                             </View>
                                         </TouchableOpacity>
-                                        <TouchableOpacity style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]} onPress={() => setShowCreateStoryModal(true)}>
+                                        <TouchableOpacity style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
                                             <IconSymbol name="plus" size={12} color={white} />
                                         </TouchableOpacity>
                                         <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
@@ -336,7 +340,7 @@ export default function FeedScreen() {
                             } else {
                                 // Render create story button
                                 return (
-                                    <TouchableOpacity style={styles.storyItem} onPress={() => setShowCreateStoryModal(true)}>
+                                    <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
                                         <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
                                             {renderAvatar(item.user)}
                                             <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
@@ -351,7 +355,7 @@ export default function FeedScreen() {
                             // Render other users' stories
                             const isUnviewed = !item.allViewed;
                             return (
-                                <TouchableOpacity style={styles.storyItem} onPress={() => handleStoryPress(index)}>
+                                <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(index); }}>
                                     {isUnviewed ? (
                                         <LinearGradient
                                             colors={[primaryColor, '#d62976', '#fa7e1e']}
@@ -381,7 +385,7 @@ export default function FeedScreen() {
         );
     };
 
-    const renderPost = ({ item }: { item: Post }) => {
+    const renderPost = useCallback(({ item }: { item: Post }) => {
         const fullProfilePhoto = getImageUrl(item.author.profilePhoto);
         const postWithAvatar = {
             ...item,
@@ -403,7 +407,7 @@ export default function FeedScreen() {
                 shouldPlay={item._id === playingPostId}
             />
         );
-    };
+    }, [user?._id, handleDeletePost, handleReportPost, handleUpdatePost, handleLikePost, playingPostId]);
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor }}>
@@ -411,10 +415,10 @@ export default function FeedScreen() {
                 <View style={[styles.appBar, { backgroundColor, borderBottomColor: borderColor }]}>
                     <ThemedText style={[styles.logo, { color: primaryColor }]}>Youngie</ThemedText>
                     <View style={styles.appBarIcons}>
-                        <TouchableOpacity style={[styles.iconCircle, isIncognito && { backgroundColor: primaryColor }]} onPress={() => setIsIncognito(!isIncognito)}>
+                        <TouchableOpacity style={[styles.iconCircle, isIncognito && { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setIsIncognito(!isIncognito); }}>
                             <Ionicons name="glasses" size={22} color={isIncognito ? white : textColor} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.iconCircle} onPress={() => router.push('/explore')}>
+                        <TouchableOpacity style={styles.iconCircle} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/explore'); }}>
                             <IconSymbol name="magnifyingglass" size={22} color={textColor} />
                         </TouchableOpacity>
                         <NotificationBell />
@@ -441,7 +445,7 @@ export default function FeedScreen() {
 
                 <TouchableOpacity
                     style={[styles.fab, { backgroundColor: primaryColor, shadowColor: primaryColor }]}
-                    onPress={() => setShowCreateModal(true)}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowCreateModal(true); }}
                 >
                     <LinearGradient
                         colors={[primaryColor, useThemeColor('primaryDark')]}

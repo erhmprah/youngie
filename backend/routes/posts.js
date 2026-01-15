@@ -303,16 +303,20 @@ router.post('/', auth, async (req, res) => {
     console.log('  User ID:', req.userId);
     console.log('  Body:', req.body);
 
-    const { content, image, video, isPublic, isAnonymous, commentsDisabled, tags, pollOptions } = req.body;
+    const { content, images, video, isPublic, isAnonymous, commentsDisabled, tags, pollOptions, category } = req.body;
 
-    if ((!content || content.trim().length === 0) && !image && !video) {
-      return res.status(400).json({ msg: 'Content, image, or video is required' });
+    if ((!content || content.trim().length === 0) && (!images || images.length === 0) && !video) {
+      return res.status(400).json({ msg: 'Content, image(s), or video is required' });
+    }
+
+    if (images && images.length > 10) {
+      return res.status(400).json({ msg: 'You can upload a maximum of 10 images.' });
     }
 
     const post = new Post({
       author: req.userId,
       content: content && content.trim() ? content.trim() : undefined,
-      image,
+      images,
       video,
       isPublic: isPublic !== undefined ? isPublic : true,
       isAnonymous: isAnonymous === true || isAnonymous === 'true',
@@ -321,6 +325,7 @@ router.post('/', auth, async (req, res) => {
       comments: [],
       tags: tags || [],
       pollOptions: pollOptions || [],
+      category: category || undefined,
     });
 
     console.log('💾 Saving post...');
@@ -523,7 +528,8 @@ router.get('/search', auth, async (req, res) => {
 
     // 2. Build search conditions for posts
     const postConditions = [
-      { content: { $regex: escapedQuery, $options: 'i' } }
+      { content: { $regex: escapedQuery, $options: 'i' } },
+      { category: escapedQuery }
     ];
 
     // Only add author search if we have matching users
@@ -975,10 +981,14 @@ router.post('/:postId/comment/:commentId/react', auth, async (req, res) => {
 // Update post
 router.put('/:postId', auth, async (req, res) => {
   try {
-    const { content, image, video } = req.body;
+    const { content, images, video } = req.body;
 
-    if ((!content || content.trim().length === 0) && !image && !video) {
-      return res.status(400).json({ msg: 'Content, image, or video is required' });
+    if ((!content || content.trim().length === 0) && (!images || images.length === 0) && !video) {
+      return res.status(400).json({ msg: 'Content, image(s), or video is required' });
+    }
+
+    if (images && images.length > 10) {
+      return res.status(400).json({ msg: 'You can upload a maximum of 10 images.' });
     }
 
     const post = await Post.findById(req.params.postId);
@@ -992,8 +1002,8 @@ router.put('/:postId', auth, async (req, res) => {
     }
 
     post.content = content;
-    if (image !== undefined) {
-      post.image = image;
+    if (images !== undefined) {
+      post.images = images;
     }
     if (video !== undefined) {
       post.video = video;

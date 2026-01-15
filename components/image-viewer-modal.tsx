@@ -19,7 +19,9 @@ export function ImageViewerModal({ visible, onClose, imageUrl }: ImageViewerModa
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                     <Ionicons name="close" size={30} color="white" />
                 </TouchableOpacity>
-                <Image source={{ uri: imageUrl }} style={styles.image} resizeMode="contain" />
+                <View style={styles.imageContainer}>
+                    <Image source={{ uri: imageUrl }} style={styles.image} resizeMode="contain" />
+                </View>
             </View>
         </Modal>
     );
@@ -39,8 +41,12 @@ const styles = StyleSheet.create({
         zIndex: 1,
         padding: 10,
     },
+    imageContainer: {
+        maxWidth: height * 0.8,
+        maxHeight: height * 0.8,
+    },
     image: {
-        width: width,
-        height: height * 0.8,
+        width: '100%',
+        height: '100%',
     },
 });

@@ -7,9 +7,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // For physical devices, you MUST use your machine's actual local IP address (e.g., '192.168.1.X').
 // Ensure your backend server is running and accessible on the specified port.
 // If you encounter a 'Network Error', verify this URL is correct for your device/emulator and network.
-// Default to 10.0.2.2 for Android emulator (backend runs on port 5000)
+// Default to 10.0.2.2 for Android emulator (backend runs on port 5001)
 // For physical devices, use machine's IP (e.g., '192.168.1.61:5001')
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.61:5001/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5001/api';
 
 console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
@@ -124,13 +124,15 @@ export const userAPI = {
     return response.json();
   },
   searchUsers: (query: string) => api.get('/users/search/query', { params: { q: query } }),
-  getNearbyUsers: () => api.get('/users/nearby/all'),
+  getNearbyUsers: (filters?: any) => api.get('/users/nearby/all', { params: filters }),
   sendFriendRequest: (userId: string, targetUserId: string) =>
     api.post(`/users/${userId}/friend-request/${targetUserId}`),
   acceptFriendRequest: (userId: string, senderId: string) =>
     api.post(`/users/${userId}/accept-request/${senderId}`),
   ignoreFriendRequest: (userId: string, senderId: string) =>
     api.post(`/users/${userId}/ignore-request/${senderId}`),
+  cancelFriendRequest: (userId: string, targetUserId: string) =>
+    api.post(`/users/${userId}/cancel-request/${targetUserId}`),
   addFriend: (userId: string, friendId: string) =>
     api.post(`/users/${userId}/friends/${friendId}`),
   unfriend: (userId: string, friendId: string) =>
@@ -176,7 +178,7 @@ export const chatAPI = {
   getUserChats: (userId: string) => api.get(`/chats/user/${userId}`),
   getChat: (chatId: string) => api.get(`/chats/${chatId}`),
   createChat: (data: any) => api.post('/chats', data),
-  sendMessage: (chatId: string, data: { content?: string; isAnonymous?: boolean; replyTo?: string; attachment?: any }) =>
+  sendMessage: (chatId: string, data: { content?: string; isAnonymous?: boolean; replyTo?: string; attachment?: any; pollOptions?: { text: string }[] }) =>
     api.post(`/chats/${chatId}/messages`, data),
   deleteMessage: (chatId: string, messageId: string) =>
     api.delete(`/chats/${chatId}/messages/${messageId}`),
@@ -204,13 +206,14 @@ export const chatAPI = {
     const data = await response.json();
     return { data };
   },
+  votePoll: (chatId: string, messageId: string, optionIndex: number) => api.post(`/chats/${chatId}/messages/${messageId}/vote`, { optionIndex }),
 };
 
 export const postAPI = {
   getPosts: (isAnonymous?: boolean) => api.get('/posts', { params: { isAnonymous } }),
   getUserPosts: (userId: string) => api.get(`/posts/user/${userId}`),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
-  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[] }) =>
+  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string }) =>
     api.post('/posts', data),
   updatePost: (postId: string, data: { content?: string; image?: string; video?: string }) =>
     api.put(`/posts/${postId}`, data),

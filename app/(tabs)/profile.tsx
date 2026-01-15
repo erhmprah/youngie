@@ -16,8 +16,8 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { userAPI, postAPI, chatAPI, getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
-import { Ionicons } from '@expo/vector-icons';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
+import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 
@@ -267,7 +267,7 @@ export default function ProfileScreen() {
                 <View style={styles.profileDetails}>
                     {user?.location && user.location.trim() && (
                         <View style={styles.detailRow}>
-                            <IconSymbol name="location.fill" size={16} color={lightTextColor} />
+                            <IconSymbol name="location" size={16} color={lightTextColor} />
                             <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.location}</ThemedText>
                         </View>
                     )}
@@ -301,22 +301,23 @@ export default function ProfileScreen() {
                 </View>
 
                 <View style={styles.actionRow}>
-                    {activeTab === 'album' && (
-                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor, marginRight: spacing.md }]} onPress={handleAddPhotoToAlbum}>
+                    {activeTab === 'album' ? (
+                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleAddPhotoToAlbum(); }}>
                             <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Add Photo</ThemedText>
                         </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsEditModalVisible(true); }}>
+                            <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Edit Profile</ThemedText>
+                        </TouchableOpacity>
                     )}
-                    <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => setIsEditModalVisible(true)}>
-                        <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Edit Profile</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => router.push('/chat/favorites')}>
+                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/chat/favorites'); }}>
                         <IconSymbol name="heart.fill" size={20} color={textColor} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => router.push('/settings')}>
-                        <IconSymbol name="gear" size={20} color={textColor} />
+                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}>
+                        <IconSymbol name="settings" size={20} color={textColor} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => logout()}>
-                        <IconSymbol name="x" size={20} color={textColor} />
+                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); logout(); }}>
+                        <IconSymbol name="logout" size={20} color={textColor} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -325,21 +326,21 @@ export default function ProfileScreen() {
             <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
                 <TouchableOpacity
                     style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
-                    onPress={() => setActiveTab('posts')}
+                    onPress={() => { Haptics.selectionAsync(); setActiveTab('posts'); }}
                 >
                     <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
                     <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={[styles.tab, activeTab === 'friends' && { borderBottomColor: primaryColor }]}
-                    onPress={() => setActiveTab('friends')}
+                    onPress={() => { Haptics.selectionAsync(); setActiveTab('friends'); }}
                 >
                     <IconSymbol name="person.2.fill" size={20} color={activeTab === 'friends' ? primaryColor : lightTextColor} />
                     <ThemedText style={[styles.tabText, { color: activeTab === 'friends' ? primaryColor : lightTextColor }]}>Friends</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
-                    onPress={() => setActiveTab('album')}
+                    onPress={() => { Haptics.selectionAsync(); setActiveTab('album'); }}
                 >
                     <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
                     <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
@@ -391,8 +392,8 @@ export default function ProfileScreen() {
 
         if (activeTab === 'posts') {
             return (
-                <TouchableOpacity style={[styles.postItem, { borderColor }]} onPress={() => router.push({ pathname: '/', params: { postId: item._id } })}>
-                    <Image source={{ uri: getImageUrl(item.image) }} style={styles.postThumbnail} />
+                <TouchableOpacity style={[styles.postItem, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push({ pathname: '/', params: { postId: item._id } }); }}>
+                    <Image source={{ uri: getImageUrl(item.images?.[0] || item.image) }} style={styles.postThumbnail} />
                     <View style={styles.postOverlay}>
                         <View style={styles.postStats}>
                             <View style={styles.stat}>
@@ -411,7 +412,7 @@ export default function ProfileScreen() {
             return (
                 <TouchableOpacity 
                     style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}
-                    onPress={() => router.push(`/user/${item._id}`)}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${item._id}`); }}
                 >
                     {item.profilePhoto ? (
                         <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
@@ -425,14 +426,14 @@ export default function ProfileScreen() {
                         <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>{item.bio || 'No bio'}</ThemedText>
                     </View>
                     <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: primaryColor }]} onPress={() => handleMessage(item._id)}>
+                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleMessage(item._id); }}>
                             <IconSymbol name="message.fill" size={20} color={white} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: errorColor || '#FF3B30' }]} onPress={() => handleUnfriend(item._id, item.username)}>
-                            <Ionicons name="person-remove" size={18} color={white} />
+                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: errorColor || '#FF3B30' }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleUnfriend(item._id, item.username); }}>
+                            <IconSymbol name="person.remove" size={18} color={white} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: '#8E8E93' }]} onPress={() => handleBlock(item._id, item.username)}>
-                            <IconSymbol name="x" size={18} color={white} />
+                        <TouchableOpacity style={[styles.messageBtn, { backgroundColor: '#8E8E93' }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); handleBlock(item._id, item.username); }}>
+                            <IconSymbol name="person.slash" size={18} color={white} />
                         </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
@@ -441,8 +442,8 @@ export default function ProfileScreen() {
             return (
                 <TouchableOpacity 
                     style={[styles.postItem, { borderColor }]} 
-                    onLongPress={() => handleDeleteAlbumPhoto(item._id)}
-                    onPress={() => setSelectedImage(getImageUrl(item.image) || null)}
+                    onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleDeleteAlbumPhoto(item._id); }}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedImage(getImageUrl(item.image) || null); }}
                 >
                     <Image source={{ uri: getImageUrl(item.image) }} style={styles.postThumbnail} />
                 </TouchableOpacity>

@@ -143,7 +143,7 @@ router.get('/user/:userId', auth, async (req, res) => {
     const chats = await Chat.find({
       participants: req.params.userId
     })
-    .populate('participants', 'username profilePhoto')
+    .populate('participants', 'username profilePhoto isActive lastSeen')
     .populate('relatedCommunity', 'name image')
     .sort({ updatedAt: -1 });
 
@@ -178,6 +178,15 @@ router.get('/user/:userId', auth, async (req, res) => {
         });
         chatObj.unreadCount = unreadCount;
 
+        // Map status fields
+        if (chatObj.participants) {
+            chatObj.participants = chatObj.participants.map(p => ({
+                ...p,
+                isOnline: p.isActive,
+                lastSeen: p.lastSeen
+            }));
+        }
+
         // Handle anonymous chats
         if (chat.isAnonymous) {
             chatObj.participants = chatObj.participants.map(p => ({
@@ -202,7 +211,7 @@ router.get('/user/:userId', auth, async (req, res) => {
 router.get('/:chatId', auth, async (req, res) => {
     try {
         const chat = await Chat.findById(req.params.chatId)
-          .populate('participants', 'username profilePhoto')
+          .populate('participants', 'username profilePhoto isActive lastSeen')
           .populate('relatedCommunity', 'name image');
         if (!chat) return res.status(404).json({ msg: 'Chat not found' });
 
@@ -251,6 +260,15 @@ router.get('/:chatId', auth, async (req, res) => {
 
         const chatObj = chat.toObject();
 
+        // Map status fields
+        if (chatObj.participants) {
+            chatObj.participants = chatObj.participants.map(p => ({
+                ...p,
+                isOnline: p.isActive,
+                lastSeen: p.lastSeen
+            }));
+        }
+
         if (chat.isAnonymous) {
               chatObj.participants = chatObj.participants.map(p => ({
                 ...p,
@@ -298,10 +316,10 @@ router.get('/:chatId', auth, async (req, res) => {
 // Send message
 router.post('/:chatId/messages', auth, async (req, res) => {
   try {
-    const { content, isAnonymous, replyTo, attachment } = req.body;
+    const { content, isAnonymous, replyTo, attachment, pollOptions } = req.body;
     const chatId = req.params.chatId;
 
-    if (!content && !attachment) {
+    if (!content && !attachment && (!pollOptions || pollOptions.length === 0)) {
       return res.status(400).json({ msg: 'Message content or attachment is required' });
     }
 
@@ -323,7 +341,8 @@ router.post('/:chatId/messages', auth, async (req, res) => {
       replyTo: replyTo || undefined,
       isAnonymous: isAnonymous || false,
       readBy: [req.userId],
-      attachment: attachment || undefined
+      attachment: attachment || undefined,
+      pollOptions: pollOptions || undefined
     });
 
     await newMessage.save();
@@ -354,6 +373,41 @@ router.post('/:chatId/messages', auth, async (req, res) => {
     res.json(newMessage);
   } catch (error) {
     console.error('Send message error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Vote on a poll in a message
+router.post('/:chatId/messages/:messageId/vote', auth, async (req, res) => {
+  try {
+    const { optionIndex } = req.body;
+    const message = await Message.findById(req.params.messageId);
+    if (!message) return res.status(404).json({ msg: 'Message not found' });
+    
+    // Check if message has poll
+    if (!message.pollOptions || message.pollOptions.length === 0) {
+         return res.status(400).json({ msg: 'This message is not a poll' });
+    }
+
+    // Remove existing vote if any
+    message.pollOptions.forEach(opt => {
+        opt.votes = opt.votes.filter(v => v.toString() !== req.userId);
+    });
+
+    // Add new vote
+    if (message.pollOptions[optionIndex]) {
+        message.pollOptions[optionIndex].votes.push(req.userId);
+    }
+
+    await message.save();
+    
+    // Emit update
+    if (req.io) {
+         req.io.to(req.params.chatId).emit('messageUpdated', message);
+    }
+
+    res.json(message);
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

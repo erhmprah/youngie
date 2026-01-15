@@ -1,6 +1,6 @@
 // components/create-post-modal.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, FlatList, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -13,6 +13,8 @@ import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { postAPI, userAPI, getImageUrl } from '@/utils/api';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAuth } from '@/contexts/AuthContext';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import * as Haptics from 'expo-haptics';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -21,11 +23,19 @@ interface CreatePostModalProps {
     initialAnonymous?: boolean;
 }
 
+const MAX_IMAGES = 10;
+const categories = [
+  { id: '1', title: 'Music', icon: 'headphones', color: '#8E44AD' }, // Using static colors since useThemeColor not available here
+  { id: '2', title: 'Gaming', icon: 'gamepad', color: '#E74C3C' },
+  { id: '3', title: 'Sports', icon: 'globe', color: '#F39C12' },
+  { id: '4', title: 'Art', icon: 'image', color: '#E74C3C' },
+  { id: '5', title: 'Tech', icon: 'code', color: '#3498DB' },
+];
+
 export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = false }: CreatePostModalProps) {
     const { user } = useAuth();
     const [content, setContent] = useState('');
-    const [image, setImage] = useState<string | null>(null);
-    const [video, setVideo] = useState<string | null>(null);
+    const [media, setMedia] = useState<Array<{ uri: string; type: 'image' | 'video' }>>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isPublic, setIsPublic] = useState(true);
     const [isAnonymous, setIsAnonymous] = useState(initialAnonymous);
@@ -39,6 +49,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
     const [isLoadingFriends, setIsLoadingFriends] = useState(false);
     const [showPoll, setShowPoll] = useState(false);
     const [pollOptions, setPollOptions] = useState(['', '']);
+    const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
+    const videoPlayer = useRef<Video>(null);
 
     const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
@@ -101,35 +113,69 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
     const surfaceColor = useThemeColor('surface');
 
     const handlePickImage = async () => {
+        const currentImageCount = media.filter(m => m.type === 'image').length;
+        if (currentImageCount >= MAX_IMAGES) {
+            Alert.alert('Limit Reached', `You can only upload a maximum of ${MAX_IMAGES} images.`);
+            return;
+        }
+
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [4, 3],
+            allowsEditing: false,
             quality: 1,
+            allowsMultipleSelection: true,
+            selectionLimit: MAX_IMAGES - currentImageCount,
         });
 
         if (!result.canceled) {
-            setImage(result.assets[0].uri);
-            setVideo(null); // Clear video if image is selected
+            const newMedia = result.assets.map(asset => ({ uri: asset.uri, type: 'image' as const }));
+            setMedia(prev => {
+                // This filter also conveniently removes any video that might have been selected.
+                const currentImages = prev.filter(m => m.type === 'image');
+                const combined = [...currentImages, ...newMedia];
+
+                if (combined.length > MAX_IMAGES) {
+                    Alert.alert(
+                        'Limit Exceeded',
+                        `You can only select up to ${MAX_IMAGES} images. ${combined.length - MAX_IMAGES} images were not added.`
+                    );
+                    return combined.slice(0, MAX_IMAGES);
+                }
+                return combined;
+            });
         }
     };
 
     const handlePickVideo = async () => {
+        if (media.length > 0) {
+            Alert.alert("Clear Selection", "Adding a video will remove any selected images. Continue?", [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'OK', onPress: async () => {
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+                        allowsEditing: true,
+                        quality: 1,
+                    });
+                    if (!result.canceled) {
+                        setMedia([{ uri: result.assets[0].uri, type: 'video' as const }]);
+                    }
+                }}
+            ]);
+            return;
+        }
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Videos,
             allowsEditing: true,
-            aspect: [4, 3],
             quality: 1,
         });
 
         if (!result.canceled) {
-            setVideo(result.assets[0].uri);
-            setImage(null); // Clear image if video is selected
+            setMedia([{ uri: result.assets[0].uri, type: 'video' as const }]);
         }
     };
 
     const handlePost = async () => {
-        if (!content && !image && !video) {
+        if (!content && media.length === 0) {
             Alert.alert('Error', 'Please add some content, an image, or a video to your post.');
             return;
         }
@@ -146,50 +192,49 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
 
         setIsLoading(true);
         try {
-            let imageUrl = undefined;
-            let videoUrl = undefined;
+            const imageUrls: string[] = [];
+            let videoUrl: string | undefined = undefined;
 
-            // Upload image if selected
-            if (image) {
-                const base64 = await FileSystem.readAsStringAsync(image, { encoding: 'base64' });
-                const filename = `post-image-${Date.now()}.jpg`;
-                const uploadResponse = await postAPI.uploadPostImageBase64({
-                    imageData: `data:image/jpeg;base64,${base64}`,
-                    filename
-                });
-                imageUrl = uploadResponse.imageUrl;
-            }
-
-            // Upload video if selected
-            if (video) {
-                const base64 = await FileSystem.readAsStringAsync(video, { encoding: 'base64' });
-                const filename = `post-video-${Date.now()}.mp4`;
-                const uploadResponse = await postAPI.uploadPostVideoBase64({
-                    videoData: `data:video/mp4;base64,${base64}`,
-                    filename
-                });
-                videoUrl = uploadResponse.videoUrl;
+            for (const medium of media) {
+                if (medium.type === 'image') {
+                    const base64 = await FileSystem.readAsStringAsync(medium.uri, { encoding: 'base64' });
+                    const filename = `post-image-${Date.now()}-${Math.random()}.jpg`;
+                    const uploadResponse = await postAPI.uploadPostImageBase64({
+                        imageData: `data:image/jpeg;base64,${base64}`,
+                        filename
+                    });
+                    imageUrls.push(uploadResponse.imageUrl);
+                } else if (medium.type === 'video') {
+                    const base64 = await FileSystem.readAsStringAsync(medium.uri, { encoding: 'base64' });
+                    const filename = `post-video-${Date.now()}.mp4`;
+                    const uploadResponse = await postAPI.uploadPostVideoBase64({
+                        videoData: `data:video/mp4;base64,${base64}`,
+                        filename
+                    });
+                    videoUrl = uploadResponse.videoUrl;
+                }
             }
 
             // Create post with uploaded media URLs
             await postAPI.createPost({
                 content: content.trim() || undefined,
-                image: imageUrl,
+                images: imageUrls.length > 0 ? imageUrls : undefined,
                 video: videoUrl,
                 isPublic,
                 isAnonymous,
                 commentsDisabled,
                 tags: taggedUsers.length > 0 ? taggedUsers : undefined,
-                pollOptions: finalPollOptions
+                pollOptions: finalPollOptions,
+                category: selectedCategory
             });
 
             onPost();
             onClose();
             setContent('');
-            setImage(null);
-            setVideo(null);
+            setMedia([]);
             setShowPoll(false);
             setPollOptions(['', '']);
+            setSelectedCategory(undefined);
         } catch (error) {
             console.error('Error creating post:', error);
             Alert.alert('Error', 'Failed to create post. Please try again.');
@@ -200,13 +245,13 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
 
     return (
         <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-            <ThemedView style={[styles.container, { backgroundColor }]}>
+            <ThemedView style={[styles.container, { backgroundColor }]} safe>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={onClose}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }}>
                         <Ionicons name="close" size={24} color={textColor} />
                     </TouchableOpacity>
                     <ThemedText style={{ fontSize: typography.sizes.title, fontFamily: typography.families.bold }}>New Post</ThemedText>
-                    <TouchableOpacity onPress={handlePost} disabled={isLoading}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handlePost(); }} disabled={isLoading}>
                         {isLoading ? <ActivityIndicator color={primaryColor} /> : <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.title, fontFamily: typography.families.bold }}>Post</ThemedText>}
                     </TouchableOpacity>
                 </View>
@@ -239,7 +284,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                         <View style={styles.pollContainer}>
                             <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm}}>
                                 <ThemedText style={{fontWeight: 'bold'}}>Poll Options</ThemedText>
-                                <TouchableOpacity onPress={() => setShowPoll(false)}>
+                                <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowPoll(false); }}>
                                     <Ionicons name="close-circle" size={20} color={lightTextColor} />
                                 </TouchableOpacity>
                             </View>
@@ -258,7 +303,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                                 />
                             ))}
                             {pollOptions.length < 4 && (
-                                <TouchableOpacity onPress={() => setPollOptions([...pollOptions, ''])} style={{marginTop: spacing.xs}}>
+                                <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPollOptions([...pollOptions, '']); }} style={{marginTop: spacing.xs}}>
                                     <ThemedText style={{ color: primaryColor }}>+ Add Option</ThemedText>
                                 </TouchableOpacity>
                             )}
@@ -275,7 +320,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                                         <TouchableOpacity
                                             key={userId}
                                             style={[styles.tagChip, { backgroundColor: primaryColor }]}
-                                            onPress={() => setTaggedUsers(prev => prev.filter(id => id !== userId))}
+                                            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaggedUsers(prev => prev.filter(id => id !== userId)); }}
                                         >
                                             <ThemedText style={{ color: white, fontSize: typography.sizes.caption }}>{user.username}</ThemedText>
                                             <Ionicons name="close" size={12} color={white} />
@@ -292,47 +337,98 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                             </View>
                         </View>
                     )}
-                    {image && <Image source={{ uri: image }} style={styles.previewImage} />}
-                    {video && (
-                        <Video
-                            source={{ uri: video }}
-                            style={styles.previewVideo}
-                            useNativeControls
-                            resizeMode={ResizeMode.CONTAIN}
-                            isLooping={false}
-                        />
+                    {media.length > 0 && (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewContainer}>
+                            {media.map((medium, index) => (
+                                <View key={index} style={styles.mediaItem}>
+                                    {medium.type === 'image' ? (
+                                        <Image source={{ uri: medium.uri }} style={styles.previewImage} />
+                                    ) : (
+                                        <Video
+                                            ref={videoPlayer}
+                                            source={{ uri: medium.uri }}
+                                            style={styles.previewImage}
+                                            useNativeControls
+                                            resizeMode={ResizeMode.COVER}
+                                            isLooping={false}
+                                        />
+                                    )}
+                                    <TouchableOpacity 
+                                        style={styles.removeMediaButton}
+                                        onPress={() => {
+                                            setMedia(prev => prev.filter((_, i) => i !== index));
+                                        }}
+                                    >
+                                        <Ionicons name="close-circle" size={24} color="white" />
+                                    </TouchableOpacity>
+                                </View>
+                            ))}
+                        </ScrollView>
                     )}
                 </ScrollView>
 
                 <View style={styles.actions}>
-                    <TouchableOpacity onPress={handlePickImage} style={styles.actionButton}>
-                        <Ionicons name="camera" size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>Photo</ThemedText>
+                    <TouchableOpacity
+                        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handlePickImage(); }}
+                        style={styles.actionButton}
+                        disabled={media.filter(m => m.type === 'image').length >= MAX_IMAGES}
+                    >
+                        <Ionicons name="camera" size={24} color={media.filter(m => m.type === 'image').length >= MAX_IMAGES ? lightTextColor : primaryColor} />
+                        <ThemedText style={{ color: media.filter(m => m.type === 'image').length >= MAX_IMAGES ? lightTextColor : primaryColor }}>Photo</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={handlePickVideo} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handlePickVideo(); }} style={styles.actionButton}>
                         <Ionicons name="videocam" size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>Video</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setIsPublic(!isPublic)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsPublic(!isPublic); }} style={styles.actionButton}>
                         <Ionicons name={isPublic ? "globe" : "people"} size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>{isPublic ? 'Public' : 'Friends'}</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setIsAnonymous(!isAnonymous)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsAnonymous(!isAnonymous); }} style={styles.actionButton}>
                         <Ionicons name={isAnonymous ? "glasses" : "person"} size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>{isAnonymous ? 'Incognito' : 'Visible'}</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setCommentsDisabled(!commentsDisabled)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCommentsDisabled(!commentsDisabled); }} style={styles.actionButton}>
                         <Ionicons name={commentsDisabled ? "chatbox-ellipses-outline" : "chatbox-ellipses"} size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>{commentsDisabled ? 'No Comments' : 'Comments'}</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setShowTagModal(true)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTagModal(true); }} style={styles.actionButton}>
                         <Ionicons name="person-add" size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>Tag</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setShowPoll(!showPoll)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowPoll(!showPoll); }} style={styles.actionButton}>
                         <Ionicons name="stats-chart" size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>Poll</ThemedText>
                     </TouchableOpacity>
+                </View>
+
+                {/* Category Selection */}
+                <View style={styles.categorySection}>
+                    <ThemedText style={{ fontFamily: typography.families.bold, marginBottom: spacing.sm }}>Category (Optional)</ThemedText>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryList}>
+                        {categories.map((cat) => (
+                            <TouchableOpacity
+                                key={cat.id}
+                                style={[
+                                    styles.catPill,
+                                    {
+                                        backgroundColor: selectedCategory === cat.title ? cat.color + '40' : cat.color + '15',
+                                        borderColor: selectedCategory === cat.title ? cat.color + '80' : cat.color + '40'
+                                    }
+                                ]}
+                                onPress={() => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    setSelectedCategory(selectedCategory === cat.title ? undefined : cat.title);
+                                }}
+                            >
+                                <IconSymbol name={cat.icon as any} size={18} color={cat.color} />
+                                <ThemedText type="body2" style={[styles.catText, { color: cat.color }]}>{cat.title}</ThemedText>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+
+                <View style={styles.actions}>
                 </View>
 
                 {/* Tag Modal */}
@@ -341,7 +437,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                         <ThemedView style={[styles.tagModal, { backgroundColor }]}>
                             <View style={styles.modalHeader}>
                                 <ThemedText style={{ fontSize: typography.sizes.title, fontFamily: typography.families.bold }}>Tag Users</ThemedText>
-                                <TouchableOpacity onPress={() => setShowTagModal(false)}>
+                                <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTagModal(false); }}>
                                     <Ionicons name="close" size={24} color={textColor} />
                                 </TouchableOpacity>
                             </View>
@@ -362,6 +458,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                                         <TouchableOpacity
                                             style={[styles.userRow, { borderBottomColor: '#E0E0E0' }]}
                                             onPress={() => {
+                                                Haptics.selectionAsync();
                                                 if (!taggedUsers.includes(item._id)) {
                                                     setTaggedUsers(prev => [...prev, item._id]);
                                                 }
@@ -396,7 +493,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                             )}
                             <TouchableOpacity
                                 style={[styles.doneButton, { backgroundColor: primaryColor }]}
-                                onPress={() => setShowTagModal(false)}
+                                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTagModal(false); }}
                             >
                                 <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Done</ThemedText>
                             </TouchableOpacity>
@@ -451,11 +548,25 @@ const styles = StyleSheet.create({
         marginBottom: spacing.sm,
         paddingVertical: spacing.sm,
     },
+    mediaItem: {
+        width: 200,
+        height: 200,
+        marginRight: spacing.sm,
+    },
+    mediaPreviewContainer: {
+        marginTop: spacing.md,
+    },
     previewImage: {
         width: '100%',
-        height: 200,
+        height: '100%',
         borderRadius: borderRadius.md,
-        marginTop: spacing.md,
+    },
+    removeMediaButton: {
+        position: 'absolute',
+        top: 5,
+        right: 5,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 12,
     },
     previewVideo: {
         width: '100%',
@@ -542,5 +653,27 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xs,
         borderRadius: borderRadius.lg,
+    },
+    categorySection: {
+        padding: spacing.md,
+        borderTopWidth: 1,
+        borderTopColor: '#E0E0E0',
+    },
+    categoryList: {
+        paddingHorizontal: spacing.lg,
+        gap: spacing.md,
+    },
+    catPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.xl,
+        gap: spacing.sm,
+        borderWidth: 1,
+    },
+    catText: {
+        fontFamily: typography.families.bold,
+        fontSize: typography.sizes.body2,
     },
 });

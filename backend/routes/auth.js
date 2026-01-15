@@ -10,7 +10,7 @@ router.post('/register', [
   body('username').isLength({ min: 3 }).trim().escape(),
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
-  body('birthYear').isInt({ min: 1997, max: new Date().getFullYear() }),
+  body('birthYear').isInt({ min: new Date().getFullYear() - 29, max: new Date().getFullYear() }),
   body('gender').isIn(['male', 'female', 'other']),
   body('location').optional().isString().trim().escape(),
 ], async (req, res) => {
@@ -92,10 +92,10 @@ router.post('/login', [
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
     
-    // Check age and suspend if >28
+    // Check age and suspend if >29
     const currentYear = new Date().getFullYear();
     const age = currentYear - user.birthYear;
-    if (age > 28 && !user.suspended) {
+    if (age > 29 && !user.suspended) {
       user.suspended = true;
       await user.save();
       // Create suspension notification
@@ -103,7 +103,7 @@ router.post('/login', [
         recipient: user._id,
         sender: user._id, // Self-notification
         type: 'suspension',
-        message: 'Your account has been suspended because you are over 28 years old.',
+        message: 'Your account has been suspended because you are over 29 years old.',
       });
       await notification.save();
     }
@@ -156,10 +156,10 @@ router.get('/me', async (req, res) => {
       return res.status(404).json({ msg: 'User not found' });
     }
 
-    // Check age and suspend if >28
+    // Check age and suspend if >29
     const currentYear = new Date().getFullYear();
     const age = currentYear - user.birthYear;
-    if (age > 28 && !user.suspended) {
+    if (age > 29 && !user.suspended) {
       user.suspended = true;
       await user.save();
       // Create suspension notification
@@ -167,7 +167,7 @@ router.get('/me', async (req, res) => {
         recipient: user._id,
         sender: user._id, // Self-notification
         type: 'suspension',
-        message: 'Your account has been suspended because you are over 28 years old.',
+        message: 'Your account has been suspended because you are over 29 years old.',
       });
       await notification.save();
     }

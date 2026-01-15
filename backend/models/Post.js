@@ -11,7 +11,7 @@ const PostSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
-    image: String,
+    images: [String],
     video: String,
     likes: [
       {
@@ -63,6 +63,11 @@ const PostSchema = new mongoose.Schema(
             ref: 'User',
           },
         ],
+        category: {
+          type: String,
+          enum: ['Music', 'Gaming', 'Sports', 'Art', 'Tech'],
+          required: false,
+        },
         parent: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Comment',

@@ -285,17 +285,16 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                     )}
                 </TouchableOpacity>
                 <View style={{ flex: 1 }}>
-                    <ThemedText>
-                        <ThemedText
-                            style={{ fontFamily: typography.families.bold }}
-                            onPress={() => {
-                                onClose();
-                                router.push(`/user/${item.author._id}`);
-                            }}
-                        >
-                            {item.author.username}{' '}
+                    <TouchableOpacity onPress={() => {
+                        onClose();
+                        router.push(`/user/${item.author._id}`);
+                    }}>
+                        <ThemedText style={{ fontFamily: typography.families.bold }}>
+                            {item.author.username}
                         </ThemedText>
-                        {item.content}
+                    </TouchableOpacity>
+                    <ThemedText>
+                        {String(item.content)}
                     </ThemedText>
                     {item.tags && item.tags.length > 0 && (
                         <View style={styles.commentTags}>
@@ -393,7 +392,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
 
     return (
         <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-            <ThemedView style={[styles.container, { backgroundColor }]}>
+            <ThemedView style={[styles.container, { backgroundColor }]} safe>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={onClose}>
                         <Ionicons name="close" size={24} color={textColor} />
@@ -413,9 +412,14 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                 <View style={{ borderTopWidth: 1, borderTopColor: useThemeColor('border') }}>
                     {replyingTo && (
                         <View style={[styles.replyBanner, { backgroundColor: useThemeColor('surface') }]}>
-                            <ThemedText style={{ fontSize: typography.sizes.caption, color: lightTextColor }}>
-                                Replying to <ThemedText style={{ fontFamily: typography.families.bold }}>{replyingTo.author.username}</ThemedText>
-                            </ThemedText>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <ThemedText style={{ fontSize: typography.sizes.caption, color: lightTextColor }}>
+                                    Replying to{' '}
+                                </ThemedText>
+                                <ThemedText style={{ fontSize: typography.sizes.caption, fontFamily: typography.families.bold, color: textColor }}>
+                                    {replyingTo.author.username}
+                                </ThemedText>
+                            </View>
                             <TouchableOpacity onPress={() => setReplyingTo(null)}>
                                 <Ionicons name="close" size={16} color={textColor} />
                             </TouchableOpacity>

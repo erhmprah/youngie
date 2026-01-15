@@ -11,6 +11,7 @@ import { spacing, typography, borderRadius } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from './ui/icon-symbol';
 import { IconName } from './ui/icon-symbol';
+import * as Haptics from 'expo-haptics';
 
 interface HeaderProps {
   title: string;
@@ -81,7 +82,10 @@ export const Header: React.FC<HeaderProps> = ({
             <View style={styles.rightSlot}>
               {rightIconName && (
                 <TouchableOpacity 
-                  onPress={onRightPress} 
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onRightPress?.();
+                  }} 
                   style={[styles.iconButton, { backgroundColor: iconButtonBg }]}
                   activeOpacity={0.7}
                 >
@@ -124,7 +128,10 @@ export const Header: React.FC<HeaderProps> = ({
           <ThemedView style={styles.rightSlot}>
             {rightIconName && (
               <TouchableOpacity 
-                onPress={onRightPress} 
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onRightPress?.();
+                }} 
                 style={[styles.iconButton, { backgroundColor: iconButtonBg }]}
                 activeOpacity={0.7}
               >

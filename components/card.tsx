@@ -5,6 +5,7 @@ import { StyleSheet, TouchableOpacity } from 'react-native';
 import { ThemedView, ThemedViewProps } from './themed-view';
 import { spacing, borderRadius, shadows } from '@/constants/design-tokens';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import * as Haptics from 'expo-haptics';
 
 // CardProps now extends ThemedViewProps for better integration
 interface CardProps extends ThemedViewProps {
@@ -33,7 +34,10 @@ export const Card: React.FC<CardProps> = ({
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+      <TouchableOpacity onPress={(e) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }} activeOpacity={0.85}>
         {cardContent}
       </TouchableOpacity>
     );

@@ -14,9 +14,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { launchImageLibraryAsync } from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { colors, spacing, borderRadius } from '@/constants/design-tokens';
 import { ICONS, ICON_SIZES } from '@/constants/icons';
+import { IconSymbol } from './ui/icon-symbol';
 
 interface Post {
   _id: string;
@@ -27,13 +29,14 @@ interface Post {
   content?: string;
   image?: string;
   video?: string;
+  media?: { url: string; type: 'image' | 'video' }[];
   createdAt: string;
 }
 
 interface EditPostModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: (content: string, imagePath?: string) => Promise<void>;
+  onSave: (content: string, media?: { uri: string; type: 'image' | 'video' }) => Promise<void>;
   initialData: Post;
 }
 
@@ -44,15 +47,20 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
   initialData,
 }) => {
   const [content, setContent] = useState(initialData.content || '');
-  const [selectedMedia, setSelectedMedia] = useState<{ uri: string; type: 'image' | 'video' } | null>(
-    initialData.image ? { uri: initialData.image, type: 'image' } : null
-  );
+  const [selectedMedia, setSelectedMedia] = useState<{ uri: string; type: 'image' | 'video' } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
       setContent(initialData.content || '');
-      setSelectedMedia(initialData.image ? { uri: initialData.image, type: 'image' } : null);
+      if (initialData.media && initialData.media.length > 0) {
+        setSelectedMedia({ uri: initialData.media[0].url, type: initialData.media[0].type });
+      } else if (initialData.image) {
+        setSelectedMedia({ uri: initialData.image, type: 'image' });
+      } else {
+        setSelectedMedia(null);
+      }
     }
   }, [visible, initialData]);
 
@@ -73,24 +81,7 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
     if (!content || !content.trim()) return;
     setIsLoading(true);
     try {
-      let imagePath;
-      if (selectedMedia && !selectedMedia.uri.startsWith('/uploads')) {
-        // New image uploaded
-        const formData = new FormData();
-        formData.append('image', {
-          uri: selectedMedia.uri,
-          type: selectedMedia.type === 'image' ? 'image/jpeg' : 'video/mp4',
-          name: selectedMedia.type === 'image' ? 'image.jpg' : 'video.mp4',
-        } as any);
-        // Assume postAPI.uploadPostImage is available
-        // const uploadRes = await postAPI.uploadPostImage(formData);
-        // imagePath = uploadRes.data.imagePath;
-        // For now, since not implemented, use the uri
-        imagePath = selectedMedia.uri;
-      } else if (selectedMedia) {
-        imagePath = selectedMedia.uri;
-      }
-      await onSave(content, imagePath);
+      await onSave(content, selectedMedia || undefined);
       setContent('');
       setSelectedMedia(null);
       onClose();
@@ -105,9 +96,9 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View style={styles.container}>
         {/* Header Navigation */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top }]}>
           <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
-            <Ionicons name={ICONS.close} size={ICON_SIZES.lg} color={colors.text} />
+            <IconSymbol name="x" size={ICON_SIZES.lg} color={colors.text} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -150,11 +141,11 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
                     style={styles.removeMediaBtn}
                     onPress={() => setSelectedMedia(null)}
                   >
-                    <Ionicons name={ICONS.closeCircle} size={ICON_SIZES.lg} color="rgba(0,0,0,0.7)" />
+                    <IconSymbol name="x" size={ICON_SIZES.lg} color="rgba(0,0,0,0.7)" />
                   </TouchableOpacity>
                   {selectedMedia.type === 'video' && (
                     <View style={styles.videoBadge}>
-                      <Ionicons name={ICONS.play} size={ICON_SIZES.xs} color="#FFF" />
+                      <IconSymbol name="play" size={ICON_SIZES.xs} color="#FFF" />
                     </View>
                   )}
                 </View>
@@ -168,13 +159,13 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
           <View style={styles.toolbar}>
             <View style={styles.toolRow}>
               <TouchableOpacity onPress={pickMedia} style={styles.toolItem}>
-                <Ionicons name={ICONS.image} size={ICON_SIZES.md} color={colors.primary} />
+                <IconSymbol name="image" size={ICON_SIZES.md} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.toolItem}>
-                <Ionicons name={ICONS.video} size={ICON_SIZES.md} color={colors.primary} />
+                <IconSymbol name="video" size={ICON_SIZES.md} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.toolItem}>
-                <Ionicons name={ICONS.location} size={ICON_SIZES.md} color={colors.primary} />
+                <IconSymbol name="location" size={ICON_SIZES.md} color={colors.primary} />
               </TouchableOpacity>
             </View>
             <ThemedText style={[styles.charCount, (content && content.length > 450) && { color: 'red' }]}>
@@ -194,7 +185,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 10,
   },
   iconBtn: { padding: 4 },

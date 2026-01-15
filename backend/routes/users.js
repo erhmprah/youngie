@@ -278,18 +278,57 @@ router.get('/nearby/all', auth, async (req, res) => {
       ...currentUser.blockedUsers,
     ];
 
-    const users = await User.find({
+    const currentYear = new Date().getFullYear();
+    const { minAge, maxAge, gender, location, latitude, longitude, radius } = req.query;
+
+    // Calculate birth year range based on age
+    // Default: 13-29 years old
+    // Age 13 => Born in (Current - 13)
+    // Age 29 => Born in (Current - 29)
+    // So for age range [min, max], birthYear range is [Current-max, Current-min]
+    
+    let minBirthYear = currentYear - 29;
+    let maxBirthYear = currentYear - 13;
+
+    if (minAge) {
+      maxBirthYear = currentYear - parseInt(minAge);
+    }
+    if (maxAge) {
+      minBirthYear = currentYear - parseInt(maxAge);
+    }
+
+    // Build query with filters
+    let query = {
       _id: {
         $ne: currentUser._id,
         $nin: excludedUsers,
       },
-      age: { $gte: 13, $lte: 18 },
-    })
-      .select('-password -email')
-      .limit(20);
+      birthYear: { $gte: minBirthYear, $lte: maxBirthYear },
+    };
 
-    res.json(users);
+    if (gender && Array.isArray(gender)) {
+      query.gender = { $in: gender };
+    } else if (gender) {
+      query.gender = gender;
+    }
+    if (location) {
+      query.location = { $regex: location, $options: 'i' };
+    }
+
+    const users = await User.find(query)
+      .select('-password -email')
+      .limit(20)
+      .lean();
+
+    // Add age property to users
+    const usersWithAge = users.map(user => ({
+      ...user,
+      age: currentYear - user.birthYear
+    }));
+
+    res.json(usersWithAge);
   } catch (error) {
+    console.error('Error fetching nearby users:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -497,6 +536,35 @@ router.post('/:userId/ignore-request/:senderId', auth, async (req, res) => {
     await sender.save();
 
     res.json({ msg: 'Friend request ignored' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel friend request
+router.post('/:userId/cancel-request/:targetUserId', auth, async (req, res) => {
+  try {
+    const sender = await User.findById(req.userId);
+    const target = await User.findById(req.params.targetUserId);
+
+    if (!sender || !target) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Check if request exists
+    if (!sender.friendRequests.includes(target._id)) {
+      return res.status(400).json({ msg: 'No friend request found' });
+    }
+
+    // Remove from sender's friend requests
+    sender.friendRequests = sender.friendRequests.filter(id => !id.equals(target._id));
+    // Remove from target's incoming requests
+    target.incomingRequests = target.incomingRequests.filter(id => !id.equals(sender._id));
+
+    await sender.save();
+    await target.save();
+
+    res.json({ msg: 'Friend request cancelled' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

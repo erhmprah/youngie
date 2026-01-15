@@ -103,8 +103,13 @@ export default function FavoritesScreen() {
                             <FeedCard
                                 post={item}
                                 currentUserId={user?._id || ''}
-                                onFavorite={handleUnfavorite}
+                                onDelete={() => {}}
+                                onReport={() => {}}
+                                onUpdate={() => {}}
                                 onLike={handleLike}
+                                onComment={() => {}}
+                                onFavorite={() => handleUnfavorite(item._id)}
+                                shouldPlay={false}
                             />
                         )}
                         contentContainerStyle={styles.listContent}

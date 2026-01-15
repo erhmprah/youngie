@@ -6,6 +6,7 @@ import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
 import { postAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
+import * as Haptics from 'expo-haptics';
 
 export interface PollOption {
     text: string;
@@ -59,7 +60,10 @@ const PollOptionRow = ({
                     backgroundColor: surfaceColor 
                 }
             ]}
-            onPress={() => onVote(index)}
+            onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onVote(index);
+            }}
             disabled={hasVoted || isVoting}
         >
             {hasVoted && (
@@ -81,12 +85,12 @@ const PollOptionRow = ({
                 {!hasVoted && !isVoting && (
                     <View style={[styles.radioCircle, { borderColor: lightTextColor }]} />
                 )}
-                <ThemedText style={{ 
+                <ThemedText style={{
                     fontWeight: isSelected ? 'bold' : 'normal',
                     color: textColor,
                     flex: 1
                 }}>
-                    {optionText}
+                    {String(optionText)}
                 </ThemedText>
                 {hasVoted && (
                     <View style={styles.resultContainer}>
@@ -157,7 +161,7 @@ export function PollView({ postId, options, onVote, voteAPI }: PollViewProps) {
                 />
             ))}
             <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption, marginTop: spacing.xs, marginLeft: spacing.xs }}>
-                {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
+                {String(totalVotes)} {totalVotes === 1 ? 'vote' : 'votes'}
             </ThemedText>
         </View>
     );

@@ -7,6 +7,7 @@ import { notificationAPI } from '@/utils/api';
 import { getColors } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getSocket } from '@/utils/socket';
+import * as Haptics from 'expo-haptics';
 
 export function NotificationBell() {
   const { user } = useAuth();
@@ -49,6 +50,7 @@ export function NotificationBell() {
   }, []);
 
   const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/notifications');
   };
 

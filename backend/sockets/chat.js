@@ -11,12 +11,13 @@ module.exports = function (io) {
     console.log(`✓ User connected: ${socket.id}`);
 
     // Store user's socket ID upon login/connection
-    socket.on('user-online', ({ userId }) => {
+    socket.on('user-online', async ({ userId }) => {
       if (userId) {
         users[userId] = socket.id;
         console.log(`User ${userId} is online with socket ${socket.id}`);
-        // Optionally, update user's status in the database
-        User.findByIdAndUpdate(userId, { isActive: true, lastSeen: new Date() }).exec();
+        // Update user's status in the database
+        await User.findByIdAndUpdate(userId, { isActive: true, lastSeen: new Date() });
+        io.emit('user_status_change', { userId, isOnline: true, lastSeen: new Date() });
       }
     });
 
@@ -99,17 +100,50 @@ module.exports = function (io) {
         socket.to(chatId).emit('user-stop-typing');
     });
 
-    // Handle user disconnecting
-    socket.on('disconnect', () => {
-      console.log(`✗ User disconnected: ${socket.id}`);
-      for (const userId in users) {
-        if (users[userId] === socket.id) {
-          delete users[userId];
-          // Optionally, update user's status in the database
-          User.findByIdAndUpdate(userId, { isActive: false, lastSeen: new Date() }).exec();
-          break;
-        }
-      }
-    });
+   // Handle voice call signaling for private chats
+   socket.on('voice-call-offer', ({ chatId, offer, caller }) => {
+     Chat.findById(chatId).populate('participants', '_id').then(chat => {
+       if (!chat) return;
+
+       // Emit to all participants except the caller
+       chat.participants.forEach(participant => {
+         if (participant._id.toString() !== caller._id) {
+           const participantSocketId = users[participant._id.toString()];
+           if (participantSocketId) {
+             io.to(participantSocketId).emit('voice-call-offer', { offer, caller, chatId });
+           }
+         }
+       });
+     }).catch(error => {
+       console.error('Error handling voice call offer:', error);
+     });
+   });
+
+   socket.on('voice-call-answer', ({ chatId, answer }) => {
+     socket.to(chatId).emit('voice-call-answer', { answer });
+   });
+
+   socket.on('voice-call-ice-candidate', ({ chatId, candidate }) => {
+     socket.to(chatId).emit('voice-call-ice-candidate', { candidate });
+   });
+
+   socket.on('voice-call-end', ({ chatId }) => {
+     socket.to(chatId).emit('voice-call-end');
+   });
+
+   // Handle user disconnecting
+   socket.on('disconnect', async () => {
+     console.log(`✗ User disconnected: ${socket.id}`);
+     for (const userId in users) {
+       if (users[userId] === socket.id) {
+         delete users[userId];
+         // Update user's status in the database
+         const lastSeen = new Date();
+         await User.findByIdAndUpdate(userId, { isActive: false, lastSeen });
+         io.emit('user_status_change', { userId, isOnline: false, lastSeen });
+         break;
+       }
+     }
+   });
   });
 };

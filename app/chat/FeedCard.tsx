@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, TouchableOpacity, View, Alert, Image, Dimensions, Animated, TouchableWithoutFeedback } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Alert, Image, Dimensions, Animated, TouchableWithoutFeedback, FlatList, ViewToken } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -29,7 +29,9 @@ interface FeedPost {
     };
     content?: string;
     image?: string;
+    images?: string[];
     video?: string;
+    media?: { url: string; type: 'image' | 'video' }[];
     createdAt: string;
     updatedAt: string;
     likes: { _id: string; username: string; profilePhoto?: string }[];
@@ -40,6 +42,7 @@ interface FeedPost {
     isAnonymous?: boolean;
     shares?: number;
     pollOptions?: { text: string; votes: string[] }[];
+    category?: string;
 }
 
 interface FeedCardProps {
@@ -54,7 +57,7 @@ interface FeedCardProps {
     shouldPlay?: boolean;
 }
 
-export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay }: FeedCardProps) {
+export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay }: FeedCardProps) => {
     const { user } = useAuth();
     const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
@@ -75,9 +78,18 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
     const lastTap = useRef<number | null>(null);
     const videoRef = useRef<Video>(null);
     const router = useRouter();
+    const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+    const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        if (viewableItems.length > 0 && viewableItems[0].index !== null) {
+            setActiveImageIndex(viewableItems[0].index);
+        }
+    }).current;
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
     useEffect(() => {
         setPost(initialPost);
+        setActiveImageIndex(0);
     }, [initialPost]);
 
     useEffect(() => {
@@ -222,12 +234,23 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
         );
     };
 
-    const handleSaveEdit = async (content: string, imagePath?: string) => {
+    const handleSaveEdit = async (content: string, media?: { uri: string; type: 'image' | 'video' }) => {
         try {
-            const response = await postAPI.updatePost(post._id, {
+            const updateData: {
+                content: string;
+                media?: { url: string; type: 'image' | 'video' }[];
+            } = {
                 content,
-                image: imagePath,
-            });
+            };
+
+            if (media) {
+                // Here you would handle uploading the media if media.uri is a local file uri
+                // and then replace media.uri with the remote URL.
+                // For now, we just pass it assuming the API can handle it or it's already a URL.
+                updateData.media = [{ url: media.uri, type: media.type }];
+            }
+
+            const response = await postAPI.updatePost(post._id, updateData);
             onUpdate?.(response.data);
             Alert.alert("Success", "Post updated successfully");
         } catch (error: any) {
@@ -255,15 +278,23 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
 
                             // Then, repost to user's feed
                             const repostContent = post.content ? `Shared: ${post.content}` : 'Shared post';
-                            await postAPI.createPost({
+                            
+                            const newPostData: any = {
                                 content: repostContent,
-                                image: post.image,
-                                video: post.video,
                                 isPublic: true,
                                 isAnonymous: false,
                                 commentsDisabled: false,
                                 tags: [],
-                            });
+                            };
+
+                            if (post.media && post.media.length > 0) {
+                                newPostData.media = post.media;
+                            } else {
+                                newPostData.image = post.image;
+                                newPostData.video = post.video;
+                            }
+
+                            await postAPI.createPost(newPostData);
                             Alert.alert('Success', 'Post reposted to your feed');
                         } catch (_error: any) {
                             Alert.alert('Error', 'Failed to repost post');
@@ -311,16 +342,11 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
                             {post.author.isOnline && <Animated.View style={[styles.onlineIndicator, { borderColor: backgroundColor, transform: [{ scale: pulseAnim }] }]} />}
                         </View>
                         <View style={styles.authorDetails}>
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <View style={{ flexDirection: 'column' }}>
                                 <ThemedText type="default" style={styles.username}>{post.author.username}</ThemedText>
                                 {post.tags && post.tags.length > 0 && (
-                                    <ThemedText style={{ fontSize: typography.sizes.body2, color: textColor }}>
-                                        <ThemedText style={{ color: lightTextColor }}> with </ThemedText>
-                                        {post.tags.map((tag, index) => (
-                                            <ThemedText key={tag._id} style={{ fontFamily: typography.families.bold }}>
-                                                {tag.username}{index < post.tags!.length - 1 ? ', ' : ''}
-                                            </ThemedText>
-                                        ))}
+                                    <ThemedText style={{ fontSize: typography.sizes.body2, color: lightTextColor }}>
+                                        with {post.tags.map(tag => tag.username || '').join(', ')}
                                     </ThemedText>
                                 )}
                             </View>
@@ -335,7 +361,13 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
                 </TouchableOpacity>
             </View>
 
-            {post.content && <ThemedText style={styles.content}>{post.content}</ThemedText>}
+            {post.content && <ThemedText style={styles.content}>{String(post.content)}</ThemedText>}
+
+            {post.category && (
+                <View style={styles.categoryBadge}>
+                    <ThemedText style={styles.categoryText}>{post.category}</ThemedText>
+                </View>
+            )}
 
             {post.pollOptions && post.pollOptions.length > 0 && (
                 <PollView
@@ -348,21 +380,125 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
                 />
             )}
 
-            <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                <View>
-                    {post.image && <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width, height: width }]} resizeMode="cover" />}
-                    {post.video && (
+            <View>
+                {post.media && post.media.length > 0 ? (
+                    <View style={[styles.postMedia, { height: width }]}>
+                        <FlatList
+                            data={post.media}
+                            renderItem={({ item }) => (
+                                <View style={{ width: width, height: width }}>
+                                    {item.type === 'image' ? (
+                                        <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                            <Image
+                                                source={{ uri: getImageUrl(item.url) }}
+                                                style={{ width: width, height: width, backgroundColor: '#E0E0E0' }}
+                                                resizeMode="cover"
+                                            />
+                                        </TouchableWithoutFeedback>
+                                    ) : (
+                                        <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                            <Video
+                                                ref={videoRef}
+                                                source={{ uri: getImageUrl(item.url) }}
+                                                style={{ width: width, height: width }}
+                                                resizeMode={ResizeMode.COVER}
+                                                shouldPlay={shouldPlay}
+                                                isLooping={true}
+                                            />
+                                        </TouchableWithoutFeedback>
+                                    )}
+                                </View>
+                            )}
+                            keyExtractor={(item, index) => `${post._id}-media-${index}`}
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            onViewableItemsChanged={onViewableItemsChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            style={{ width: width }}
+                            snapToInterval={width}
+                            decelerationRate="fast"
+                        />
+                        {(post.media?.length || 0) > 1 && (
+                            <>
+                                <View style={styles.imageCounter}>
+                                    <ThemedText style={styles.imageCounterText}>{activeImageIndex + 1}/{post.media?.length || 0}</ThemedText>
+                                </View>
+                                <View style={styles.swipeIndicator}>
+                                    {post.media?.map((_, index) => (
+                                        <View
+                                            key={index}
+                                            style={[
+                                                styles.swipeDot,
+                                                { backgroundColor: index === activeImageIndex ? primaryColor : 'rgba(255,255,255,0.5)' }
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
+                            </>
+                        )}
+                    </View>
+                ) : post.images && post.images.length > 0 ? (
+                    <View style={[styles.postMedia, { height: width }]}>
+                        <FlatList
+                            data={post.images}
+                            renderItem={({ item }) => (
+                                <View style={{ width: width, height: width }}>
+                                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                        <Image
+                                            source={{ uri: getImageUrl(item) }}
+                                            style={{ width: width, height: width, backgroundColor: '#E0E0E0' }}
+                                            resizeMode="cover"
+                                        />
+                                    </TouchableWithoutFeedback>
+                                </View>
+                            )}
+                            keyExtractor={(item, index) => `${post._id}-img-${index}`}
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            onViewableItemsChanged={onViewableItemsChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            style={{ width: width }}
+                            snapToInterval={width}
+                            decelerationRate="fast"
+                        />
+                        {post.images.length > 1 && (
+                            <>
+                                <View style={styles.imageCounter}>
+                                    <ThemedText style={styles.imageCounterText}>{activeImageIndex + 1}/{post.images.length}</ThemedText>
+                                </View>
+                                <View style={styles.swipeIndicator}>
+                                    {post.images.map((_, index) => (
+                                        <View
+                                            key={index}
+                                            style={[
+                                                styles.swipeDot,
+                                                { backgroundColor: index === activeImageIndex ? primaryColor : 'rgba(255,255,255,0.5)' }
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
+                            </>
+                        )}
+                    </View>
+                ) : post.image ? (
+                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                        <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width, height: width }]} resizeMode="cover" />
+                    </TouchableWithoutFeedback>
+                ) : post.video ? (
+                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
                         <Video
                             ref={videoRef}
-                            source={{ uri: getImageUrl(post.video)! }}
+                            source={{ uri: getImageUrl(post.video) }}
                             style={[styles.postMedia, { width, height: width }]}
                             resizeMode={ResizeMode.COVER}
                             shouldPlay={shouldPlay}
                             isLooping={true}
                         />
-                    )}
-                </View>
-            </TouchableWithoutFeedback>
+                    </TouchableWithoutFeedback>
+                ) : null}
+            </View>
 
             <View style={styles.actionBar}>
                 <View style={styles.leftActions}>
@@ -466,7 +602,7 @@ export function FeedCard({ post: initialPost, currentUserId, onDelete, onReport,
 
         </ThemedView>
     );
-}
+});
 
 const styles = StyleSheet.create({
     card: {
@@ -517,6 +653,19 @@ const styles = StyleSheet.create({
         lineHeight: 20,
         marginBottom: spacing.md,
     },
+    categoryBadge: {
+        alignSelf: 'flex-start',
+        backgroundColor: '#007AFF',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 2,
+        borderRadius: borderRadius.sm,
+        marginBottom: spacing.md,
+    },
+    categoryText: {
+        color: 'white',
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.bold,
+    },
     postMedia: {
         backgroundColor: '#E0E0E0',
         marginBottom: spacing.md,
@@ -560,5 +709,34 @@ const styles = StyleSheet.create({
         right: 0,
         alignItems: 'center',
         zIndex: 1000,
+    },
+    imageCounter: {
+        position: 'absolute',
+        top: spacing.sm,
+        right: spacing.sm,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 4,
+        borderRadius: borderRadius.round,
+    },
+    imageCounterText: {
+        color: 'white',
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.medium,
+    },
+    swipeIndicator: {
+        position: 'absolute',
+        bottom: spacing.sm,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: spacing.xs,
+    },
+    swipeDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
     },
 });

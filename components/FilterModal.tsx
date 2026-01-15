@@ -221,14 +221,14 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm }}>
                       <ThemedText type="body2" style={styles.sectionTitle}>Age Range</ThemedText>
                       <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>
-                        {minAge || '13'} - {maxAge || '28'}
+                        {minAge || '13'} - {maxAge || '29'}
                       </ThemedText>
                     </View>
                     <RangeSlider
                       min={13}
-                      max={28}
+                      max={29}
                       low={parseInt(minAge) || 13}
-                      high={parseInt(maxAge) || 28}
+                      high={parseInt(maxAge) || 29}
                       onChange={(l, h) => {
                         setMinAge(l.toString());
                         setMaxAge(h.toString());
@@ -397,7 +397,7 @@ function RangeSlider({ min, max, low, high, onChange, primaryColor, backgroundCo
   const highPercent = ((high - min) / (max - min)) * 100;
 
   return (
-    <View style={{ height: 40, justifyContent: 'center' }} onLayout={(e) => {
+    <View style={{ height: 40, justifyContent: 'center', marginHorizontal: 12 }} onLayout={(e) => {
       const w = e.nativeEvent.layout.width;
       setWidth(w);
       widthRef.current = w;

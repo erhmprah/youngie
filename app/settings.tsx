@@ -1,279 +1,126 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, Alert, ScrollView, Switch } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import React from 'react';
+import { StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
+import { IconSymbol, IconName } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-import { userAPI, storyAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
-
-interface MutedUser {
-    _id: string;
-    username: string;
-    profilePhoto?: string;
-    avatar?: string;
-}
+import * as Haptics from 'expo-haptics';
 
 export default function SettingsScreen() {
     const router = useRouter();
-    const { user, updateUser } = useAuth();
-    const [mutedUsers, setMutedUsers] = useState<MutedUser[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [isPrivate, setIsPrivate] = useState(false);
-
+    const { logout } = useAuth();
+    const colorScheme = useColorScheme();
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
-    const surfaceColor = useThemeColor('surface');
-    const primaryColor = useThemeColor('primary');
     const lightTextColor = useThemeColor('lightText');
     const borderColor = useThemeColor('border');
-
-    useEffect(() => {
-        fetchMutedUsers();
-    }, []);
-
-    useEffect(() => {
-        setIsPrivate((user as any)?.isPrivate || false);
-    }, [user]);
-
-    const fetchMutedUsers = async () => {
-        try {
-            const response = await storyAPI.getMutedUsers();
-            setMutedUsers(response.data);
-        } catch (error) {
-            console.error('Failed to fetch muted users:', error);
-            Alert.alert('Error', 'Failed to load muted users');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleUnmute = async (userId: string, username: string) => {
-        try {
-            await storyAPI.unmuteUser(userId);
-            setMutedUsers(prev => prev.filter(u => u._id !== userId));
-            Alert.alert('Success', `Unmuted ${username}'s stories`);
-        } catch (error) {
-            console.error('Failed to unmute user:', error);
-            Alert.alert('Error', 'Failed to unmute user');
-        }
-    };
-
-    const handlePrivacyToggle = async (value: boolean) => {
-        if (!user?._id) return;
-        try {
-            await userAPI.updateProfile(user._id, { isPrivate: value });
-            setIsPrivate(value);
-            (updateUser as any)({ isPrivate: value });
-            Alert.alert('Success', `Account is now ${value ? 'private' : 'public'}`);
-        } catch (error) {
-            console.error('Failed to update privacy:', error);
-            Alert.alert('Error', 'Failed to update privacy settings');
-        }
-    };
+    const surfaceColor = useThemeColor('surface');
+    const primaryColor = useThemeColor('primary');
+    const errorColor = useThemeColor('error');
 
     const handleLogout = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         Alert.alert(
-            'Logout',
-            'Are you sure you want to logout?',
+            'Log Out',
+            'Are you sure you want to log out?',
             [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Logout', style: 'destructive', onPress: () => {
-                    // Handle logout logic here
-                    router.replace('/login');
-                }}
+                { text: 'Log Out', style: 'destructive', onPress: logout }
             ]
         );
     };
 
-    const renderMutedUserItem = ({ item }: { item: MutedUser }) => (
-        <View style={[styles.settingItem, { backgroundColor: surfaceColor, borderColor }]}>
-            <View style={styles.settingContent}>
-                <IconSymbol name="speaker.slash" size={24} color={primaryColor} />
-                <ThemedText style={[styles.settingText, { color: textColor }]}>
-                    {item.username}
-                </ThemedText>
+    const SettingItem = ({ icon, label, value, onPress, isDestructive = false }: { icon: IconName, label: string, value?: string | boolean, onPress?: () => void, isDestructive?: boolean }) => (
+        <TouchableOpacity 
+            style={[styles.item, { borderBottomColor: borderColor }]} 
+            onPress={() => {
+                if (onPress) {
+                    Haptics.selectionAsync();
+                    onPress();
+                }
+            }}
+            disabled={value === undefined && !onPress}
+        >
+            <View style={styles.itemLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: isDestructive ? errorColor + '20' : surfaceColor }]}>
+                    <IconSymbol name={icon} size={20} color={isDestructive ? errorColor : textColor} />
+                </View>
+                <ThemedText style={[styles.label, isDestructive && { color: errorColor }]}>{label}</ThemedText>
             </View>
-            <TouchableOpacity 
-                style={[styles.unmuteButton, { borderColor: primaryColor }]}
-                onPress={() => handleUnmute(item._id, item.username)}
-            >
-                <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.caption, fontFamily: typography.families.bold }}>
-                    Unmute
-                </ThemedText>
-            </TouchableOpacity>
-        </View>
+            <View style={styles.itemRight}>
+                {typeof value === 'string' && (
+                    <ThemedText style={{ color: lightTextColor, marginRight: spacing.sm }}>{value}</ThemedText>
+                )}
+                {(onPress || typeof value === 'string') && (
+                    <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
+                )}
+                {typeof value === 'boolean' && (
+                    <Switch 
+                        value={value} 
+                        onValueChange={onPress}
+                        trackColor={{ false: surfaceColor, true: primaryColor }}
+                    />
+                )}
+            </View>
+        </TouchableOpacity>
     );
 
     return (
-        <ThemedView style={[styles.container, { backgroundColor }]}>
-            <Stack.Screen options={{ title: 'Settings' }} />
-            
-            <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-                {/* Privacy Section */}
-                <View style={styles.section}>
-                    <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-                        Privacy
-                    </ThemedText>
-                    
-                    <TouchableOpacity 
-                        style={[styles.settingItem, { backgroundColor: surfaceColor, borderColor }]}
-                        onPress={() => router.push('/muted-users')}
-                    >
-                        <View style={styles.settingContent}>
-                            <IconSymbol name="speaker.slash" size={24} color={primaryColor} />
-                            <ThemedText style={[styles.settingText, { color: textColor }]}>
-                                Muted Users
-                            </ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
+        <ThemedView style={[styles.container, { backgroundColor }]} safe>
+            <View style={[styles.header, { borderBottomColor: borderColor }]}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <IconSymbol name="chevron.left" size={24} color={textColor} />
+                </TouchableOpacity>
+                <ThemedText type="title" style={{ fontFamily: typography.families.bold }}>Settings</ThemedText>
+                <View style={{ width: 24 }} />
+            </View>
 
-                    <View style={[styles.settingItem, { backgroundColor: surfaceColor, borderColor }]}>
-                        <View style={styles.settingContent}>
-                            <IconSymbol name="lock.fill" size={24} color={primaryColor} />
-                            <View>
-                                <ThemedText style={[styles.settingText, { color: textColor }]}>
-                                    Private Account
-                                </ThemedText>
-                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>
-                                    Only approved followers can see your posts
-                                </ThemedText>
-                            </View>
-                        </View>
-                        <Switch
-                            value={isPrivate}
-                            onValueChange={handlePrivacyToggle}
-                            trackColor={{ false: '#767577', true: primaryColor }}
-                            thumbColor={isPrivate ? '#fff' : '#f4f3f4'}
-                        />
-                    </View>
+            <ScrollView contentContainerStyle={styles.content}>
+                <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account</ThemedText>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                    <SettingItem icon="shield" label="Security" onPress={() => router.push('/security-settings')} />
+                    <SettingItem icon="bell" label="Notifications" onPress={() => {}} />
+                    <SettingItem icon="lock" label="Privacy" onPress={() => router.push('/privacy-settings')} />
+                    <SettingItem icon="volume-mute" label="Muted Users" onPress={() => router.push('/muted-users')} />
                 </View>
 
-                {/* Account Section */}
-                <View style={styles.section}>
-                    <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-                        Account
-                    </ThemedText>
-                    
-                    <TouchableOpacity
-                        style={[styles.settingItem, { backgroundColor: surfaceColor, borderColor }]}
-                        onPress={() => router.push('/notifications')}
-                    >
-                        <View style={styles.settingContent}>
-                            <IconSymbol name="bell.fill" size={24} color={primaryColor} />
-                            <ThemedText style={[styles.settingText, { color: textColor }]}>
-                                Notifications
-                            </ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={[styles.settingItem, { backgroundColor: surfaceColor, borderColor }]}>
-                        <View style={styles.settingContent}>
-                            <IconSymbol name="moon.fill" size={24} color={primaryColor} />
-                            <ThemedText style={[styles.settingText, { color: textColor }]}>
-                                Dark Mode
-                            </ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, { backgroundColor: surfaceColor, borderColor }]}
-                        onPress={() => router.push('/help')}
-                    >
-                        <View style={styles.settingContent}>
-                            <IconSymbol name="info.circle.fill" size={24} color={primaryColor} />
-                            <ThemedText style={[styles.settingText, { color: textColor }]}>
-                                Help & Support
-                            </ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
+                <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>App Settings</ThemedText>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                    <SettingItem icon={colorScheme === 'dark' ? 'moon' : 'sun'} label="Appearance" value={colorScheme === 'dark' ? 'Dark' : 'Light'} onPress={() => {}} />
+                    <SettingItem icon="globe" label="Language" value="English" onPress={() => {}} />
                 </View>
 
-                {/* Danger Zone */}
-                <View style={styles.section}>
-                    <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-                        Danger Zone
-                    </ThemedText>
-                    
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.dangerItem, { backgroundColor: surfaceColor, borderColor }]}
-                        onPress={handleLogout}
-                    >
-                        <View style={styles.settingContent}>
-                            <IconSymbol name="x.circle.fill" size={24} color="#FF3B30" />
-                            <ThemedText style={[styles.settingText, { color: textColor }]}>
-                                Logout
-                            </ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
+                <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Support</ThemedText>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                    <SettingItem icon="help-circle" label="Help Center" onPress={() => router.push('/help-center')} />
+                    <SettingItem icon="info" label="About" onPress={() => router.push('/about')} />
                 </View>
 
-                {/* Muted Users List */}
-                {mutedUsers.length > 0 && (
-                    <View style={styles.section}>
-                        <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
-                            Currently Muted ({mutedUsers.length})
-                        </ThemedText>
-                        {mutedUsers.map((user) => renderMutedUserItem({ item: user }))}
-                    </View>
-                )}
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1, marginTop: spacing.lg }]}>
+                    <SettingItem icon="log-out" label="Log Out" onPress={handleLogout} isDestructive />
+                </View>
+                
+                <ThemedText style={[styles.version, { color: lightTextColor }]}>Version 1.0.0</ThemedText>
             </ScrollView>
         </ThemedView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollContainer: {
-        flex: 1,
-        padding: spacing.md,
-    },
-    section: {
-        marginBottom: spacing.lg,
-    },
-    sectionTitle: {
-        fontSize: typography.sizes.body2,
-        fontFamily: typography.families.bold,
-        marginBottom: spacing.sm,
-        opacity: 0.7,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    settingItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: spacing.md,
-        borderRadius: borderRadius.md,
-        marginBottom: spacing.sm,
-        borderWidth: 1,
-    },
-    dangerItem: {
-        borderColor: '#FF3B30',
-    },
-    settingContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        gap: spacing.md,
-    },
-    settingText: {
-        fontSize: typography.sizes.body1,
-        fontFamily: typography.families.medium,
-    },
-    unmuteButton: {
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.xs,
-        borderRadius: borderRadius.round,
-        borderWidth: 1,
-    },
+    container: { flex: 1 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1 },
+    backButton: { padding: spacing.xs },
+    content: { padding: spacing.md },
+    sectionTitle: { fontSize: typography.sizes.caption, fontFamily: typography.families.bold, marginBottom: spacing.xs, marginLeft: spacing.xs, marginTop: spacing.md, textTransform: 'uppercase' },
+    section: { borderRadius: borderRadius.lg, overflow: 'hidden' },
+    item: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1 },
+    itemLeft: { flexDirection: 'row', alignItems: 'center' },
+    iconContainer: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: spacing.md },
+    label: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
+    itemRight: { flexDirection: 'row', alignItems: 'center' },
+    version: { textAlign: 'center', marginTop: spacing.xl, marginBottom: spacing.xl, fontSize: typography.sizes.caption },
 });

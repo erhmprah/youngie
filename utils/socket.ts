@@ -66,6 +66,23 @@ export const sendTypingStop = (chatId: string) => {
 }
 
 
+// Event Emitters for voice calls
+export const sendVoiceCallOffer = (chatId: string, offer: any, caller: any) => {
+  socket?.emit('voice-call-offer', { chatId, offer, caller });
+};
+
+export const sendVoiceCallAnswer = (chatId: string, answer: any) => {
+  socket?.emit('voice-call-answer', { chatId, answer });
+};
+
+export const sendVoiceCallIceCandidate = (chatId: string, candidate: any) => {
+  socket?.emit('voice-call-ice-candidate', { chatId, candidate });
+};
+
+export const sendVoiceCallEnd = (chatId: string) => {
+  socket?.emit('voice-call-end', { chatId });
+};
+
 // Event Listeners (subscribers)
 export const onMessageReceived = (callback: (message: any) => void) => {
   socket?.on('message-received', callback);
@@ -106,3 +123,36 @@ export const onMessagesRead = (callback: (data: { userId: string; chatId: string
 export const offMessagesRead = () => {
     socket?.off('messages-read');
 }
+
+// Voice call event listeners
+export const onVoiceCallOffer = (callback: (data: { offer: any; caller: any; chatId: string }) => void) => {
+  socket?.on('voice-call-offer', callback);
+};
+
+export const offVoiceCallOffer = () => {
+  socket?.off('voice-call-offer');
+};
+
+export const onVoiceCallAnswer = (callback: (data: { answer: any }) => void) => {
+  socket?.on('voice-call-answer', callback);
+};
+
+export const offVoiceCallAnswer = () => {
+  socket?.off('voice-call-answer');
+};
+
+export const onVoiceCallIceCandidate = (callback: (data: { candidate: any }) => void) => {
+  socket?.on('voice-call-ice-candidate', callback);
+};
+
+export const offVoiceCallIceCandidate = () => {
+  socket?.off('voice-call-ice-candidate');
+};
+
+export const onVoiceCallEnd = (callback: () => void) => {
+  socket?.on('voice-call-end', callback);
+};
+
+export const offVoiceCallEnd = () => {
+  socket?.off('voice-call-end');
+};

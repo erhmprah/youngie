@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSocket } from '@/utils/socket';
+import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 
@@ -59,16 +60,18 @@ export default function SwipeScreen() {
     useEffect(() => {
         const loadFilters = async () => {
             try {
+                console.log('👤 User in swipe component:', user);
                 const savedFilters = await AsyncStorage.getItem('discovery_filters');
                 if (savedFilters) {
                     const parsedFilters = JSON.parse(savedFilters);
                     setFilters(parsedFilters);
                     fetchNearbyUsers(parsedFilters);
                 } else {
-                    fetchNearbyUsers();
+                    fetchNearbyUsers({ minAge: '', maxAge: '', gender: [], location: '' });
                 }
             } catch (error) {
-                fetchNearbyUsers();
+                console.error('Error loading filters:', error);
+                fetchNearbyUsers({ minAge: '', maxAge: '', gender: [], location: '' });
             }
         };
         loadFilters();
@@ -93,11 +96,11 @@ export default function SwipeScreen() {
     }, []);
 
     useEffect(() => {
-        if (currentProfile?._id && !albums[currentProfile._id]) {
-            fetchUserAlbum(currentProfile._id);
+        if (profiles[currentIndex]?._id && !albums[profiles[currentIndex]._id]) {
+            fetchUserAlbum(profiles[currentIndex]._id);
         }
         setCurrentImageIndex(0); // Reset to first image when profile changes
-    }, [currentProfile?._id]);
+    }, [profiles[currentIndex]?._id]);
 
     const activeFilterCount = useMemo(() => {
         let count = 0;
@@ -134,6 +137,7 @@ export default function SwipeScreen() {
     };
 
     const completeSwipe = async (direction: 'left' | 'right') => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         const x = direction === 'right' ? width * 1.5 : -width * 1.5;
         Animated.timing(pan, {
             toValue: { x, y: 0 },
@@ -185,7 +189,9 @@ export default function SwipeScreen() {
         try {
             setIsLoading(true);
             const activeFilters = filterParams || filters;
+            console.log('🔍 Fetching nearby users with filters:', activeFilters);
             const response = await userAPI.getNearbyUsers(activeFilters);
+            console.log('✅ API response:', response.data);
             
             let filteredData = response.data;
 
@@ -214,7 +220,9 @@ export default function SwipeScreen() {
             }
 
             setProfiles(filteredData);
-        } catch (error) {
+        } catch (error: any) {
+            console.error('❌ Error fetching nearby users:', error);
+            console.error('Error details:', error.response?.data || error.message);
             Alert.alert('Error', 'Could not load profiles');
         } finally {
             setIsLoading(false);
@@ -240,39 +248,11 @@ export default function SwipeScreen() {
         }
     };
 
-    if (isLoading) {
-        return (
-            <ThemedView style={styles.centerContainer}>
-                <ActivityIndicator size="large" color={primaryColor} />
-            </ThemedView>
-        );
-    }
-
-    if (!currentProfile) {
-        return (
-            <ThemedView style={styles.centerContainer}>
-                <ThemedText type="heading1">{activeFilterCount > 0 ? '🔍' : '✨'}</ThemedText>
-                <ThemedText type="title">{activeFilterCount > 0 ? 'No Matches Found' : 'Discovery Finished'}</ThemedText>
-                <ThemedText style={{ color: lightTextColor, textAlign: 'center', marginTop: spacing.sm }}>
-                    {activeFilterCount > 0 ? 'Try adjusting your filters to see more people.' : 'Check back later for more people nearby.'}
-                </ThemedText>
-                <TouchableOpacity 
-                    style={[styles.refreshButton, { backgroundColor: primaryColor }]} 
-                    onPress={activeFilterCount > 0 ? () => setFilterVisible(true) : () => fetchNearbyUsers()}
-                >
-                    <ThemedText style={[styles.refreshButtonText, { color: white }]}>
-                        {activeFilterCount > 0 ? 'Adjust Filters' : 'Refresh'}
-                    </ThemedText>
-                </TouchableOpacity>
-            </ThemedView>
-        );
-    }
-
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor }}>
             <View style={[styles.header, { borderBottomColor: borderColor }]}>
                 <ThemedText style={[styles.brandText, { color: primaryColor }]}>Discovery</ThemedText>
-                <TouchableOpacity style={[styles.iconButton, { backgroundColor: surfaceColor }]} onPress={() => setFilterVisible(true)}>
+                <TouchableOpacity style={[styles.iconButton, { backgroundColor: surfaceColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFilterVisible(true); }}>
                     <IconSymbol name="slider.horizontal.3" size={24} color={lightTextColor} />
                     {activeFilterCount > 0 && (
                         <View style={[styles.filterBadge, { backgroundColor: primaryColor, borderColor: surfaceColor }]} />
@@ -280,122 +260,147 @@ export default function SwipeScreen() {
                 </TouchableOpacity>
             </View>
 
-            <View style={styles.cardStack}>
-                {profiles[currentIndex + 1] && (
-                    <ThemedView style={[styles.card, styles.nextCard, { backgroundColor: surfaceColor, ...shadows.md }]} />
-                )}
+            {isLoading ? (
+                <ThemedView style={styles.centerContainer}>
+                    <ActivityIndicator size="large" color={primaryColor} />
+                </ThemedView>
+            ) : !currentProfile ? (
+                <ThemedView style={styles.centerContainer}>
+                    <ThemedText type="heading1">{activeFilterCount > 0 ? '🔍' : '✨'}</ThemedText>
+                    <ThemedText type="title">{activeFilterCount > 0 ? 'No Matches Found' : 'Discovery Finished'}</ThemedText>
+                    <ThemedText style={{ color: lightTextColor, textAlign: 'center', marginTop: spacing.sm }}>
+                        {activeFilterCount > 0 ? 'Try adjusting your filters to see more people.' : 'Check back later for more people nearby.'}
+                    </ThemedText>
+                    <TouchableOpacity 
+                        style={[styles.refreshButton, { backgroundColor: primaryColor }]} 
+                        onPress={activeFilterCount > 0 ? () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFilterVisible(true); } : () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); fetchNearbyUsers(); }}
+                    >
+                        <ThemedText style={[styles.refreshButtonText, { color: white }]}>
+                            {activeFilterCount > 0 ? 'Adjust Filters' : 'Refresh'}
+                        </ThemedText>
+                    </TouchableOpacity>
+                </ThemedView>
+            ) : (
+                <>
+                    <View style={styles.cardStack}>
+                        {profiles[currentIndex + 1] && (
+                            <ThemedView style={[styles.card, styles.nextCard, { backgroundColor: surfaceColor, ...shadows.md }]} />
+                        )}
 
-                <Animated.View
-                    style={[
-                        styles.card,
-                        {
-                            backgroundColor: surfaceColor,
-                            ...shadows.md,
-                            transform: [
-                                ...pan.getTranslateTransform(),
+                        <Animated.View
+                            style={[
+                                styles.card,
                                 {
-                                    rotate: pan.x.interpolate({
-                                        inputRange: [-200, 0, 200],
-                                        outputRange: ['-10deg', '0deg', '10deg'],
-                                    }),
+                                    backgroundColor: surfaceColor,
+                                    ...shadows.md,
+                                    transform: [
+                                        ...pan.getTranslateTransform(),
+                                        {
+                                            rotate: pan.x.interpolate({
+                                                inputRange: [-200, 0, 200],
+                                                outputRange: ['-10deg', '0deg', '10deg'],
+                                            }),
+                                        },
+                                    ],
                                 },
-                            ],
-                        },
-                    ]}
-                    {...panResponder.panHandlers}
-                >
-                    <View style={styles.imageContainer}>
-                        {currentImage ? (
-                            <Image source={{ uri: currentImage.uri }} style={styles.cardImage} />
-                        ) : (
-                            <View style={[styles.cardImage, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
-                                <IconSymbol name="person.fill" size={120} color={lightTextColor} />
+                            ]}
+                            {...panResponder.panHandlers}
+                        >
+                            <View style={styles.imageContainer}>
+                                {currentImage ? (
+                                    <Image source={{ uri: currentImage.uri }} style={styles.cardImage} />
+                                ) : (
+                                    <View style={[styles.cardImage, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
+                                        <IconSymbol name="person.fill" size={120} color={lightTextColor} />
+                                    </View>
+                                )}
+                                {currentImages.length > 1 && (
+                                    <>
+                                        <TouchableOpacity style={styles.leftTapArea} onPress={prevImage} />
+                                        <TouchableOpacity style={styles.rightTapArea} onPress={nextImage} />
+                                    </>
+                                )}
+                                {currentImages.length > 1 && (
+                                    <View style={styles.imageIndicator}>
+                                        {currentImages.map((_, index) => (
+                                            <View
+                                                key={index}
+                                                style={[
+                                                    styles.indicatorDot,
+                                                    { backgroundColor: index === currentImageIndex ? primaryColor : lightTextColor }
+                                                ]}
+                                            />
+                                        ))}
+                                    </View>
+                                )}
                             </View>
-                        )}
-                        {currentImages.length > 1 && (
-                            <>
-                                <TouchableOpacity style={styles.leftTapArea} onPress={prevImage} />
-                                <TouchableOpacity style={styles.rightTapArea} onPress={nextImage} />
-                            </>
-                        )}
-                        {currentImages.length > 1 && (
-                            <View style={styles.imageIndicator}>
-                                {currentImages.map((_, index) => (
-                                    <View
-                                        key={index}
-                                        style={[
-                                            styles.indicatorDot,
-                                            { backgroundColor: index === currentImageIndex ? primaryColor : lightTextColor }
-                                        ]}
-                                    />
-                                ))}
-                            </View>
-                        )}
+
+                            <LinearGradient
+                                colors={['transparent', 'rgba(0,0,0,0.9)']}
+                                style={styles.gradient}
+                            >
+                                <View style={styles.infoContainer}>
+                                    <View style={styles.nameRow}>
+                                        <ThemedText style={[styles.nameText, { color: white }]}>
+                                            {currentProfile.username}, {currentProfile.age}
+                                        </ThemedText>
+                                        {currentProfile.isOnline && (
+                                            <View style={styles.onlineIndicator} />
+                                        )}
+                                        <View style={styles.verifiedBadge}>
+                                            <IconSymbol name="heart.fill" size={typography.sizes.body1} color={primaryColor} />
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.locationRow}>
+                                        <IconSymbol name="settings" size={typography.sizes.body2} color={white} />
+                                        <ThemedText style={[styles.locationText, { color: white }]}>{currentProfile.location || 'Nearby'}</ThemedText>
+                                    </View>
+
+                                    <ThemedText numberOfLines={2} style={[styles.bioText, { color: white }]}>
+                                        {currentProfile.bio || "No bio provided."}
+                                    </ThemedText>
+
+                                    <View style={styles.tagContainer}>
+                                        {currentProfile.interests?.slice(0, 3).map((item: string, i: number) => (
+                                            <View key={i} style={[styles.tag, { borderColor: white }]}>
+                                                <ThemedText style={[styles.tagText, { color: white }]}>{item}</ThemedText>
+                                            </View>
+                                        ))}
+                                    </View>
+                                </View>
+                            </LinearGradient>
+                        </Animated.View>
                     </View>
 
-                    <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.9)']}
-                        style={styles.gradient}
-                    >
-                        <View style={styles.infoContainer}>
-                            <View style={styles.nameRow}>
-                                <ThemedText style={[styles.nameText, { color: white }]}>
-                                    {currentProfile.username}, {currentProfile.age}
-                                </ThemedText>
-                                {currentProfile.isOnline && (
-                                    <View style={styles.onlineIndicator} />
-                                )}
-                                <View style={styles.verifiedBadge}>
-                                    <IconSymbol name="heart.fill" size={typography.sizes.body1} color={primaryColor} />
-                                </View>
-                            </View>
+                    <View style={styles.footer}>
+                        <TouchableOpacity
+                            style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
+                            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); completeSwipe('left'); }}
+                        >
+                            <IconSymbol name="x" size={30} color={lightTextColor} />
+                        </TouchableOpacity>
 
-                            <View style={styles.locationRow}>
-                                <IconSymbol name="settings" size={typography.sizes.body2} color={white} />
-                                <ThemedText style={[styles.locationText, { color: white }]}>{currentProfile.location || 'Nearby'}</ThemedText>
-                            </View>
+                        <TouchableOpacity
+                            style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
+                            onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setCurrentImageIndex(0);
+                                setCurrentIndex((prev) => prev + 1);
+                            }}
+                        >
+                            <IconSymbol name="chevron.right" size={30} color={textColor} />
+                        </TouchableOpacity>
 
-                            <ThemedText numberOfLines={2} style={[styles.bioText, { color: white }]}>
-                                {currentProfile.bio || "No bio provided."}
-                            </ThemedText>
-
-                            <View style={styles.tagContainer}>
-                                {currentProfile.interests?.slice(0, 3).map((item: string, i: number) => (
-                                    <View key={i} style={[styles.tag, { borderColor: white }]}>
-                                        <ThemedText style={[styles.tagText, { color: white }]}>{item}</ThemedText>
-                                    </View>
-                                ))}
-                            </View>
-                        </View>
-                    </LinearGradient>
-                </Animated.View>
-            </View>
-
-            <View style={styles.footer}>
-                <TouchableOpacity
-                    style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
-                    onPress={() => completeSwipe('left')}
-                >
-                    <IconSymbol name="x" size={30} color={lightTextColor} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
-                    onPress={() => {
-                        setCurrentImageIndex(0);
-                        setCurrentIndex((prev) => prev + 1);
-                    }}
-                >
-                    <IconSymbol name="chevron.right" size={30} color={textColor} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
-                    onPress={() => completeSwipe('right')}
-                >
-                    <IconSymbol name="plus" size={30} color={primaryColor} />
-                </TouchableOpacity>
-            </View>
+                        <TouchableOpacity
+                            style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
+                            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); completeSwipe('right'); }}
+                        >
+                            <IconSymbol name="plus" size={30} color={primaryColor} />
+                        </TouchableOpacity>
+                    </View>
+                </>
+            )}
 
             <FilterModal
                 visible={isFilterVisible}

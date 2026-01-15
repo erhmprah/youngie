@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, StyleSheet, Button, Platform, Alert, PermissionsAndroid, TouchableOpacity, ActivityIndicator, Dimensions, SafeAreaView } from 'react-native';
+import { View, StyleSheet, Button, Platform, Alert, PermissionsAndroid, TouchableOpacity, ActivityIndicator, Dimensions, PanResponder, Animated, TextInput, FlatList, KeyboardAvoidingView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from 'expo-router';
 import { Socket, io } from 'socket.io-client';
@@ -8,8 +8,17 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { SOCKET_URL, userAPI } from '@/utils/api'; // Import SOCKET_URL
 import { useAuth } from '@/contexts/AuthContext';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Ionicons } from '@expo/vector-icons';
 import { spacing, borderRadius, shadows, typography } from '@/constants/design-tokens';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as KeepAwake from 'expo-keep-awake';
+
+type Message = {
+  id: string;
+  text: string;
+  sender: 'me' | 'them';
+  timestamp: number;
+};
 
 const VideoChatScreen: React.FC = () => {
   const [localStream, setLocalStream] = useState<any>(null);
@@ -17,12 +26,21 @@ const VideoChatScreen: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isVideoPaused, setIsVideoPaused] = useState(false);
+  const [isRemoteVideoPaused, setIsRemoteVideoPaused] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [isChatVisible, setIsChatVisible] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const isChatVisibleRef = useRef(isChatVisible);
   const [peerId, setPeerId] = useState<string | null>(null);
   const [chatDuration, setChatDuration] = useState(0);
   const [webRTCSupported, setWebRTCSupported] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
   const peerConnection = useRef<any>(null);
+  const peerIdRef = useRef<string | null>(null);
   const socket = useRef<Socket | null>(null);
+  const localStreamRef = useRef<any>(null);
   const navigation = useNavigation();
   const { user } = useAuth();
 
@@ -45,6 +63,21 @@ const VideoChatScreen: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    isChatVisibleRef.current = isChatVisible;
+    if (isChatVisible) {
+      setUnreadCount(0);
+    }
+  }, [isChatVisible]);
+
+  useEffect(() => {
+    peerIdRef.current = peerId;
+  }, [peerId]);
+
+  useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, RTCView, mediaDevices } = webRTC || {};
 
   // Handle tab focus/blur to manage resources
@@ -58,8 +91,9 @@ const VideoChatScreen: React.FC = () => {
         if (socket.current) {
           socket.current.disconnect();
         }
+        KeepAwake.deactivateKeepAwake().catch(console.error);
       };
-    }, [])
+    }, [checkPermissions, resetChat])
   );
 
   useEffect(() => {
@@ -141,9 +175,9 @@ const VideoChatScreen: React.FC = () => {
 
     // @ts-ignore
     pc.onicecandidate = (event) => {
-      if (event.candidate && socket.current) {
+      if (event.candidate && socket.current && peerIdRef.current) {
         console.log('Sending ICE candidate');
-        socket.current.emit('ice_candidate', event.candidate);
+        socket.current.emit('ice_candidate', event.candidate, peerIdRef.current);
       }
     };
 
@@ -214,7 +248,7 @@ const VideoChatScreen: React.FC = () => {
     }
   }, [hasPermissions, mediaDevices, navigation]);
 
-  const resetChat = useCallback(() => {
+  const resetChat = useCallback((keepLocalStream = false) => {
     if (peerConnection.current) {
       try {
         peerConnection.current.close();
@@ -223,22 +257,36 @@ const VideoChatScreen: React.FC = () => {
       }
       peerConnection.current = null;
     }
-    if (localStream) {
-      localStream.getTracks().forEach((track: any) => {
+
+    if (!keepLocalStream && localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track: any) => {
         try {
           track.stop();
         } catch (e) {
           console.error('Error stopping track:', e);
         }
       });
+      setLocalStream(null);
+    } else if (keepLocalStream && localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack) videoTrack.enabled = true;
+
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) audioTrack.enabled = true;
     }
-    setLocalStream(null);
     setRemoteStream(null);
     setIsConnecting(false);
     setIsChatting(false);
     setIsMuted(false);
+    setIsVideoPaused(false);
+    setIsRemoteVideoPaused(false);
+    setMessages([]);
+    setIsChatVisible(false);
+    setInputText('');
+    setUnreadCount(0);
     setPeerId(null);
-  }, [localStream]);
+    KeepAwake.deactivateKeepAwake().catch(console.error);
+  }, []);
 
   const startVideoChat = useCallback(async () => {
     if (!webRTCSupported) {
@@ -253,8 +301,8 @@ const VideoChatScreen: React.FC = () => {
       return;
     }
 
-    setIsConnecting(true);
     resetChat();
+    setIsConnecting(true);
 
     const stream = await initLocalStream();
     if (!stream) {
@@ -279,63 +327,91 @@ const VideoChatScreen: React.FC = () => {
         setIsConnecting(false);
       });
 
-      socket.current.on('match_found', async (peerId: string) => {
+      socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+        const { peerId, initiator } = data;
         console.log('Match found with peer:', peerId);
-        setIsConnecting(false);
-        setPeerId(peerId);
-        setIsChatting(true);
-
-        peerConnection.current = createPeerConnection();
-        if (!peerConnection.current) {
-          Alert.alert('Error', 'Failed to create peer connection.');
+        if (peerConnection.current) {
           return;
         }
 
-        stream.getTracks().forEach((track: MediaStreamTrack) => {
-          try {
-            peerConnection.current?.addTrack(track, stream);
-          } catch (e) {
-            console.error('Error adding track:', e);
-          }
-        });
+        // Slide in animation for new peer
+        pan.setValue({ x: Dimensions.get('window').width, y: 0 });
+        Animated.spring(pan, {
+          toValue: { x: 0, y: 0 },
+          friction: 7,
+          tension: 40,
+          useNativeDriver: true,
+        }).start();
 
-        try {
-          const offer = await peerConnection.current.createOffer();
-          await peerConnection.current.setLocalDescription(offer);
-          socket.current?.emit('offer', offer);
-        } catch (e) {
-          console.error('Error creating offer:', e);
+        setIsConnecting(false);
+        setPeerId(peerId);
+        setIsChatting(true);
+        KeepAwake.activateKeepAwake().catch(console.error);
+
+        if (initiator) {
+          peerConnection.current = createPeerConnection();
+          if (!peerConnection.current) {
+            Alert.alert('Error', 'Failed to create peer connection.');
+            return;
+          }
+
+          stream.getTracks().forEach((track: any) => {
+            try {
+              peerConnection.current?.addTrack(track, stream);
+            } catch (e) {
+              console.error('Error adding track:', e);
+            }
+          });
+
+          try {
+            const offer = await peerConnection.current.createOffer();
+            await peerConnection.current.setLocalDescription(offer);
+            socket.current?.emit('offer', offer, peerId);
+          } catch (e) {
+            console.error('Error creating offer:', e);
+          }
         }
       });
 
       socket.current.on('offer', async (offer: any, remotePeerId?: string) => {
-        console.log('Received offer');
+        console.log('Received offer, signaling state:', peerConnection.current?.signalingState);
         if (remotePeerId) setPeerId(remotePeerId);
-        peerConnection.current = createPeerConnection();
-        if (!peerConnection.current) return;
+        if (!peerConnection.current || peerConnection.current.signalingState !== 'stable') {
+          console.warn('Creating new peer connection for offer');
+          peerConnection.current = createPeerConnection();
+          if (!peerConnection.current) return;
 
-        stream.getTracks().forEach((track: MediaStreamTrack) => {
-          try {
-            peerConnection.current?.addTrack(track, stream);
-          } catch (e) {
-            console.error('Error adding track:', e);
-          }
-        });
+          stream.getTracks().forEach((track: MediaStreamTrack) => {
+            try {
+              peerConnection.current?.addTrack(track, stream);
+            } catch (e) {
+              console.error('Error adding track:', e);
+            }
+          });
+        }
 
         try {
+          if (peerConnection.current.signalingState !== 'stable') {
+            console.warn('Ignoring offer: signaling state is', peerConnection.current.signalingState);
+            return;
+          }
           await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
           const answer = await peerConnection.current.createAnswer();
           await peerConnection.current.setLocalDescription(answer);
-          socket.current?.emit('answer', answer);
+          socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
         } catch (e) {
           console.error('Error handling offer:', e);
         }
       });
 
       socket.current.on('answer', async (answer: any) => {
-        console.log('Received answer');
+        console.log('Received answer, signaling state:', peerConnection.current?.signalingState);
         try {
-          await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(answer));
+          if (peerConnection.current?.signalingState === 'have-local-offer') {
+            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+          } else {
+            console.warn('Ignoring answer: signaling state is', peerConnection.current?.signalingState);
+          }
         } catch (e) {
           console.error('Error setting remote description:', e);
         }
@@ -359,6 +435,23 @@ const VideoChatScreen: React.FC = () => {
       socket.current.on('disconnect', () => {
         console.log('Socket disconnected');
         resetChat();
+      });
+
+      socket.current.on('video_status_change', (data: { isPaused: boolean }) => {
+        setIsRemoteVideoPaused(data.isPaused);
+      });
+
+      socket.current.on('receive_message', (data: { message: string }) => {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString() + Math.random(),
+          text: data.message,
+          sender: 'them',
+          timestamp: Date.now(),
+        }]);
+
+        if (!isChatVisibleRef.current) {
+          setUnreadCount(prev => prev + 1);
+        }
       });
 
     } catch (error) {
@@ -407,6 +500,17 @@ const VideoChatScreen: React.FC = () => {
     }
   }, [localStream]);
 
+  const toggleVideo = useCallback(() => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsVideoPaused(!videoTrack.enabled);
+        socket.current?.emit('video_status_change', { isPaused: !videoTrack.enabled });
+      }
+    }
+  }, [localStream]);
+
   const switchCamera = useCallback(() => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
@@ -417,8 +521,23 @@ const VideoChatScreen: React.FC = () => {
     }
   }, [localStream]);
 
+  const sendMessage = useCallback(() => {
+    if (!inputText.trim() || !socket.current) return;
+    
+    const text = inputText.trim();
+    socket.current.emit('send_message', { message: text });
+    
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      text,
+      sender: 'me',
+      timestamp: Date.now(),
+    }]);
+    setInputText('');
+  }, [inputText]);
+
   const findNextPeer = useCallback(() => {
-    resetChat();
+    resetChat(true);
     if (socket.current && socket.current.connected) {
       socket.current.emit('next_peer');
       setIsConnecting(true);
@@ -427,10 +546,77 @@ const VideoChatScreen: React.FC = () => {
     }
   }, [resetChat, startVideoChat]);
 
+  const pan = useRef(new Animated.ValueXY()).current;
+
+  // Refs for PanResponder to access latest state
+  const findNextPeerRef = useRef(findNextPeer);
+  useEffect(() => {
+    findNextPeerRef.current = findNextPeer;
+  }, [findNextPeer]);
+
+  const isChattingRef = useRef(isChatting);
+  useEffect(() => {
+    isChattingRef.current = isChatting;
+  }, [isChatting]);
+
+  const isConnectingRef = useRef(isConnecting);
+  useEffect(() => {
+    isConnectingRef.current = isConnecting;
+  }, [isConnecting]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        const isActive = isChattingRef.current || isConnectingRef.current;
+        return isActive && Math.abs(gestureState.dx) > 20 && Math.abs(gestureState.dy) < Math.abs(gestureState.dx);
+      },
+      onPanResponderGrant: () => {
+        pan.setOffset({
+          x: (pan.x as any)._value,
+          y: (pan.y as any)._value
+        });
+      },
+      onPanResponderMove: (_, gestureState) => {
+        pan.setValue({ x: gestureState.dx, y: 0 });
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        pan.flattenOffset();
+        if (gestureState.dx < -100) { // Swipe Left
+          Animated.timing(pan, {
+            toValue: { x: -Dimensions.get('window').width, y: 0 },
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            findNextPeerRef.current();
+            pan.setValue({ x: 0, y: 0 });
+          });
+        } else {
+          Animated.spring(pan, {
+            toValue: { x: 0, y: 0 },
+            friction: 5,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (isConnecting) {
+      timeout = setTimeout(() => {
+        Alert.alert('Timeout', 'No match found. Please try again.');
+        resetChat();
+      }, 30000);
+    }
+    return () => clearTimeout(timeout);
+  }, [isConnecting, resetChat]);
+
   if (!webRTCSupported) {
     return (
       <ThemedView style={styles.centeredContainer}>
-        <IconSymbol name="exclamationmark.triangle.fill" size={60} color="#FFD700" />
+        <Ionicons name="warning" size={60} color="#FFD700" />
         <ThemedText type="heading2" style={{ marginTop: spacing.lg, textAlign: 'center' }}>Development Build Required</ThemedText>
         <ThemedText style={{ textAlign: 'center', marginTop: spacing.md, paddingHorizontal: spacing.xl, opacity: 0.7 }}>
           Video chat requires native WebRTC support which is not available in Expo Go. Please create a development build to test this feature.
@@ -443,7 +629,7 @@ const VideoChatScreen: React.FC = () => {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.permissionContainer}>
-          <IconSymbol name="camera.fill" size={60} color={primaryColor} />
+          <Ionicons name="camera" size={60} color={primaryColor} />
           <ThemedText type="heading2" style={styles.permissionTitle}>Permissions Required</ThemedText>
           <ThemedText style={styles.permissionText}>
             We need access to your camera and microphone to connect you with others.
@@ -462,6 +648,10 @@ const VideoChatScreen: React.FC = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
       <View style={styles.videoWrapper}>
+        <Animated.View 
+          style={[StyleSheet.absoluteFill, { transform: [{ translateX: pan.x }] }]}
+          {...panResponder.panHandlers}
+        >
         {remoteStream && RTCView && (
           <RTCView
             streamURL={remoteStream.toURL()}
@@ -469,30 +659,40 @@ const VideoChatScreen: React.FC = () => {
             objectFit="cover"
           />
         )}
+
+        {remoteStream && isRemoteVideoPaused && (
+          <View style={styles.remotePausedOverlay}>
+            <Ionicons name="videocam-off" size={50} color="white" />
+            <ThemedText style={styles.remotePausedText}>Video Paused</ThemedText>
+          </View>
+        )}
         
         {/* Placeholder when no remote stream */}
         {!remoteStream && (
           <View style={[styles.placeholderContainer, { backgroundColor: surfaceColor }]}>
-            {isConnecting ? (
+            {isConnecting || isChatting ? (
               <View style={styles.connectingState}>
                 <ActivityIndicator size="large" color={primaryColor} />
-                <ThemedText style={styles.connectingText}>Finding a match...</ThemedText>
+                <ThemedText style={styles.connectingText}>
+                  {isChatting ? 'Connecting to peer...' : 'Finding a match...'}
+                </ThemedText>
               </View>
             ) : (
               <View style={styles.idleState}>
-                <IconSymbol name="video.fill" size={80} color={primaryColor} />
+                <Ionicons name="videocam" size={80} color={primaryColor} />
                 <ThemedText type="heading2" style={styles.idleTitle}>Start Video Chat</ThemedText>
                 <ThemedText style={styles.idleText}>Connect with random people instantly</ThemedText>
               </View>
             )}
           </View>
         )}
+        </Animated.View>
 
         {/* Timer Overlay */}
         {isChatting && (
           <View style={styles.timerContainer}>
             <View style={styles.timerBadge}>
-              <IconSymbol name="clock.fill" size={14} color="white" />
+              <Ionicons name="time" size={14} color="white" />
               <ThemedText style={styles.timerText}>{formatTime(chatDuration)}</ThemedText>
             </View>
           </View>
@@ -501,14 +701,14 @@ const VideoChatScreen: React.FC = () => {
         {/* Report Button */}
         {isChatting && (
           <TouchableOpacity style={styles.reportButton} onPress={handleReportUser}>
-            <IconSymbol name="flag.fill" size={24} color="#FF3B30" />
+            <Ionicons name="flag" size={24} color="#FF3B30" />
           </TouchableOpacity>
         )}
 
         {/* Mute Indicator Overlay */}
         {isMuted && localStream && (
           <View style={[styles.muteIndicator, { top: spacing.lg + 50 }]}>
-            <IconSymbol name="mic.slash.fill" size={20} color="white" />
+            <Ionicons name="mic-off" size={20} color="white" />
             <ThemedText style={styles.muteText}>Muted</ThemedText>
           </View>
         )}
@@ -516,18 +716,93 @@ const VideoChatScreen: React.FC = () => {
         {/* Local Video Overlay */}
         {localStream && RTCView && (
           <View style={[styles.localVideoContainer, { borderColor: surfaceColor }]}>
-            <RTCView
-              streamURL={localStream.toURL()}
-              style={styles.localVideo}
-              objectFit="cover"
-              mirror={true}
-            />
+            {isVideoPaused ? (
+              <View style={[styles.localVideo, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="videocam-off" size={30} color="white" />
+              </View>
+            ) : (
+              <RTCView
+                streamURL={localStream.toURL()}
+                style={styles.localVideo}
+                objectFit="cover"
+                mirror={true}
+              />
+            )}
           </View>
         )}
       </View>
 
+      {/* Chat Overlay */}
+      {isChatVisible && (
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.chatOverlay}
+        >
+          <View style={styles.chatContainer}>
+            <View style={styles.chatHeader}>
+              <ThemedText style={styles.chatTitle}>Chat</ThemedText>
+              <TouchableOpacity onPress={() => setIsChatVisible(false)} style={styles.closeChatButton}>
+                <Ionicons name="close-circle" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={messages}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => (
+                <View style={[
+                  styles.messageBubble,
+                  item.sender === 'me' ? styles.myMessage : styles.theirMessage
+                ]}>
+                  <ThemedText style={styles.messageText}>{item.text}</ThemedText>
+                </View>
+              )}
+              contentContainerStyle={styles.messageListContent}
+            />
+
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Type a message..."
+                placeholderTextColor="#ccc"
+                onSubmitEditing={sendMessage}
+                returnKeyType="send"
+              />
+              <TouchableOpacity onPress={sendMessage} style={styles.sendButton}>
+                <Ionicons name="send" size={24} color={primaryColor} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      )}
+
       {/* Controls */}
       <View style={styles.controlsContainer}>
+        {(isChatting || isConnecting) && (
+          <View style={styles.mediaControls}>
+            <TouchableOpacity style={styles.mediaButton} onPress={toggleMute}>
+              <Ionicons name={isMuted ? 'mic-off' : 'mic'} size={24} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mediaButton} onPress={toggleVideo}>
+              <Ionicons name={isVideoPaused ? 'videocam-off' : 'videocam'} size={24} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mediaButton} onPress={() => setIsChatVisible(true)}>
+              <Ionicons name="chatbubble" size={24} color="white" />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <ThemedText style={styles.badgeText}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </ThemedText>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mediaButton} onPress={switchCamera}>
+              <Ionicons name="camera-reverse" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+        )}
         {!isChatting && !isConnecting ? (
           <TouchableOpacity 
             style={[styles.startButton, { backgroundColor: primaryColor }]}
@@ -541,7 +816,7 @@ const VideoChatScreen: React.FC = () => {
               style={[styles.controlButton, { backgroundColor: errorColor }]}
               onPress={resetChat}
             >
-              <IconSymbol name="phone.down.fill" size={24} color="white" />
+              <Ionicons name="call" size={24} color="white" />
               <ThemedText style={styles.controlButtonText}>End</ThemedText>
             </TouchableOpacity>
             
@@ -550,7 +825,7 @@ const VideoChatScreen: React.FC = () => {
               onPress={findNextPeer}
             >
               <ThemedText style={styles.controlButtonText}>Next</ThemedText>
-              <IconSymbol name="chevron.right" size={24} color="white" />
+              <Ionicons name="chevron-forward" size={24} color="white" />
             </TouchableOpacity>
           </View>
         )}
@@ -667,6 +942,20 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     paddingBottom: spacing.xxl,
   },
+  mediaControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  mediaButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   startButton: {
     paddingVertical: spacing.lg,
     borderRadius: borderRadius.round,
@@ -721,6 +1010,109 @@ const styles = StyleSheet.create({
   buttonText: {
     color: 'white',
     fontFamily: typography.families.bold,
+  },
+  remotePausedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  remotePausedText: {
+    color: 'white',
+    marginTop: spacing.md,
+    fontSize: typography.sizes.heading3,
+    fontFamily: typography.families.bold,
+  },
+  chatOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+    justifyContent: 'flex-end',
+  },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.lg,
+    paddingTop: Platform.OS === 'ios' ? 60 : spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  chatTitle: {
+    fontSize: typography.sizes.heading3,
+    fontFamily: typography.families.bold,
+    color: 'white',
+  },
+  closeChatButton: {
+    padding: spacing.xs,
+  },
+  messageListContent: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  messageBubble: {
+    maxWidth: '80%',
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  myMessage: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#007AFF',
+    borderBottomRightRadius: 2,
+  },
+  theirMessage: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#333',
+    borderBottomLeftRadius: 2,
+  },
+  messageText: {
+    color: 'white',
+    fontSize: typography.sizes.body1,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.9)',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#333',
+    borderRadius: borderRadius.round,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    color: 'white',
+    fontSize: typography.sizes.body1,
+  },
+  sendButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  badge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: 'white',
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
 

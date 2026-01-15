@@ -15,6 +15,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { CreateCommunityModal } from './create-community-modal';
 import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 
@@ -39,8 +40,8 @@ interface Post {
     profilePhoto?: string;
   };
   content: string;
-  image?: string;
-  video?: string;
+  images?: string[];
+  video?: string; // Keep for now, though posts have either images or video
   createdAt: string;
   likes: string[];
   comments: any[];
@@ -75,6 +76,7 @@ export default function ExploreScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [friendIds, setFriendIds] = useState<string[]>([]);
+  const [sentRequestIds, setSentRequestIds] = useState<string[]>([]);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
   const [isFilterVisible, setFilterVisible] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
@@ -176,6 +178,9 @@ export default function ExploreScreen() {
       if (profileResponse?.data?.friends) {
         setFriendIds(profileResponse.data.friends.map((f: any) => typeof f === 'string' ? f : f._id));
       }
+      if (profileResponse?.data?.friendRequests) {
+        setSentRequestIds(profileResponse.data.friendRequests.map((r: any) => typeof r === 'string' ? r : r._id));
+      }
     } catch (error) {
       console.error('Failed to fetch explore data:', error);
     } finally {
@@ -231,6 +236,7 @@ export default function ExploreScreen() {
     if (!user?._id) return;
     try {
       await userAPI.sendFriendRequest(user._id, targetUserId);
+      setSentRequestIds(prev => [...prev, targetUserId]);
       Alert.alert('Success', `Friend request sent to ${userName}`);
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
@@ -250,6 +256,7 @@ export default function ExploreScreen() {
 
   const renderUserAction = (targetUser: User) => {
     const isFriend = friendIds.includes(targetUser._id);
+    const isRequestSent = sentRequestIds.includes(targetUser._id);
     const isSelf = user?._id === targetUser._id;
 
     if (isSelf) return null;
@@ -258,6 +265,14 @@ export default function ExploreScreen() {
       return (
         <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
           <ThemedText style={[styles.followText, { color: textColor }]}>Friend</ThemedText>
+        </View>
+      );
+    }
+
+    if (isRequestSent) {
+      return (
+        <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
+          <ThemedText style={[styles.followText, { color: textColor }]}>Requested</ThemedText>
         </View>
       );
     }
@@ -281,12 +296,12 @@ export default function ExploreScreen() {
   ];
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} safe>
       {/* Search Header */}
       <ThemedView style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
           <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Explore</ThemedText>
-          <TouchableOpacity onPress={() => setFilterVisible(true)}>
+          <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFilterVisible(true); }}>
             <IconSymbol name="slider.horizontal.3" size={24} color={textColor} />
           </TouchableOpacity>
         </View>
@@ -317,7 +332,7 @@ export default function ExploreScreen() {
                   <View style={styles.section}>
                     <ThemedText type="title" style={styles.sectionTitle}>Users</ThemedText>
                     {searchResults.users.map((user) => (
-                      <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => router.push(`/user/${user._id}`)}>
+                      <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${user._id}`); }}>
                         <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                           {user.profilePhoto ? (
                             <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatarImage} />
@@ -339,7 +354,7 @@ export default function ExploreScreen() {
                   <View style={styles.section}>
                     <ThemedText type="title" style={styles.sectionTitle}>Posts</ThemedText>
                     {searchResults.posts.map((post) => (
-                      <TouchableOpacity key={post._id} style={[styles.postRow, { borderBottomColor: borderColor }]} onPress={() => router.push(`/user-posts/${post.author._id}`)}>
+                      <TouchableOpacity key={post._id} style={[styles.postRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push({ pathname: '/', params: { postId: post._id } }); }}>
                         <View style={styles.postHeader}>
                           {post.author.profilePhoto ? (
                             <Image source={{ uri: getImageUrl(post.author.profilePhoto) }} style={styles.postAvatar} />
@@ -379,6 +394,7 @@ export default function ExploreScreen() {
                     key={cat.id}
                     style={[styles.catPill, { backgroundColor: cat.color + '15', borderColor: cat.color + '40' }]}
                     onPress={() => {
+                      Haptics.selectionAsync();
                       setSearchQuery(cat.title);
                     }}
                   >
@@ -397,7 +413,7 @@ export default function ExploreScreen() {
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendList}>
                   {trendingPosts.map((post) => (
-                    <TouchableOpacity key={post._id} style={styles.trendCard} onPress={() => router.push({ pathname: '/', params: { postId: post._id } })}>
+                    <TouchableOpacity key={post._id} style={styles.trendCard} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push({ pathname: '/', params: { postId: post._id } }); }}>
                       <LinearGradient colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.8)']} style={styles.trendGradient}>
                         <View>
                           <ThemedText style={[styles.trendHashtag, { color: white }]} numberOfLines={2}>
@@ -408,8 +424,8 @@ export default function ExploreScreen() {
                           </ThemedText>
                         </View>
                       </LinearGradient>
-                      {post.image && (
-                        <Image source={{ uri: getImageUrl(post.image) }} style={styles.trendImage} />
+                      {post.images && post.images.length > 0 && (
+                        <Image source={{ uri: getImageUrl(post.images[0]) }} style={styles.trendImage} />
                       )}
                     </TouchableOpacity>
                   ))}
@@ -422,7 +438,7 @@ export default function ExploreScreen() {
               <ThemedText type="title" style={styles.sectionTitle}>Discover People</ThemedText>
               {discoverUsers.length > 0 ? (
                 discoverUsers.map((user) => (
-                  <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => router.push(`/user/${user._id}`)}>
+                  <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${user._id}`); }}>
                     <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                       {user.profilePhoto ? (
                         <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatarImage} />
@@ -450,7 +466,7 @@ export default function ExploreScreen() {
             <View style={styles.section}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingRight: spacing.lg }}>
                 <ThemedText type="title" style={styles.sectionTitle}>My Communities</ThemedText>
-                <TouchableOpacity onPress={() => setShowCreateCommunityModal(true)}>
+                <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowCreateCommunityModal(true); }}>
                   <IconSymbol name="plus" size={24} color={primaryColor} />
                 </TouchableOpacity>
               </View>
@@ -460,6 +476,7 @@ export default function ExploreScreen() {
                     key={community._id} 
                     style={[styles.userRow, { borderBottomColor: borderColor }]} 
                     onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const chatId = typeof community.chat === 'object' ? (community.chat as any)?._id : community.chat;
                       if (chatId) {
                         router.push(`/chat/${chatId}`);
@@ -482,7 +499,7 @@ export default function ExploreScreen() {
                     <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
                       <ThemedText style={[styles.followText, { color: textColor }]}>Open</ThemedText>
                     </View>
-                    <TouchableOpacity style={{ marginLeft: spacing.sm, padding: spacing.sm }} onPress={() => router.push(`/community/${community._id}`)}>
+                    <TouchableOpacity style={{ marginLeft: spacing.sm, padding: spacing.sm }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}>
                         <IconSymbol name="info.circle" size={24} color={lightTextColor} />
                     </TouchableOpacity>
                   </TouchableOpacity>
@@ -500,7 +517,7 @@ export default function ExploreScreen() {
               {communities.map((community) => (
                 <TouchableOpacity key={community._id} 
                   style={[styles.userRow, { borderBottomColor: borderColor }]}
-                  onPress={() => router.push(`/community/${community._id}`)}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}
                 >
                   <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                     {community.image ? (
@@ -513,7 +530,7 @@ export default function ExploreScreen() {
                     <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{community.name}</ThemedText>
                     <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
                   </View>
-                  <TouchableOpacity style={[styles.followButton, { backgroundColor: primaryColor }]} onPress={() => handleJoinCommunity(community._id, community.name)}>
+                  <TouchableOpacity style={[styles.followButton, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleJoinCommunity(community._id, community.name); }}>
                     <ThemedText style={[styles.followText, { color: white }]}>Join</ThemedText>
                   </TouchableOpacity>
                 </TouchableOpacity>
@@ -537,7 +554,6 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    paddingTop: spacing.xl * 2,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,

@@ -234,11 +234,33 @@ export default function ChatScreen() {
     onUserTyping(handleUserTyping);
     onUserStopTyping(handleUserStopTyping);
 
+    const socket = getSocket();
+    const handleStatusChange = (data: { userId: string; isOnline: boolean; lastSeen: string }) => {
+      setChat(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          participants: prev.participants.map(p => 
+            p._id === data.userId 
+              ? { ...p, isOnline: data.isOnline, lastSeen: data.lastSeen }
+              : p
+          )
+        };
+      });
+    };
+
+    if (socket) {
+      socket.on('user_status_change', handleStatusChange);
+    }
+
     return () => {
       offMessageReceived();
       offMessagesRead();
       offUserTyping();
       offUserStopTyping();
+      if (socket) {
+        socket.off('user_status_change', handleStatusChange);
+      }
       leaveChat(id as string);
       if (previewSound.current) {
         previewSound.current.unloadAsync();
@@ -1052,7 +1074,7 @@ export default function ChatScreen() {
                       </ThemedText>
                   )}
               </View>
-              <TouchableOpacity onPress={() => router.push('/voicechat')} style={styles.voiceCallButton}>
+              <TouchableOpacity onPress={handleVoiceCall} style={styles.voiceCallButton}>
                   <IconSymbol name="phone" size={24} color={textColor} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.settingsButton}>
