@@ -35,6 +35,7 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  console.log('AuthProvider mounted');
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -152,6 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useAuth = () => {
   const context = React.useContext(AuthContext);
   if (!context) {
+    console.error('useAuth called without AuthProvider. Stack trace:', new Error().stack);
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

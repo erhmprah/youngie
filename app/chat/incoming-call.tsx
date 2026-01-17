@@ -1,9 +1,9 @@
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getSocket } from '@/utils/socket';
+import { getSocket, joinChat, onVoiceCallEnd, offVoiceCallEnd } from '@/utils/socket';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -13,12 +13,42 @@ export default function IncomingCallScreen() {
   const { offer, caller, chatId } = useLocalSearchParams();
   const router = useRouter();
   const socket = getSocket();
+  const timeoutRef = useRef<number | null>(null);
 
   const parsedOffer = JSON.parse(offer as string);
   const parsedCaller = JSON.parse(caller as string);
 
   const primaryColor = useThemeColor('primary');
   const errorColor = useThemeColor('error');
+
+  useEffect(() => {
+    if (!chatId) return;
+    joinChat(chatId as string);
+
+    // Auto-decline after 60 seconds
+    timeoutRef.current = setTimeout(() => {
+      declineCall();
+    }, 60000);
+
+    // Handle call ended by caller
+    const handleCallEnd = () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      router.back();
+    };
+
+    onVoiceCallEnd(handleCallEnd);
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      offVoiceCallEnd();
+    };
+  }, [router, chatId]);
 
   const acceptCall = () => {
     router.replace({
@@ -34,7 +64,7 @@ export default function IncomingCallScreen() {
 
   const declineCall = () => {
     // Notify the caller that the call was declined
-    socket.emit('voice-call-decline', { chatId });
+    socket?.emit('voice-call-end', { chatId });
     router.back();
   };
 

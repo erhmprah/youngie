@@ -1339,8 +1339,11 @@ export default function ChatScreen() {
 
       <MediaPreviewModal
         visible={showMediaPreview}
-        onClose={() => setShowMediaPreview(false)}
-        attachment={selectedMediaAttachment || attachment}
+        onClose={() => {
+    setShowMediaPreview(false);
+    setSelectedMediaAttachment(null);
+}}
+        attachment={selectedMediaAttachment ? selectedMediaAttachment : attachment}
       />
     </SafeAreaView>
   );

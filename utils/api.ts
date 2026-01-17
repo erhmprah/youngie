@@ -206,6 +206,7 @@ export const chatAPI = {
     const data = await response.json();
     return { data };
   },
+  getTurnCredentials: () => api.get('/chats/turn-credentials'),
   votePoll: (chatId: string, messageId: string, optionIndex: number) => api.post(`/chats/${chatId}/messages/${messageId}/vote`, { optionIndex }),
 };
 

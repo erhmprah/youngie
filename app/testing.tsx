@@ -69,6 +69,7 @@ export default function TestingScreen() {
         { name: 'Get user chats', fn: testGetChats },
         { name: 'Get chat messages', fn: testGetChatMessages },
         { name: 'Send message', fn: testSendMessage },
+        { name: 'Get TURN credentials', fn: testGetTurnCredentials },
       ],
     },
     {
@@ -204,6 +205,13 @@ export default function TestingScreen() {
     return `Sent message to chat: ${chatId}`;
   }
 
+  async function testGetTurnCredentials() {
+    const response = await chatAPI.getTurnCredentials();
+    if (!response.data || !Array.isArray(response.data)) {
+      throw new Error('Invalid TURN credentials format');
+    }
+    return `Fetched ${response.data.length} ICE servers`;
+  }
 
   async function testGetStories() {
     const response = await storyAPI.getStories();

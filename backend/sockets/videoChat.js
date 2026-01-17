@@ -5,23 +5,6 @@ module.exports = (io) => {
   io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id}`);
 
-    // Voice call signaling for private chats
-    socket.on('voice-call-offer', ({ chatId, offer, caller }) => {
-      socket.to(chatId).emit('voice-call-offer', { offer, caller });
-    });
-
-    socket.on('voice-call-answer', ({ chatId, answer }) => {
-      socket.to(chatId).emit('voice-call-answer', { answer });
-    });
-
-    socket.on('voice-call-ice-candidate', ({ chatId, candidate }) => {
-      socket.to(chatId).emit('voice-call-ice-candidate', { candidate });
-    });
-
-    socket.on('voice-call-end', ({ chatId }) => {
-      socket.to(chatId).emit('voice-call-end');
-    });
-
     // Add user to waiting list
     socket.on('join_room', () => {
       console.log(`User ${socket.id} joined waiting room.`);

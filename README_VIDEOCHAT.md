@@ -72,7 +72,35 @@ Make sure your socket server is running and accessible. The app connects to the 
    - Verify camera permissions are granted
    - Try restarting the app
 
-### 6. Production Deployment
+### 6. TURN Server Configuration
+
+TURN servers are required for production deployments and restrictive network environments:
+
+#### Quick Setup with Twilio (Free for Development):
+```bash
+# 1. Sign up at https://www.twilio.com/
+# 2. Get Account SID and Auth Token from Dashboard
+# 3. Run the helper script:
+export TWILIO_ACCOUNT_SID=your_account_sid
+export TWILIO_AUTH_TOKEN=your_auth_token
+node get-turn-credentials.js
+
+# 4. Copy the output to backend/.env
+```
+
+#### Alternative Free TURN Providers:
+- **Metered.ca**: https://www.metered.ca/ (1,000 minutes free)
+- **Xirsys**: https://xirsys.com/ (limited free tier)
+
+#### Manual Configuration:
+Add to `backend/.env`:
+```bash
+TURN_SERVER_URL=turn:your-turn-server.com:3478
+TURN_USERNAME=your-username
+TURN_CREDENTIAL=your-password
+```
+
+### 7. Production Deployment
 
 For production builds, you'll need to:
 - Set up TURN servers for better NAT traversal

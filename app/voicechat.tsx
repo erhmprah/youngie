@@ -35,7 +35,12 @@ const VoiceChatScreen: React.FC = () => {
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        // You might want to add TURN servers here for better NAT traversal
+        // TURN servers are required for connectivity behind symmetric NATs or firewalls.
+        // {
+        //   urls: 'turn:your-turn-server.com:3478',
+        //   username: 'your-username',
+        //   credential: 'your-password',
+        // },
       ],
     });
 
@@ -156,7 +161,13 @@ const VoiceChatScreen: React.FC = () => {
       console.log('Received answer from:', peerId);
       if (peerConnection.current && !peerConnection.current.remoteDescription) {
         if (peerConnection.current.signalingState === 'have-local-offer') {
-          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+          try {
+            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+          } catch (e) {
+            console.error('Error setting remote description:', e);
+          }
+        } else {
+          console.warn('Ignoring answer: signaling state is', peerConnection.current.signalingState);
         }
       } else if (peerConnection.current?.remoteDescription) {
         console.warn('Ignoring answer: remote description already set.');

@@ -4,9 +4,19 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { AppState } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { initSocket, disconnectSocket, onVoiceCallOffer, offVoiceCallOffer } from '@/utils/socket';
+import CallService from '@/utils/call-service';
+
+// Conditionally import expo-notifications
+let Notifications: any = null;
+try {
+  Notifications = require('expo-notifications');
+} catch (e) {
+  console.warn('expo-notifications not available, notifications will be disabled');
+}
 
 function RootLayoutNav() {
   const { isSignedIn, isLoading, restoreToken, user } = useAuth();
@@ -14,18 +24,48 @@ function RootLayoutNav() {
   const router = useRouter();
 
   useEffect(() => {
+    let notificationResponseSubscription: any = null;
+    if (Notifications) {
+      // Set up notification response listener
+      notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+        const data = response.notification.request.content.data as any;
+        if (data.type === 'incoming-call') {
+          // Handle incoming call notification tap
+          router.push({
+            pathname: '/chat/voice-call',
+            params: {
+              chatId: data.chatId,
+              name: data.caller?.username || 'User',
+              image: data.caller?.profilePhoto,
+              offer: data.offer ? JSON.stringify(data.offer) : undefined,
+            }
+          });
+        }
+      });
+    }
+
     if (isSignedIn && user?._id) {
       const socket = initSocket(user._id);
-      
+
       onVoiceCallOffer(({ offer, caller, chatId }) => {
-        router.push({
-          pathname: '/chat/incoming-call',
-          params: {
-            offer: JSON.stringify(offer),
-            caller: JSON.stringify(caller),
-            chatId: chatId,
-          },
-        });
+        if (AppState.currentState === 'background' || AppState.currentState === 'inactive') {
+          // Generate a random UUID for the call
+          const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+
+          CallService.displayIncomingCall(uuid, caller.username, caller.username, chatId, caller, offer);
+        } else {
+          router.push({
+            pathname: '/chat/incoming-call',
+            params: {
+              offer: JSON.stringify(offer),
+              caller: JSON.stringify(caller),
+              chatId: chatId,
+            },
+          });
+        }
       });
 
     } else {
@@ -33,6 +73,9 @@ function RootLayoutNav() {
     }
 
     return () => {
+      if (notificationResponseSubscription) {
+        notificationResponseSubscription.remove();
+      }
       offVoiceCallOffer();
       disconnectSocket();
     };
@@ -90,10 +133,10 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
+    <AuthProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <RootLayoutNav />
-      </AuthProvider>
-    </GestureHandlerRootView>
+      </GestureHandlerRootView>
+    </AuthProvider>
   );
 }

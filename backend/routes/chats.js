@@ -702,4 +702,35 @@ router.delete('/:chatId', auth, async (req, res) => {
   }
 });
 
+// Get TURN credentials for WebRTC
+router.get('/turn-credentials', auth, async (req, res) => {
+  try {
+    // Always include STUN servers for basic connectivity
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+    ];
+
+    // Add TURN server credentials if configured
+    if (process.env.TURN_SERVER_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+      iceServers.push({
+        urls: process.env.TURN_SERVER_URL,
+        username: process.env.TURN_USERNAME,
+        credential: process.env.TURN_CREDENTIAL,
+      });
+      console.log('TURN server credentials added to ICE servers');
+    } else {
+      console.log('Using STUN servers only (TURN not configured)');
+    }
+
+    res.json(iceServers);
+  } catch (error) {
+    console.error('Error fetching TURN credentials:', error);
+    res.status(500).json({ error: 'Failed to fetch TURN credentials' });
+  }
+});
+
 module.exports = router;

@@ -1,23 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, NativeModules } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from 'react-native-webrtc';
-import { getSocket, sendVoiceCallOffer, sendVoiceCallAnswer, sendVoiceCallIceCandidate, sendVoiceCallEnd, onVoiceCallAnswer, onVoiceCallIceCandidate, onVoiceCallEnd, offVoiceCallAnswer, offVoiceCallIceCandidate, offVoiceCallEnd } from '@/utils/socket';
+import { getSocket, joinChat, sendVoiceCallOffer, sendVoiceCallAnswer, sendVoiceCallIceCandidate, sendVoiceCallEnd, sendMessage, onVoiceCallAnswer, onVoiceCallIceCandidate, onVoiceCallEnd, offVoiceCallAnswer, offVoiceCallIceCandidate, offVoiceCallEnd } from '@/utils/socket';
+import InCallManager from 'react-native-incall-manager';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getImageUrl } from '@/utils/api';
+import { getImageUrl, chatAPI } from '@/utils/api';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-
-const configuration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
 
 export default function VoiceCallScreen() {
   const { chatId, name, image, offer: offerString } = useLocalSearchParams();
@@ -27,9 +21,13 @@ export default function VoiceCallScreen() {
   const [remoteStream, setRemoteStream] = useState<any>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const [callStatus, setCallStatus] = useState('Initializing...');
+  const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
   const socket = getSocket();
+  const answerProcessedRef = useRef(false);
+  const callTimeoutRef = useRef<number | null>(null);
+  const inCallManagerStarted = useRef(false);
 
   const primaryColor = useThemeColor('primary');
   const backgroundColor = useThemeColor('background');
@@ -37,55 +35,120 @@ export default function VoiceCallScreen() {
   const errorColor = useThemeColor('error');
 
   useEffect(() => {
-    const pc = new RTCPeerConnection(configuration);
-    pcRef.current = pc;
-
-    const setupPeerConnection = async () => {
-        const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
-        setLocalStream(stream);
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                sendVoiceCallIceCandidate(chatId as string, event.candidate);
-            }
-        };
-
-        pc.ontrack = (event) => {
-            setRemoteStream(event.streams[0]);
-        };
+    let durationInterval: NodeJS.Timeout | null = null;
+    if (callStatus === 'In call') {
+      durationInterval = setInterval(() => {
+        setCallDuration(prevDuration => prevDuration + 1);
+      }, 1000);
+    }
+    return () => {
+      if (durationInterval) {
+        clearInterval(durationInterval);
+      }
     };
+  }, [callStatus]);
 
+  useEffect(() => {
     const handleCallStart = async () => {
-        await setupPeerConnection();
+        try {
+            if (NativeModules.InCallManager && InCallManager && typeof InCallManager.start === 'function') {
+                InCallManager.start({ media: 'audio' });
+                InCallManager.setKeepScreenOn(true);
+                InCallManager.setForceSpeakerphoneOn(false);
+                inCallManagerStarted.current = true;
+            } else {
+                console.warn("InCallManager not available on this platform");
+            }
+        } catch (error) {
+            console.error("InCallManager error on start:", error);
+        }
 
-        if (offerString) { // Receiver of the call
-            setCallStatus('Connecting...');
-            const offer = JSON.parse(offerString as string);
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendVoiceCallAnswer(chatId as string, answer);
-            setCallStatus('In call');
+        try {
+            // Fetch TURN credentials dynamically
+            let iceServers = [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ];
 
-        } else { // Caller
-            setCallStatus('Ringing...');
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            sendVoiceCallOffer(chatId as string, offer, {
-                _id: user?._id,
-                username: user?.username,
-                profilePhoto: user?.profilePhoto
-            });
+            try {
+                const response = await chatAPI.getTurnCredentials();
+                if (response.data) iceServers = response.data;
+            } catch (error) {
+                console.warn('Failed to fetch TURN credentials, using defaults:', error);
+            }
+
+            if (!RTCPeerConnection || !mediaDevices) {
+                Alert.alert("Feature Unavailable", "Voice calls require a Development Build and cannot run in Expo Go.");
+                return;
+            }
+
+            const pc = new RTCPeerConnection({ iceServers });
+            pcRef.current = pc;
+
+            const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+            setLocalStream(stream);
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendVoiceCallIceCandidate(chatId as string, event.candidate);
+                }
+            };
+
+            pc.ontrack = (event) => {
+                setRemoteStream(event.streams[0]);
+            };
+
+            joinChat(chatId as string);
+
+            if (offerString) { // Receiver of the call
+                setCallStatus('Connecting...');
+                const offer = JSON.parse(offerString as string);
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                sendVoiceCallAnswer(chatId as string, answer);
+                setCallStatus('In call');
+
+            } else { // Caller
+                setCallStatus('Ringing...');
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                sendVoiceCallOffer(chatId as string, offer, {
+                    _id: user?._id,
+                    username: user?.username,
+                    profilePhoto: user?.profilePhoto
+                });
+
+                // Set timeout for missed call
+                callTimeoutRef.current = setTimeout(async () => {
+                    if (callStatus === 'Ringing...') {
+                        hangUp('missed');
+                        // Send missed call message
+                        try {
+                            await chatAPI.sendMessage(chatId as string, { content: 'Missed voice call' });
+                            sendMessage(chatId as string, user?._id || '', 'Missed voice call', undefined, false);
+                        } catch (error) {
+                            console.error('Failed to send missed call message:', error);
+                        }
+                    }
+                }, 60000);
+            }
+        } catch (error) {
+            console.error('Failed to start call:', error);
+            Alert.alert('Error', 'Failed to access microphone or start call.');
+            hangUp('failed');
         }
     };
     
     handleCallStart();
 
     const onIceCandidate = ({ candidate }: { candidate: any }) => {
-        pc.addIceCandidate(new RTCIceCandidate(candidate));
+        if (pcRef.current) {
+            pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        }
     };
 
     const onEnd = () => hangUp('ended');
@@ -95,9 +158,18 @@ export default function VoiceCallScreen() {
 
     if (!offerString) { // Only caller listens for answers
         const onAnswer = async ({ answer }: { answer: any }) => {
-            if (pc.signalingState !== 'stable') {
-                await pc.setRemoteDescription(new RTCSessionDescription(answer));
-                setCallStatus('In call');
+            if (pcRef.current && pcRef.current.signalingState === 'have-local-offer' && !answerProcessedRef.current) {
+                answerProcessedRef.current = true;
+                if (callTimeoutRef.current) {
+                    clearTimeout(callTimeoutRef.current);
+                    callTimeoutRef.current = null;
+                }
+                try {
+                    await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+                    setCallStatus('In call');
+                } catch (error) {
+                    console.error('Failed to set remote answer:', error);
+                }
             }
         };
         onVoiceCallAnswer(onAnswer);
@@ -107,6 +179,15 @@ export default function VoiceCallScreen() {
       offVoiceCallAnswer();
       offVoiceCallIceCandidate();
       offVoiceCallEnd();
+
+      try {
+        if (InCallManager && inCallManagerStarted.current) {
+          InCallManager.stop();
+          inCallManagerStarted.current = false;
+        }
+      } catch (error) {
+          console.error("InCallManager error on stop:", error);
+      }
 
       if (pcRef.current) {
         pcRef.current.close();
@@ -120,7 +201,12 @@ export default function VoiceCallScreen() {
 
   const hangUp = (status = 'ended') => {
     setCallStatus(`Call ${status}`);
-    
+
+    if (callTimeoutRef.current) {
+        clearTimeout(callTimeoutRef.current);
+        callTimeoutRef.current = null;
+    }
+
     if (localStream) {
         localStream.getTracks().forEach((track: any) => track.stop());
     }
@@ -128,7 +214,7 @@ export default function VoiceCallScreen() {
         pcRef.current.close();
         pcRef.current = null;
     }
-    
+
     setLocalStream(null);
     setRemoteStream(null);
 
@@ -151,8 +237,22 @@ export default function VoiceCallScreen() {
   };
 
   const toggleSpeaker = () => {
-    setIsSpeaker(!isSpeaker);
-    // This requires platform-specific implementation, e.g., using InCallManager for React Native.
+    const newSpeakerState = !isSpeaker;
+    setIsSpeaker(newSpeakerState);
+    try {
+      if (NativeModules.InCallManager && InCallManager && typeof InCallManager.setSpeakerphoneOn === 'function') {
+        InCallManager.setSpeakerphoneOn(newSpeakerState);
+        InCallManager.setForceSpeakerphoneOn(newSpeakerState);
+      }
+    } catch (error) {
+        console.error("InCallManager error on speaker toggle:", error);
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -160,7 +260,9 @@ export default function VoiceCallScreen() {
       <ThemedView style={styles.callInfoContainer}>
         {image && <Image source={{ uri: getImageUrl(image as string) }} style={styles.avatar} />}
         <ThemedText type="title" style={styles.name}>{name}</ThemedText>
-        <ThemedText style={styles.status}>{callStatus}</ThemedText>
+        <ThemedText style={styles.status}>
+          {callStatus === 'In call' ? formatDuration(callDuration) : callStatus}
+        </ThemedText>
       </ThemedView>
 
       <View style={styles.controlsContainer}>

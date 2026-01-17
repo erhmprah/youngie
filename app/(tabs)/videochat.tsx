@@ -406,14 +406,21 @@ const VideoChatScreen: React.FC = () => {
 
       socket.current.on('answer', async (answer: any) => {
         console.log('Received answer, signaling state:', peerConnection.current?.signalingState);
-        try {
-          if (peerConnection.current?.signalingState === 'have-local-offer') {
-            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
-          } else {
-            console.warn('Ignoring answer: signaling state is', peerConnection.current?.signalingState);
+        if (peerConnection.current && !peerConnection.current.remoteDescription) {
+          try {
+            if (peerConnection.current.signalingState === 'have-local-offer' ||
+                (peerConnection.current.signalingState === 'stable' && !peerConnection.current.remoteDescription)) {
+              await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+            } else {
+              console.warn('Ignoring answer: signaling state is', peerConnection.current.signalingState);
+            }
+          } catch (e) {
+            console.error('Error setting remote description:', e);
           }
-        } catch (e) {
-          console.error('Error setting remote description:', e);
+        } else if (peerConnection.current?.remoteDescription) {
+          console.warn('Ignoring answer: remote description already set.');
+        } else {
+          console.warn('Ignoring answer: no peer connection.');
         }
       });
 

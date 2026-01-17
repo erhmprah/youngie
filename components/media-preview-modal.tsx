@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, StyleSheet, View, TouchableOpacity, Image, Dimensions, Text, Alert } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from './ui/icon-symbol';
 import { ThemedText } from './themed-text';
@@ -23,10 +23,20 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
 
     if (!attachment) return null;
 
-    const isVideo = attachment.type?.startsWith('video') || attachment.type === 'video';
+    // Parse attachment if it's a string (for sent media)
+    let parsedAttachment = attachment;
+    if (typeof attachment === 'string') {
+        try {
+            parsedAttachment = JSON.parse(attachment);
+        } catch (e) {
+            console.error('Failed to parse attachment', e);
+            return null;
+        }
+    }
+    const isVideo = parsedAttachment.type?.startsWith('video') || parsedAttachment.type === 'video';
 
     // Handle both uri (composed) and url (sent/received)
-    const rawUri = attachment.uri || attachment.url;
+    const rawUri = parsedAttachment.uri || parsedAttachment.url;
     if (!rawUri) return null;
 
     // Normalize path separators for Windows backends
@@ -42,6 +52,15 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
     const uri = (isLocalFile || isFullUrl)
       ? normalizedUrl
       : getImageUrl(normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`);
+
+    console.log('MediaPreviewModal URI debug:', {
+      rawUri,
+      normalizedUrl,
+      isLocalFile,
+      isFullUrl,
+      finalUri: uri,
+      attachment: parsedAttachment
+    });
 
     const handleSave = async () => {
         try {
@@ -60,7 +79,7 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
             }
 
             // For remote files, download first
-            const fileUri = `${(FileSystem as any).documentDirectory}${(attachment.fileName || `media_${Date.now()}.${attachment.type?.split('/')[1] || 'jpg'}`)}`;
+            const fileUri = `${(FileSystem as any).documentDirectory}${(parsedAttachment.fileName || `media_${Date.now()}.${parsedAttachment.type?.split('/')[1] || 'jpg'}`)}`;
             const downloadResult = await FileSystem.downloadAsync(uri, fileUri);
 
             if (downloadResult.status === 200) {
@@ -76,7 +95,7 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
     };
 
     return (
-        <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
+        <Modal visible={visible} transparent={false} presentationStyle="fullScreen" animationType="fade" onRequestClose={onClose}>
             <View style={styles.container}>
                 <TouchableOpacity style={[styles.closeButton, { top: insets.top + 10 }]} onPress={onClose}>
                     <IconSymbol name="xmark" size={30} color={white} />
@@ -94,19 +113,26 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
                                 useNativeControls
                                 resizeMode={ResizeMode.CONTAIN}
                                 shouldPlay={false}
+                                key={uri}
                             />
                         ) : (
-                            <Image source={{ uri }} style={styles.media} resizeMode="contain" />
+                            <Image
+                                source={{ uri }}
+                                style={styles.media}
+                                resizeMode="contain"
+                                key={uri}
+                                onError={(e) => console.log('Media load error:', e.nativeEvent.error, uri)}
+                            />
                         )}
                     </View>
                 </View>
 
                 <View style={styles.infoContainer}>
                     <ThemedText style={styles.fileName}>
-                        {attachment.fileName || 'Media file'}
+                        {parsedAttachment.fileName || 'Media file'}
                     </ThemedText>
                     <ThemedText style={styles.fileSize}>
-                        {((attachment.fileSize || attachment.size || 0) / 1024 / 1024).toFixed(2)} MB
+                        {((parsedAttachment.fileSize || parsedAttachment.size || 0) / 1024 / 1024).toFixed(2)} MB
                     </ThemedText>
                 </View>
             </View>
@@ -117,7 +143,7 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.9)',
+        backgroundColor: 'black',
         justifyContent: 'center',
         alignItems: 'center',
     },
