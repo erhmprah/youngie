@@ -1,7 +1,7 @@
 // components/select-friend-modal.tsx
 
 import React, { useState, useEffect } from 'react';
-import { Modal, StyleSheet, View, TouchableOpacity, FlatList, ActivityIndicator, Image, TextInput, Switch } from 'react-native';
+import { Modal, StyleSheet, View, TouchableOpacity, SectionList, ActivityIndicator, Image, TextInput, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -28,6 +28,8 @@ interface SelectFriendModalProps {
 export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGroup }: SelectFriendModalProps) {
     const { user } = useAuth();
     const [friends, setFriends] = useState<Friend[]>([]);
+    const [incomingRequests, setIncomingRequests] = useState<Friend[]>([]);
+    const [sentRequests, setSentRequests] = useState<Friend[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isGroupMode, setIsGroupMode] = useState(false);
     const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
@@ -48,11 +50,19 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
 
         setIsLoading(true);
         try {
-            const response = await userAPI.getProfile(user._id);
-            setFriends(response.data.friends || []);
+            const [profileResponse, incomingResponse, sentResponse] = await Promise.all([
+                userAPI.getProfile(user._id),
+                userAPI.getIncomingFriendRequests(),
+                userAPI.getSentFriendRequests()
+            ]);
+            setFriends(profileResponse.data.friends || []);
+            setIncomingRequests(incomingResponse.data || []);
+            setSentRequests(sentResponse.data || []);
         } catch (error) {
-            console.error('Error fetching friends:', error);
+            console.error('Error fetching friends and requests:', error);
             setFriends([]);
+            setIncomingRequests([]);
+            setSentRequests([]);
         } finally {
             setIsLoading(false);
         }
@@ -66,6 +76,8 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
             setGroupName('');
             setIsTemporary(false);
             setIsAnonymous(false);
+            setIncomingRequests([]);
+            setSentRequests([]);
         }
     }, [visible, user?._id]);
 
@@ -77,6 +89,54 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
         }
     };
 
+    const handleAcceptRequest = async (senderId: string) => {
+        try {
+            await userAPI.acceptFriendRequest(user!._id, senderId);
+            // Refresh data
+            fetchFriends();
+        } catch (error) {
+            console.error('Error accepting friend request:', error);
+        }
+    };
+
+    const handleIgnoreRequest = async (senderId: string) => {
+        try {
+            await userAPI.ignoreFriendRequest(user!._id, senderId);
+            // Refresh data
+            fetchFriends();
+        } catch (error) {
+            console.error('Error ignoring friend request:', error);
+        }
+    };
+
+    const handleCancelRequest = async (targetUserId: string) => {
+        try {
+            await userAPI.cancelFriendRequest(user!._id, targetUserId);
+            // Refresh data
+            fetchFriends();
+        } catch (error) {
+            console.error('Error canceling friend request:', error);
+        }
+    };
+
+    const sections = [
+        {
+            title: 'Friends',
+            data: friends,
+            type: 'friends'
+        },
+        {
+            title: 'Friend Requests',
+            data: incomingRequests,
+            type: 'incoming'
+        },
+        {
+            title: 'Pending Requests',
+            data: sentRequests,
+            type: 'sent'
+        }
+    ];
+
     const handleCreateGroup = () => {
         if (onCreateGroup && groupName.trim() && selectedFriends.length > 0) {
             onCreateGroup(selectedFriends, groupName.trim(), isTemporary, isAnonymous);
@@ -84,21 +144,61 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
         }
     };
 
-    const renderFriendItem = ({ item }: { item: Friend }) => {
+    const renderFriendItem = ({ item, section }: { item: Friend; section: any }) => {
         const avatarSource = item.profilePhoto ? { uri: getImageUrl(item.profilePhoto) } : undefined;
         const isSelected = selectedFriends.includes(item._id);
 
+        const renderActionButtons = () => {
+            if (section.type === 'incoming') {
+                return (
+                    <View style={styles.actionButtons}>
+                        <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: primaryColor }]}
+                            onPress={() => handleAcceptRequest(item._id)}
+                        >
+                            <ThemedText style={{ color: 'white', fontSize: 12 }}>Accept</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: lightTextColor }]}
+                            onPress={() => handleIgnoreRequest(item._id)}
+                        >
+                            <ThemedText style={{ color: textColor, fontSize: 12 }}>Ignore</ThemedText>
+                        </TouchableOpacity>
+                    </View>
+                );
+            } else if (section.type === 'sent') {
+                return (
+                    <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: '#ff6b6b' }]}
+                        onPress={() => handleCancelRequest(item._id)}
+                    >
+                        <ThemedText style={{ color: 'white', fontSize: 12 }}>Cancel</ThemedText>
+                    </TouchableOpacity>
+                );
+            } else if (isGroupMode) {
+                return (
+                    <Ionicons
+                        name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                        size={24}
+                        color={isSelected ? primaryColor : lightTextColor}
+                    />
+                );
+            }
+            return null;
+        };
+
         return (
             <TouchableOpacity
-                style={[styles.friendRow, { borderBottomColor: borderColor }, isGroupMode && isSelected && { backgroundColor: surfaceColor }]}
+                style={[styles.friendRow, { borderBottomColor: borderColor }, isGroupMode && section.type === 'friends' && isSelected && { backgroundColor: surfaceColor }]}
                 onPress={() => {
-                    if (isGroupMode) {
+                    if (isGroupMode && section.type === 'friends') {
                         toggleFriendSelection(item._id);
-                    } else {
+                    } else if (section.type === 'friends') {
                         onSelectFriend(item._id);
                         onClose();
                     }
                 }}
+                disabled={section.type !== 'friends'}
             >
                 <View style={[styles.avatarCircle, { backgroundColor: surfaceColor }]}>
                     {avatarSource ? (
@@ -117,13 +217,7 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
                         </ThemedText>
                     )}
                 </View>
-                {isGroupMode && (
-                    <Ionicons
-                        name={isSelected ? "checkmark-circle" : "ellipse-outline"}
-                        size={24}
-                        color={isSelected ? primaryColor : lightTextColor}
-                    />
-                )}
+                {renderActionButtons()}
             </TouchableOpacity>
         );
     };
@@ -190,14 +284,23 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
                     {isLoading ? (
                         <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: spacing.xl }} />
                     ) : (
-                        <FlatList
-                            data={friends}
+                        <SectionList
+                            sections={sections}
                             renderItem={renderFriendItem}
+                            renderSectionHeader={({ section: { title } }) => (
+                                title ? (
+                                    <View style={styles.sectionHeader}>
+                                        <ThemedText style={[styles.sectionTitle, { color: textColor }]}>
+                                            {title}
+                                        </ThemedText>
+                                    </View>
+                                ) : null
+                            )}
                             keyExtractor={item => item._id}
                             contentContainerStyle={styles.listContainer}
                             ListEmptyComponent={
                                 <ThemedText style={[styles.emptyText, { color: lightTextColor }]}>
-                                    No friends yet. Add some friends to start chatting!
+                                    No friends or requests yet.
                                 </ThemedText>
                             }
                         />
@@ -291,5 +394,25 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingVertical: spacing.xs,
+    },
+    actionButtons: {
+        flexDirection: 'row',
+        gap: spacing.xs,
+    },
+    actionButton: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        borderRadius: borderRadius.sm,
+        minWidth: 60,
+        alignItems: 'center',
+    },
+    sectionHeader: {
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
+        backgroundColor: '#f5f5f5',
+    },
+    sectionTitle: {
+        fontSize: typography.sizes.body1,
+        fontWeight: 'bold',
     },
 });

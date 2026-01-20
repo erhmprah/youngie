@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Image, ActivityIndicator, TouchableOpacity, Alert, FlatList } from 'react-native';
+import { StyleSheet, View, ScrollView, Image, TouchableOpacity, Alert, FlatList, ActivityIndicator } from 'react-native';
+import AnimatedActivityIndicator from '@/components/animated-activity-indicator';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
@@ -64,6 +65,7 @@ export default function CommunityScreen() {
     fetchCommunity();
   }, [fetchCommunity]);
 
+
   const handleJoin = async () => {
     if (!community) return;
     setIsActionLoading(true);
@@ -102,22 +104,21 @@ export default function CommunityScreen() {
     }
   };
 
-  if (isLoading || !community) {
-    return (
-      <ThemedView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={primaryColor} />
-      </ThemedView>
-    );
-  }
-
-  const isMember = community.members.some(m => m._id === user?._id);
-  const isCreator = community.creator._id === user?._id;
-  const isPending = community.pendingMembers?.some(m => m._id === user?._id);
+  const isMember = community?.members.some(m => m._id === user?._id) || false;
+  const isCreator = community?.creator._id === user?._id || false;
+  const isPending = community?.pendingMembers?.some(m => m._id === user?._id) || false;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+
+      {/* Loading View */}
+      <AnimatedActivityIndicator size="large" color={primaryColor} style={styles.loadingContainer} />
+
+      {/* Content View */}
+      <View style={{ flex: 1 }}>
+        {community && (
+          <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header Image */}
         <View style={styles.imageContainer}>
           {community.image ? (
@@ -232,7 +233,9 @@ export default function CommunityScreen() {
           </View>
 
         </ThemedView>
-      </ScrollView>
+          </ScrollView>
+        )}
+      </View>
     </SafeAreaView>
   );
 }

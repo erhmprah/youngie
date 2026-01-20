@@ -1,6 +1,7 @@
-import { useColorScheme as useNativeColorScheme } from 'react-native';
+import { useTheme } from '@/contexts/ThemeContext';
 
-// Force dark theme as default across the entire app
+// Use the theme from ThemeContext
 export function useColorScheme() {
-  return 'dark' as const;
+  const { theme } = useTheme();
+  return theme;
 }

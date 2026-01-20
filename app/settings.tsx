@@ -8,11 +8,13 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import * as Haptics from 'expo-haptics';
 
 export default function SettingsScreen() {
     const router = useRouter();
     const { logout } = useAuth();
+    const { mode } = useTheme();
     const colorScheme = useColorScheme();
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
@@ -83,15 +85,13 @@ export default function SettingsScreen() {
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
                     <SettingItem icon="shield" label="Security" onPress={() => router.push('/security-settings')} />
-                    <SettingItem icon="bell" label="Notifications" onPress={() => {}} />
                     <SettingItem icon="lock" label="Privacy" onPress={() => router.push('/privacy-settings')} />
                     <SettingItem icon="volume-mute" label="Muted Users" onPress={() => router.push('/muted-users')} />
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>App Settings</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
-                    <SettingItem icon={colorScheme === 'dark' ? 'moon' : 'sun'} label="Appearance" value={colorScheme === 'dark' ? 'Dark' : 'Light'} onPress={() => {}} />
-                    <SettingItem icon="globe" label="Language" value="English" onPress={() => {}} />
+                    <SettingItem icon={mode === 'dark' ? 'moon' : mode === 'light' ? 'sun.max' : 'device-phone-portrait'} label="Appearance" value={mode.charAt(0).toUpperCase() + mode.slice(1)} onPress={() => router.push('/appearance')} />
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Support</ThemedText>

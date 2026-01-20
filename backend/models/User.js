@@ -19,9 +19,14 @@ const UserSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: function() { return !this.firebaseUid; },
       minlength: 6,
       select: false,
+    },
+    firebaseUid: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
     bio: String,
     birthYear: Number,
@@ -132,6 +137,22 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    loginActivity: [
+      {
+        device: String,
+        location: String,
+        ipAddress: String,
+        userAgent: String,
+        loginTime: {
+          type: Date,
+          default: Date.now,
+        },
+        isActive: {
+          type: Boolean,
+          default: true,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );

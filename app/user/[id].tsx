@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Image, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { StyleSheet, View, Image, ActivityIndicator, TouchableOpacity, Alert, Animated } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { userAPI, getImageUrl, chatAPI } from '@/utils/api';
+import { userAPI, getImageUrl, chatAPI, postAPI } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
@@ -25,6 +25,17 @@ interface UserProfile {
   isPrivate?: boolean;
 }
 
+interface Post {
+  _id: string;
+  content?: string;
+  image?: string;
+  author: any;
+  createdAt: string;
+  likes: any[];
+  comments: any[];
+  // Add other fields as needed
+}
+
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -33,6 +44,12 @@ export default function UserProfileScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'self' | 'friend' | 'requested' | 'received' | 'none'>('none');
   const [stats, setStats] = useState({ posts: 0, friends: 0 });
+  const loadingOpacity = useRef(new Animated.Value(1)).current;
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [postsPage, setPostsPage] = useState(1);
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -80,15 +97,62 @@ export default function UserProfileScreen() {
     }
   }, [id, currentUser?._id]);
 
+  const fetchPosts = useCallback(async (page: number = 1) => {
+    if (!id) return;
+    setLoadingPosts(true);
+    try {
+      const response = await postAPI.getUserPosts(id as string, page, 20);
+      const { posts: newPosts, hasMore } = response.data;
+      if (page === 1) {
+        setPosts(newPosts);
+      } else {
+        setPosts(prev => [...prev, ...newPosts]);
+      }
+      setHasMorePosts(hasMore);
+      setPostsPage(page);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+    } finally {
+      setLoadingPosts(false);
+    }
+  }, [id]);
+
+  const loadMorePosts = () => {
+    if (!loadingPosts && hasMorePosts) {
+      fetchPosts(postsPage + 1);
+    }
+  };
+
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  useEffect(() => {
+    if (profile) {
+      fetchPosts(1);
+    }
+  }, [profile, fetchPosts]);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(loadingOpacity, {
+        toValue: isLoading ? 1 : 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: isLoading ? 0 : 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [isLoading, loadingOpacity, contentOpacity]);
 
   const handleSendRequest = async () => {
     if (!currentUser?._id || !profile) return;
     try {
       await userAPI.sendFriendRequest(currentUser._id, profile._id);
-      setConnectionStatus('requested');
+      await fetchProfile(); // Refetch to update status
       Alert.alert('Success', 'Friend request sent');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to send request');
@@ -99,7 +163,7 @@ export default function UserProfileScreen() {
     if (!currentUser?._id || !profile) return;
     try {
       await userAPI.acceptFriendRequest(currentUser._id, profile._id);
-      setConnectionStatus('friend');
+      await fetchProfile(); // Refetch to update status
       Alert.alert('Success', 'Friend request accepted');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to accept request');
@@ -110,7 +174,7 @@ export default function UserProfileScreen() {
     if (!currentUser?._id || !profile) return;
     try {
       await userAPI.cancelFriendRequest(currentUser._id, profile._id);
-      setConnectionStatus('none');
+      await fetchProfile(); // Refetch to update status
       Alert.alert('Success', 'Friend request cancelled');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to cancel request');
@@ -141,102 +205,123 @@ export default function UserProfileScreen() {
     }
   };
 
-  if (isLoading || !profile) {
-    return (
-      <ThemedView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={primaryColor} />
-      </ThemedView>
-    );
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient colors={[primaryColor + '20', 'transparent']} style={styles.headerBackground} />
-      
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={styles.navHeader}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                <IconSymbol name="chevron.left" size={28} color={textColor} />
+
+      {/* Loading View */}
+      <Animated.View style={[styles.loadingContainer, { opacity: loadingOpacity, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }]}>
+        <ActivityIndicator size="large" color={primaryColor} />
+      </Animated.View>
+
+      {/* Content View */}
+      <Animated.View style={{ flex: 1, opacity: contentOpacity }}>
+        <LinearGradient colors={[primaryColor + '20', 'transparent']} style={[styles.headerBackground, { pointerEvents: 'none' }]} />
+
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.navHeader}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
+              <IconSymbol name="chevron.left" size={28} color={textColor} />
             </TouchableOpacity>
-        </View>
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.profileHeader}>
-            <View style={styles.avatarWrapper}>
-                <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
-            </View>
-            <View style={styles.nameRow}>
-                <ThemedText type="heading2" style={styles.username}>{profile.username}</ThemedText>
-                {profile.isPrivate && (
-                    <IconSymbol name="lock" size={20} color={textColor} />
-                )}
-            </View>
-            {profile.bio && <ThemedText style={styles.bio}>{profile.bio}</ThemedText>}
-            
-            {profile.location && (
-                <View style={styles.locationRow}>
-                    <IconSymbol name="location" size={16} color={lightTextColor} />
-                    <ThemedText style={{ color: lightTextColor }}>{profile.location}</ThemedText>
-                </View>
-            )}
-        </View>
-
-        <View style={[styles.statsBar, { backgroundColor: surfaceColor, borderColor }]}>
-            <View style={[styles.statBox, { borderRightColor: borderColor }]}>
-                <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.posts}</ThemedText>
-                <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
-            </View>
-            <View style={styles.statBox}>
-                <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.friends}</ThemedText>
-                <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
-            </View>
-        </View>
-
-        <View style={styles.actionButtons}>
-            {connectionStatus === 'none' && (
-                <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleSendRequest}>
+          </View>
+  
+          {profile && (
+            <>
+              <View style={[styles.actionButtons, { pointerEvents: 'auto' }]}>
+                {connectionStatus === 'none' && (
+                  <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleSendRequest} activeOpacity={0.7}>
                     <ThemedText style={styles.buttonText}>Add Friend</ThemedText>
-                </TouchableOpacity>
-            )}
-            {connectionStatus === 'requested' && (
-                <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleCancelRequest}>
+                  </TouchableOpacity>
+                )}
+                {connectionStatus === 'requested' && (
+                  <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleCancelRequest} activeOpacity={0.7}>
                     <ThemedText style={{ color: lightTextColor }}>Cancel Request</ThemedText>
-                </TouchableOpacity>
-            )}
-            {connectionStatus === 'received' && (
-                <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleAcceptRequest}>
+                  </TouchableOpacity>
+                )}
+                {connectionStatus === 'received' && (
+                  <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleAcceptRequest} activeOpacity={0.7}>
                     <ThemedText style={styles.buttonText}>Accept Request</ThemedText>
-                </TouchableOpacity>
-            )}
-            {connectionStatus === 'friend' && (
-                <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage}>
+                  </TouchableOpacity>
+                )}
+                {connectionStatus === 'friend' && (
+                  <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage} activeOpacity={0.7}>
                     <ThemedText style={{ color: textColor }}>Message</ThemedText>
-                </TouchableOpacity>
-            )}
-        </View>
+                  </TouchableOpacity>
+                )}
+              </View>
 
-        {profile.interests && profile.interests.length > 0 && (
-            <View style={styles.section}>
-                <ThemedText type="subtitle" style={styles.sectionTitle}>Interests</ThemedText>
-                <View style={styles.interestsContainer}>
-                    {profile.interests.map((interest, index) => (
-                        <View key={index} style={[styles.interestChip, { backgroundColor: surfaceColor }]}>
+              <View style={{ flex: 1 }}>
+                <View style={styles.content}>
+                  <View style={styles.profileHeader}>
+                    <View style={styles.avatarWrapper}>
+                      <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                    </View>
+                    <View style={styles.nameRow}>
+                      <ThemedText type="heading2" style={styles.username}>{profile.username}</ThemedText>
+                      {profile.isPrivate && (
+                        <IconSymbol name="lock" size={20} color={textColor} />
+                      )}
+                    </View>
+                    {profile.bio && <ThemedText style={styles.bio}>{profile.bio}</ThemedText>}
+
+                    {profile.location && (
+                      <View style={styles.locationRow}>
+                        <IconSymbol name="location" size={16} color={lightTextColor} />
+                        <ThemedText style={{ color: lightTextColor }}>{profile.location}</ThemedText>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={[styles.statsBar, { backgroundColor: surfaceColor, borderColor }]}>
+                    <View style={[styles.statBox, { borderRightColor: borderColor }]}>
+                      <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.posts}</ThemedText>
+                      <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
+                    </View>
+                    <View style={styles.statBox}>
+                      <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.friends}</ThemedText>
+                      <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
+                    </View>
+                  </View>
+
+                  {profile.interests && profile.interests.length > 0 && (
+                    <View style={styles.section}>
+                      <ThemedText type="heading3" style={styles.sectionTitle}>Interests</ThemedText>
+                      <View style={styles.interestsContainer}>
+                        {profile.interests.map((interest, index) => (
+                          <View key={index} style={[styles.interestChip, { backgroundColor: surfaceColor }]}>
                             <ThemedText>{interest}</ThemedText>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Posts Section */}
+                  {posts.length > 0 && (
+                    <View style={styles.section}>
+                      <ThemedText type="heading3" style={styles.sectionTitle}>Posts</ThemedText>
+                      {posts.map((item) => (
+                        <View key={item._id} style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
+                          <ThemedText>{item.content || 'No content'}</ThemedText>
+                          {item.image && <Image source={{ uri: getImageUrl(item.image) }} style={styles.postImage} />}
                         </View>
-                    ))}
+                      ))}
+                      {loadingPosts && <ActivityIndicator size="small" color={primaryColor} />}
+                    </View>
+                  )}
                 </View>
-            </View>
-        )}
-      </ScrollView>
+              </View>
+            </>
+          )}
       </SafeAreaView>
+    </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    headerBackground: { position: 'absolute', top: 0, left: 0, right: 0, height: 200 },
+    headerBackground: { position: 'absolute', top: 60, left: 0, right: 0, height: 200, zIndex: -1 },
     navHeader: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
     backButton: { padding: spacing.xs },
     content: { padding: spacing.lg },
@@ -249,12 +334,14 @@ const styles = StyleSheet.create({
     locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.xl, borderWidth: 1 },
     statBox: { flex: 1, alignItems: 'center', borderRightWidth: 1 },
-    actionButtons: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginBottom: spacing.xl },
+    actionButtons: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginBottom: spacing.xl, pointerEvents: 'auto' },
     primaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 120, alignItems: 'center' },
     secondaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center', minWidth: 120 },
     buttonText: { color: 'white', fontWeight: 'bold' },
     section: { marginBottom: spacing.lg },
     sectionTitle: { fontWeight: 'bold', marginBottom: spacing.md },
     interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    interestChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
+    interestChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.round },
+    postItem: { padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderRadius: borderRadius.md },
+    postImage: { width: '100%', height: 200, borderRadius: borderRadius.md, marginTop: spacing.sm },
 });

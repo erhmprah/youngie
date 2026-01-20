@@ -41,6 +41,7 @@ export default function LoginScreen() {
   };
 
 
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor }}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -105,6 +106,7 @@ export default function LoginScreen() {
                 <ThemedText style={[styles.buttonText, { color: white }]}>Sign In</ThemedText>
               )}
             </TouchableOpacity>
+
 
             {/* Signup Link */}
             <View style={styles.footer}>

@@ -292,7 +292,7 @@ export default function ChatScreen() {
         <SafeAreaView style={{ flex: 1, backgroundColor }}>
             <ThemedView style={styles.container}>
                 <ThemedView style={[styles.listHeader, { borderBottomColor: borderColor }]}>
-                    <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Messages</ThemedText>
+                    <ThemedText type="heading1" style={{ fontFamily: typography.families.bold, color: primaryColor }}>Messages</ThemedText>
                     <TouchableOpacity style={[styles.editBtn, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleNewChat(); }}>
                         <IconSymbol name="plus" size={24} color={white} />
                     </TouchableOpacity>

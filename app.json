@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.youngie.app",
+      "bundleIdentifier": "com.erhmprah.youngie",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "This app needs access to camera for video chat functionality.",
@@ -19,7 +19,7 @@
       }
     },
     "android": {
-      "package": "com.youngie.app",
+      "package": "com.erhmprah.youngie",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -71,7 +71,9 @@
         }
       ],
       "expo-notifications",
-      "./withCallKeep"
+      "./withCallKeep",
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,

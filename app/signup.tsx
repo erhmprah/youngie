@@ -5,7 +5,6 @@ import * as Location from 'expo-location';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { authAPI } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -20,10 +19,6 @@ export default function SignupScreen() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
-  const [usernameError, setUsernameError] = useState('');
-  const [emailError, setEmailError] = useState('');
-  const [validatingUsername, setValidatingUsername] = useState(false);
-  const [validatingEmail, setValidatingEmail] = useState(false);
   const router = useRouter();
   const { register, isLoading } = useAuth();
   const skipLocationSearch = useRef(false);
@@ -38,51 +33,6 @@ export default function SignupScreen() {
   const inputBorderColor = useThemeColor('inputBorder');
   const white = useThemeColor('white');
 
-  // Check username availability with debounce
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (username.length >= 3) {
-        setValidatingUsername(true);
-        try {
-          const response = await authAPI.checkUsername(username);
-          if (!response.data.available) {
-            setUsernameError(response.data.msg);
-          } else {
-            setUsernameError('');
-          }
-        } catch (error) {
-          setUsernameError('');
-        } finally {
-          setValidatingUsername(false);
-        }
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [username]);
-
-  // Check email availability with debounce
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (email.includes('@')) {
-        setValidatingEmail(true);
-        try {
-          const response = await authAPI.checkEmail(email);
-          if (!response.data.available) {
-            setEmailError(response.data.msg);
-          } else {
-            setEmailError('');
-          }
-        } catch (error) {
-          setEmailError('');
-        } finally {
-          setValidatingEmail(false);
-        }
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [email]);
 
   // Search location with debounce
   useEffect(() => {
@@ -183,28 +133,16 @@ export default function SignupScreen() {
   };
 
   const handleSignup = async () => {
-    if (!username || !email || !birthYear || !gender) {
+    if (!username || !email || !birthYear || !gender || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    
-    if (!password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-    if (usernameError) {
-      Alert.alert('Error', 'Username is already taken');
-      return;
-    }
-    if (emailError) {
-      Alert.alert('Error', 'Email is already registered');
-      return;
-    }
+
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
-    
+
     const birthYearNum = parseInt(birthYear);
     const currentYear = new Date().getFullYear();
     if (birthYearNum < 1997 || birthYearNum > currentYear) {
@@ -220,6 +158,7 @@ export default function SignupScreen() {
       Alert.alert('Signup Failed', error.toString());
     }
   };
+
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor }}>
@@ -237,11 +176,8 @@ export default function SignupScreen() {
           {/* Form */}
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <View style={styles.labelRow}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Username</ThemedText>
-                {validatingUsername && <ActivityIndicator size="small" color={primaryColor} />}
-              </View>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: usernameError ? errorColor : inputBorderColor }]}>
+              <ThemedText type="body2" style={{ fontWeight: '600' }}>Username</ThemedText>
+              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
                 <IconSymbol name="person.fill" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
@@ -253,21 +189,11 @@ export default function SignupScreen() {
                   autoCapitalize="none"
                 />
               </View>
-              {usernameError ? <ThemedText style={[styles.errorText, { color: errorColor }]}>{usernameError}</ThemedText> :
-                (username.length >= 3 && !validatingUsername && <ThemedText style={[styles.successText, { color: successColor }]}>Username available</ThemedText>)}
             </View>
 
             <View style={styles.inputContainer}>
-              <View style={styles.labelRow}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>
-                  Email
-                </ThemedText>
-                {validatingEmail && <ActivityIndicator size="small" color={primaryColor} />}
-              </View>
-              <View style={[styles.inputWrapper, {
-                backgroundColor: inputBackgroundColor,
-                borderColor: emailError ? errorColor : inputBorderColor
-              }]}>
+              <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
+              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
                 <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
@@ -280,8 +206,6 @@ export default function SignupScreen() {
                   autoCapitalize="none"
                 />
               </View>
-              {emailError ? <ThemedText style={[styles.errorText, { color: errorColor }]}>{emailError}</ThemedText> :
-                (email.includes('@') && !validatingEmail && <ThemedText style={[styles.successText, { color: successColor }]}>Email available</ThemedText>)}
             </View>
 
             <View style={styles.inputContainer}>
@@ -369,11 +293,19 @@ export default function SignupScreen() {
               </View>
             </View>
 
+
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={[styles.dividerLine, { backgroundColor: lightTextColor }]} />
+              <ThemedText style={[styles.dividerText, { color: lightTextColor }]}>or</ThemedText>
+              <View style={[styles.dividerLine, { backgroundColor: lightTextColor }]} />
+            </View>
+
             {/* Create Account Button */}
             <TouchableOpacity
-              style={[styles.button, { backgroundColor: primaryColor }, (isLoading || !!usernameError || !!emailError) && styles.buttonDisabled]}
+              style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
               onPress={handleSignup}
-              disabled={isLoading || !!usernameError || !!emailError}
+              disabled={isLoading}
               activeOpacity={0.8}
             >
               {isLoading ? (
@@ -504,5 +436,18 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ccc', // Or use theme border color if available in styles scope
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.md,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    paddingHorizontal: spacing.sm,
+    fontSize: typography.sizes.caption,
   },
 });

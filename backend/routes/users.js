@@ -5,6 +5,18 @@ const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
 const multer = require('multer');
 
+const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/profile-photos/');
@@ -32,6 +44,25 @@ router.get('/muted', auth, async (req, res) => {
     res.json(mutedUsers);
   } catch (error) {
     console.error('Error fetching muted users:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get blocked users list
+router.get('/blocked', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    const blockedUsers = await User.find({
+      _id: { $in: user.blockedUsers || [] }
+    }).select('username profilePhoto avatar');
+
+    res.json(blockedUsers);
+  } catch (error) {
+    console.error('Error fetching blocked users:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -84,6 +115,113 @@ router.post('/unmute/:userId', auth, async (req, res) => {
     res.json({ msg: 'User unmuted successfully' });
   } catch (error) {
     console.error('Error unmuting user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get login activity
+router.get('/login-activity', auth, async (req, res) => {
+  try {
+    console.log('Fetching login activity for user:', req.userId);
+    const user = await User.findById(req.userId).select('loginActivity');
+    if (!user) {
+      console.log('User not found');
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    console.log('User loginActivity:', user.loginActivity);
+
+    // Ensure loginActivity is an array (handle migration for existing users)
+    const loginActivity = (user.loginActivity || [])
+      .sort((a, b) => new Date(b.loginTime) - new Date(a.loginTime))
+      .slice(0, 10)
+      .map((session, index) => ({
+        _id: session._id || `session_${Date.now()}_${index}`,
+        device: session.device || 'Unknown Device',
+        location: session.location || 'Unknown Location',
+        ipAddress: session.ipAddress || 'Unknown IP',
+        loginTime: session.loginTime,
+        isCurrentSession: session.isActive,
+      }));
+
+    console.log('Returning login activity:', loginActivity.length, 'sessions');
+    res.json(loginActivity);
+  } catch (error) {
+    console.error('Error fetching login activity:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear login activity
+router.delete('/login-activity', auth, async (req, res) => {
+  try {
+    console.log('Clearing login activity for user:', req.userId);
+    const user = await User.findById(req.userId);
+    if (!user) {
+      console.log('User not found');
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    user.loginActivity = [];
+    user.markModified('loginActivity');
+    await user.save();
+
+    console.log('Login activity cleared');
+    res.json({ msg: 'Login activity cleared successfully' });
+  } catch (error) {
+    console.error('Error clearing login activity:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove specific login session
+router.delete('/login-activity/:sessionId', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    user.loginActivity = user.loginActivity.filter(
+      session => session._id.toString() !== req.params.sessionId
+    );
+
+    user.markModified('loginActivity');
+    await user.save();
+
+    res.json({ msg: 'Session removed successfully' });
+  } catch (error) {
+    console.error('Error removing session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Logout from all other devices
+router.post('/login-activity/logout-others', auth, async (req, res) => {
+  try {
+    const { currentSessionId } = req.body;
+    if (!currentSessionId) {
+      return res.status(400).json({ msg: 'Current session ID is required' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Deactivate all sessions except the current one
+    user.loginActivity.forEach(session => {
+      if (session._id.toString() !== currentSessionId) {
+        session.isActive = false;
+      }
+    });
+
+    user.markModified('loginActivity');
+    await user.save();
+
+    res.json({ msg: 'Logged out from all other devices' });
+  } catch (error) {
+    console.error('Error logging out other devices:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -279,14 +417,14 @@ router.get('/nearby/all', auth, async (req, res) => {
     ];
 
     const currentYear = new Date().getFullYear();
-    const { minAge, maxAge, gender, location, latitude, longitude, radius } = req.query;
+    const { minAge, maxAge, gender, location, latitude, longitude, radius, page = 0, limit = 20 } = req.query;
 
     // Calculate birth year range based on age
     // Default: 13-29 years old
     // Age 13 => Born in (Current - 13)
     // Age 29 => Born in (Current - 29)
     // So for age range [min, max], birthYear range is [Current-max, Current-min]
-    
+
     let minBirthYear = currentYear - 29;
     let maxBirthYear = currentYear - 13;
 
@@ -315,18 +453,43 @@ router.get('/nearby/all', auth, async (req, res) => {
       query.location = { $regex: location, $options: 'i' };
     }
 
+    // First, get total count for hasMore calculation
+    const totalCount = await User.countDocuments(query);
+
+    // Apply pagination
+    const skip = parseInt(page) * parseInt(limit);
     const users = await User.find(query)
       .select('-password -email')
-      .limit(20)
+      .skip(skip)
+      .limit(parseInt(limit))
       .lean();
 
+    // Filter by radius if provided
+    let filteredUsers = users;
+    if (latitude && longitude && radius) {
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
+      const rad = parseFloat(radius);
+      filteredUsers = users.filter(user => {
+        if (!user.latitude || !user.longitude) return false;
+        const distance = getDistanceFromLatLonInKm(lat, lon, user.latitude, user.longitude);
+        return distance <= rad;
+      });
+    }
+
     // Add age property to users
-    const usersWithAge = users.map(user => ({
+    const usersWithAge = filteredUsers.map(user => ({
       ...user,
       age: currentYear - user.birthYear
     }));
 
-    res.json(usersWithAge);
+    const hasMore = (skip + parseInt(limit)) < totalCount;
+
+    res.json({
+      users: usersWithAge,
+      hasMore,
+      totalCount
+    });
   } catch (error) {
     console.error('Error fetching nearby users:', error);
     res.status(500).json({ error: error.message });
@@ -642,6 +805,38 @@ router.get('/friends/list', auth, async (req, res) => {
     }
 
     res.json(user.friends);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get incoming friend requests
+router.get('/friend-requests/incoming', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+      .populate('incomingRequests', 'username avatar profilePhoto age bio location');
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    res.json(user.incomingRequests);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get sent friend requests
+router.get('/friend-requests/sent', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+      .populate('friendRequests', 'username avatar profilePhoto age bio location');
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    res.json(user.friendRequests);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

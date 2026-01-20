@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, FlatList, TouchableOpacity, Image, View, ActivityIndicator, Alert } from 'react-native';
 import { Stack } from 'expo-router';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { userAPI, getImageUrl } from '@/utils/api';
+import { getImageUrl, BASE_URL } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,7 +34,10 @@ export default function BlockedUsersScreen() {
 
     const fetchBlockedUsers = async () => {
         try {
-            const response = await userAPI.getBlockedUsers();
+            const token = await AsyncStorage.getItem('authToken');
+            const response = await axios.get(`${BASE_URL}/api/users/blocked`, {
+                headers: { 'x-auth-token': token }
+            });
             setBlockedUsers(response.data);
         } catch (error) {
             console.error('Failed to fetch blocked users:', error);
@@ -44,7 +49,10 @@ export default function BlockedUsersScreen() {
     const handleUnblock = async (userId: string, username: string) => {
         if (!user?._id) return;
         try {
-            await userAPI.unblockUser(user._id, userId);
+            const token = await AsyncStorage.getItem('authToken');
+            await axios.post(`${BASE_URL}/api/users/${user._id}/unblock/${userId}`, {}, {
+                headers: { 'x-auth-token': token }
+            });
             setBlockedUsers(prev => prev.filter(u => u._id !== userId));
             Alert.alert('Success', `${username} has been unblocked`);
         } catch (error) {

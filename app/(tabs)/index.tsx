@@ -71,7 +71,7 @@ interface StoryGroup {
 }
 
 export default function FeedScreen() {
-    const { user, isSignedIn } = useAuth();
+    const { user, isSignedIn, logout } = useAuth();
     const router = useRouter();
     const { postId } = useLocalSearchParams();
     
@@ -105,27 +105,57 @@ export default function FeedScreen() {
     const white = useThemeColor('white');
     const surfaceColor = useThemeColor('surface');
 
-    const fetchData = useCallback(async () => {
+    const fetchData = useCallback(async (page: number = 1) => {
         setError(null);
+        const isLoadingMore = page > 1;
+        if (isLoadingMore) {
+            setLoadingMore(true);
+        }
         try {
             const [postsResponse, storiesResponse] = await Promise.all([
-                postAPI.getPosts(isIncognito),
-                storyAPI.getStories(),
+                postAPI.getPosts(isIncognito, page, 20),
+                page === 1 ? storyAPI.getStories() : Promise.resolve({ data: [] }),
             ]);
-            setPosts(postsResponse.data.filter((p: any) => p && p._id));
-            setStories(storiesResponse.data.filter((s: any) => s && s.user && s.user._id));
-        } catch (err) {
+            const postsData = postsResponse.data.posts || postsResponse.data;
+            const newPosts = (Array.isArray(postsData) ? postsData : []).filter((p: any) => p && p._id);
+            if (page === 1) {
+                setPosts(newPosts);
+                setStories(storiesResponse.data.filter((s: any) => s && s.user && s.user._id));
+            } else {
+                setPosts(prev => [...prev, ...newPosts]);
+            }
+            setHasMorePosts(postsResponse.data.hasMore || (Array.isArray(postsData) && postsData.length === 20));
+            setPostsPage(page);
+        } catch (err: any) {
             console.error('Error fetching feed:', err);
-            setError('Failed to load feed');
+            if (err.response?.status === 401) {
+                try {
+                    await logout();
+                } catch (logoutErr) {
+                    console.error('Error during logout:', logoutErr);
+                }
+                setError(null);
+            } else {
+                setError('Failed to load feed');
+            }
         } finally {
             setIsLoading(false);
             setIsRefreshing(false);
+            if (isLoadingMore) {
+                setLoadingMore(false);
+            }
         }
     }, [isIncognito]);
 
+    const loadMorePosts = useCallback(() => {
+        if (!loadingMore && hasMorePosts && isSignedIn) {
+            fetchData(postsPage + 1);
+        }
+    }, [loadingMore, hasMorePosts, isSignedIn, fetchData, postsPage]);
+
     const fetchFeedIfLoggedIn = useCallback(async () => {
         if (isSignedIn) {
-            await fetchData();
+            await fetchData(1);
         } else {
             // Clear data when not logged in
             setPosts([]);
@@ -439,6 +469,9 @@ export default function FeedScreen() {
                             flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
                         });
                     }}
+                    onEndReached={loadMorePosts}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={primaryColor} style={{ marginVertical: 20 }} /> : null}
                     onViewableItemsChanged={onViewableItemsChanged}
                     viewabilityConfig={viewabilityConfig}
                 />

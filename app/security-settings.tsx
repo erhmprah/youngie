@@ -10,8 +10,6 @@ import * as Haptics from 'expo-haptics';
 
 export default function SecuritySettingsScreen() {
     const router = useRouter();
-    const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-    const [biometricEnabled, setBiometricEnabled] = useState(false);
 
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
@@ -25,30 +23,10 @@ export default function SecuritySettingsScreen() {
         Alert.alert('Change Password', 'This feature is not yet implemented.');
     };
 
-    const handleToggleTwoFactor = (value: boolean) => {
-        Haptics.selectionAsync();
-        if (value) {
-            Alert.alert(
-                'Enable Two-Factor Authentication',
-                'This will add an extra layer of security to your account.',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Enable', onPress: () => setTwoFactorEnabled(true) }
-                ]
-            );
-        } else {
-            setTwoFactorEnabled(false);
-        }
-    };
-
-    const handleToggleBiometric = (value: boolean) => {
-        Haptics.selectionAsync();
-        setBiometricEnabled(value);
-    };
 
     const handleLoginActivity = () => {
         Haptics.selectionAsync();
-        Alert.alert('Login Activity', 'View your recent login sessions.');
+        router.push('/login-activity');
     };
 
     const handleAccountRecovery = () => {
@@ -74,33 +52,6 @@ export default function SecuritySettingsScreen() {
                         <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
                     </TouchableOpacity>
 
-                    <View style={[styles.row, { borderBottomColor: borderColor }]}>
-                        <View style={styles.rowText}>
-                            <ThemedText style={styles.label}>Two-Factor Authentication</ThemedText>
-                            <ThemedText style={[styles.description, { color: lightTextColor }]}>
-                                Add an extra layer of security to your account.
-                            </ThemedText>
-                        </View>
-                        <Switch
-                            value={twoFactorEnabled}
-                            onValueChange={handleToggleTwoFactor}
-                            trackColor={{ false: surfaceColor, true: primaryColor }}
-                        />
-                    </View>
-
-                    <View style={styles.row}>
-                        <View style={styles.rowText}>
-                            <ThemedText style={styles.label}>Biometric Login</ThemedText>
-                            <ThemedText style={[styles.description, { color: lightTextColor }]}>
-                                Use fingerprint or face ID to log in.
-                            </ThemedText>
-                        </View>
-                        <Switch
-                            value={biometricEnabled}
-                            onValueChange={handleToggleBiometric}
-                            trackColor={{ false: surfaceColor, true: primaryColor }}
-                        />
-                    </View>
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account Management</ThemedText>

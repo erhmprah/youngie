@@ -20,7 +20,7 @@ router.post('/register', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { username, email, password, birthYear, gender, location } = req.body;
+    const { username, email, password, birthYear, gender, location, deviceName, clientLocation } = req.body;
 
     let user = await User.findOne({ $or: [{ email }, { username }] });
     if (user) {
@@ -36,15 +36,38 @@ router.post('/register', [
       location: location || undefined,
     });
 
+    // Record initial login activity
+    const userAgent = req.get('User-Agent') || 'Unknown';
+    const ipAddress = req.ip || req.connection.remoteAddress || req.socket?.remoteAddress || 'Unknown';
+    
+    let device = deviceName || 'Unknown Device';
+    if (!deviceName) {
+       if (userAgent.includes('Mobile')) device = 'Mobile Device';
+       else if (userAgent.includes('Windows')) device = 'Windows Device';
+       else if (userAgent.includes('Macintosh')) device = 'Mac Device';
+       else device = 'Web Browser';
+    }
+
+    user.loginActivity.push({
+      device,
+      location: clientLocation || location || 'Unknown Location',
+      ipAddress,
+      userAgent,
+      loginTime: new Date(),
+      isActive: true
+    });
+
     await user.save();
 
     // Auto-login after registration
     const payload = { userId: user._id };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const currentSession = user.loginActivity[user.loginActivity.length - 1];
 
     res.status(201).json({
       msg: 'Registration successful. You are now logged in.',
       token,
+      sessionId: currentSession._id,
       user: {
         _id: user._id,
         username: user.username,
@@ -69,6 +92,7 @@ router.post('/register', [
   }
 });
 
+
 // Login
 router.post('/login', [
   body('email').isEmail().normalizeEmail(),
@@ -80,7 +104,7 @@ router.post('/login', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, password } = req.body;
+    const { email, password, deviceName, clientLocation } = req.body;
 
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
@@ -110,13 +134,108 @@ router.post('/login', [
 
     // Update last seen
     user.lastSeen = new Date();
+
+    // Record login activity
+    const userAgent = req.get('User-Agent') || 'Unknown';
+    const ipAddress = req.ip || req.connection.remoteAddress || req.socket?.remoteAddress || 'Unknown';
+
+    console.log('Login activity - User-Agent:', userAgent);
+    console.log('Login activity - IP Address:', ipAddress);
+
+    // Extract device info from User-Agent
+    let device = deviceName || 'Unknown Device';
+    if (!deviceName) {
+      if (userAgent.includes('iPhone')) device = 'iPhone';
+      else if (userAgent.includes('iPad')) device = 'iPad';
+      else if (userAgent.includes('Android')) device = 'Android Device';
+      else if (userAgent.includes('Chrome')) device = 'Chrome on Desktop';
+      else if (userAgent.includes('Firefox')) device = 'Firefox on Desktop';
+      else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) device = 'Safari on Desktop';
+      else if (userAgent.includes('React Native') || userAgent.includes('Expo')) device = 'Mobile App';
+      else if (userAgent.includes('Mobile') || userAgent.includes('Android') || userAgent.includes('iPhone')) device = 'Mobile Device';
+      else if (userAgent.includes('Windows')) device = 'Windows Device';
+      else if (userAgent.includes('Macintosh') || userAgent.includes('Mac OS')) device = 'Mac Device';
+      else if (userAgent.includes('Linux')) device = 'Linux Device';
+    }
+
+    console.log('Detected device:', device);
+
+    // Get location from IP (using free ipapi.co service)
+    let location = clientLocation || 'Unknown Location';
+    if (ipAddress && ipAddress !== 'Unknown' && ipAddress !== '::1' && !ipAddress.startsWith('127.')) {
+      console.log('Attempting geolocation for IP:', ipAddress);
+      try {
+        const https = require('https');
+        const geoData = await new Promise((resolve, reject) => {
+          const url = `https://ipapi.co/${ipAddress}/json/`;
+          https.get(url, { timeout: 2000 }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+              try {
+                resolve(JSON.parse(data));
+              } catch (e) {
+                reject(e);
+              }
+            });
+          }).on('error', reject).on('timeout', () => reject(new Error('Timeout')));
+        });
+
+        console.log('Geolocation response:', geoData);
+        if (geoData && geoData.city && geoData.country_name) {
+          location = `${geoData.city}, ${geoData.country_name}`;
+        } else if (geoData && geoData.country_name) {
+          location = geoData.country_name;
+        }
+      } catch (error) {
+        console.log('Geolocation failed:', error.message);
+        location = 'Unknown Location';
+      }
+    } else {
+      console.log('Skipping geolocation - IP is local:', ipAddress);
+    }
+
+    console.log('Final location:', location);
+
+    // Ensure loginActivity is initialized as an array
+    if (!user.loginActivity) {
+      user.loginActivity = [];
+    }
+
+    // Mark all previous sessions as inactive
+    user.loginActivity.forEach(session => {
+      session.isActive = false;
+    });
+
+    // Add new login session
+    const newSession = {
+      device,
+      location,
+      ipAddress,
+      userAgent,
+      loginTime: new Date(),
+      isActive: true,
+    };
+
+    user.loginActivity.push(newSession);
+
+    // Keep only last 20 login sessions
+    if (user.loginActivity.length > 20) {
+      user.loginActivity = user.loginActivity.slice(-20);
+    }
+
+    // Mark the field as modified for Mongoose
+    user.markModified('loginActivity');
+
     await user.save();
 
     const payload = { userId: user._id };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const currentSession = user.loginActivity[user.loginActivity.length - 1];
 
     res.json({
       token,
+      sessionId: currentSession._id,
       user: {
         _id: user._id,
         username: user.username,
@@ -201,17 +320,18 @@ router.get('/check-email/:email', async (req, res) => {
   try {
     const { email } = req.params;
     const user = await User.findOne({ email });
-    
+
     if (user) {
       return res.json({ available: false, msg: 'Email is already registered' });
     }
-    
+
     res.json({ available: true });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 
 module.exports = router;

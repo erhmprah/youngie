@@ -131,8 +131,8 @@ export default function ExploreScreen() {
       const profileResponse = results[3];
 
       setTrendingPosts(trendingResponse.data);
-      
-      let discoverData = discoverResponse.data;
+
+      let discoverData = discoverResponse.data.users;
       if (activeFilters.minAge) {
         const min = parseInt(activeFilters.minAge);
         if (!isNaN(min)) discoverData = discoverData.filter((p: any) => p.age >= min);
@@ -300,7 +300,7 @@ export default function ExploreScreen() {
       {/* Search Header */}
       <ThemedView style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
-          <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Explore</ThemedText>
+          <ThemedText type="heading1" style={{ fontFamily: typography.families.bold, color: primaryColor }}>Explore</ThemedText>
           <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFilterVisible(true); }}>
             <IconSymbol name="slider.horizontal.3" size={24} color={textColor} />
           </TouchableOpacity>

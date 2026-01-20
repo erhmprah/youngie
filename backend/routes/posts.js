@@ -225,6 +225,10 @@ router.get('/', auth, async (req, res) => {
       };
     }
 
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
     const posts = await Post.find(query)
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
@@ -233,7 +237,10 @@ router.get('/', auth, async (req, res) => {
       .populate('comments.author', 'username avatar profilePhoto')
       .populate('comments.reactions.user', 'username')
       .sort({ createdAt: -1 })
-      .limit(50);
+      .skip(skip)
+      .limit(limit);
+
+    const totalPosts = await Post.countDocuments(query);
 
     // Mask anonymous posts/comments
     const maskedPosts = posts.map(doc => {
@@ -276,13 +283,21 @@ router.get('/user/:userId', auth, async (req, res) => {
     const currentUser = await User.findById(req.userId).select('favorites');
     const userFavorites = currentUser && currentUser.favorites ? currentUser.favorites.map(id => id.toString()) : [];
 
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
     const posts = await Post.find({ author: req.params.userId })
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
       .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .populate('tags', 'username')
       .populate('comments.author', 'username avatar profilePhoto')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const totalPosts = await Post.countDocuments({ author: req.params.userId });
 
     const postsWithFav = posts.map(doc => {
       const post = doc.toObject();
@@ -290,7 +305,11 @@ router.get('/user/:userId', auth, async (req, res) => {
       return post;
     });
 
-    res.json(postsWithFav);
+    res.json({
+      posts: postsWithFav,
+      hasMore: skip + posts.length < totalPosts,
+      total: totalPosts
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -557,7 +576,10 @@ router.get('/search', auth, async (req, res) => {
       return post;
     });
 
-    res.json(maskedPosts);
+    res.json({
+      posts: maskedPosts,
+      hasMore: skip + posts.length < totalPosts
+    });
   } catch (error) {
     console.error('Error searching posts:', error);
     res.status(500).json({ error: error.message });

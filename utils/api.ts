@@ -164,6 +164,10 @@ export const userAPI = {
   getMutedUsers: () => api.get('/users/muted'),
   muteUser: (userId: string) => api.post(`/users/mute/${userId}`),
   unmuteUser: (userId: string) => api.post(`/users/unmute/${userId}`),
+  getLoginActivity: () => api.get('/users/login-activity'),
+  clearLoginActivity: () => api.delete('/users/login-activity'),
+  getIncomingFriendRequests: () => api.get('/users/friend-requests/incoming'),
+  getSentFriendRequests: () => api.get('/users/friend-requests/sent'),
 };
 
 export const notificationAPI = {
@@ -211,8 +215,8 @@ export const chatAPI = {
 };
 
 export const postAPI = {
-  getPosts: (isAnonymous?: boolean) => api.get('/posts', { params: { isAnonymous } }),
-  getUserPosts: (userId: string) => api.get(`/posts/user/${userId}`),
+  getPosts: (isAnonymous?: boolean, page?: number, limit?: number) => api.get('/posts', { params: { isAnonymous, page, limit } }),
+  getUserPosts: (userId: string, page?: number, limit?: number) => api.get(`/posts/user/${userId}`, { params: { page, limit } }),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
   createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string }) =>
     api.post('/posts', data),

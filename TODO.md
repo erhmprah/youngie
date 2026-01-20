@@ -1,16 +1,6 @@
-# TODO for Teen Social App - Complete Logic Implementation
+# TODO
 
-## Tasks to Complete
-- [x] Set up backend server and MongoDB connection
-- [x] Implement user authentication (register, login, logout) with JWT
-- [x] Implement post creation, editing, deletion with images
-- [x] Implement feed with posts from followed users and trending
-- [x] Implement swipe functionality with user matching and likes
-- [x] Implement chat with real-time messaging using Socket.io
-- [x] Implement profile management (edit profile, view stats)
-- [x] Implement explore screen with trending posts and hashtags
-- [x] Add state management for posts, users, chats
-- [x] Connect frontend to backend API
-- [x] Complete comments and likes logic
-- [ ] Test all functionalities and fix bugs
-- [ ] Deploy backend and frontend
+## User Profile Modal Fixes
+- [x] Fix non-working back button and Add Friend/Accept Request buttons by adding `pointerEvents="box-none"` to ScrollView in `app/user/[id].tsx`
+- [ ] Test the user profile modal to ensure buttons work correctly
+- [ ] Verify back button navigation works properly

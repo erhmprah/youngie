@@ -57,18 +57,36 @@ export default function ProfileScreen() {
                 userAPI.getAlbum(user._id).catch(() => ({ data: [] })),
             ]);
             const userData = statsResponse.data;
-            const totalLikes = postsResponse.data.reduce((sum: number, post: any) => sum + (post.likes?.length || 0), 0);
+            const postsData = Array.isArray(postsResponse.data) ? postsResponse.data : [];
+            const totalLikes = postsData.reduce((sum: number, post: any) => sum + (post.likes?.length || 0), 0);
             setStats([
                 { label: 'Posts', value: String(userData.posts?.length || 0) },
                 { label: 'Friends', value: String(userData.friends?.length || 0) },
                 { label: 'Likes', value: String(totalLikes) },
             ]);
             setFriends(userData.friends || []);
-            setUserPosts(postsResponse.data || []);
+            setUserPosts(postsData);
             setAlbum(albumResponse.data || []);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching profile data:', error);
-            Alert.alert('Error', 'Failed to load profile data');
+            if (error.response?.status === 401) {
+                try {
+                    await logout();
+
+                } catch (logoutErr) {
+
+                    console.error('Error during logout:', logoutErr);
+
+                }
+
+                Alert.alert('Session Expired', 'Please log in again');
+
+            } else {
+
+                Alert.alert('Error', 'Failed to load profile data');
+
+            }
+
         } finally {
             setLoading(false);
         }

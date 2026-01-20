@@ -1,14 +1,18 @@
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppState } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
 import { initSocket, disconnectSocket, onVoiceCallOffer, offVoiceCallOffer } from '@/utils/socket';
 import CallService from '@/utils/call-service';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import AuthLoadingScreen from '@/components/auth-loading-screen';
 
 // Conditionally import expo-notifications
 let Notifications: any = null;
@@ -19,15 +23,27 @@ try {
 }
 
 function RootLayoutNav() {
-  const { isSignedIn, isLoading, restoreToken, user } = useAuth();
-  const [isRestoring, setIsRestoring] = useState(true);
+  const { isSignedIn, isLoading, user } = useAuth();
+  const { theme } = useTheme();
   const router = useRouter();
+  const primaryColor = useThemeColor('primary');
+
+  const navigationTheme = useMemo(() => {
+    const baseTheme = theme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...baseTheme,
+      colors: {
+        ...baseTheme.colors,
+        primary: primaryColor,
+      },
+    };
+  }, [theme, primaryColor]);
 
   useEffect(() => {
     let notificationResponseSubscription: any = null;
     if (Notifications) {
       // Set up notification response listener
-      notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
         const data = response.notification.request.content.data as any;
         if (data.type === 'incoming-call') {
           // Handle incoming call notification tap
@@ -81,35 +97,23 @@ function RootLayoutNav() {
     };
   }, [isSignedIn, user?._id]);
 
-  useEffect(() => {
-    const restore = async () => {
-      try {
-        await restoreToken();
-      } catch (error) {
-        console.error('Failed to restore token:', error);
-      } finally {
-        setIsRestoring(false);
-      }
-    };
-    restore();
-  }, []);
 
   useEffect(() => {
-    if (isRestoring || isLoading) return;
+    if (isLoading) return;
 
     if (isSignedIn) {
       router.replace('/(tabs)');
     } else {
       router.replace('/login');
     }
-  }, [isRestoring, isLoading, isSignedIn, user, router]);
+  }, [isLoading, isSignedIn, user, router]);
 
-  if (isRestoring || isLoading) {
-    return null; // Or a proper splash screen
+  if (isLoading) {
+    return <AuthLoadingScreen />;
   }
 
   return (
-    <ThemeProvider value={DarkTheme}>
+    <ThemeProvider value={navigationTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -120,23 +124,29 @@ function RootLayoutNav() {
         <Stack.Screen name="privacy-settings" options={{ title: 'Privacy' }} />
         <Stack.Screen name="blocked-users" options={{ title: 'Blocked Users' }} />
         <Stack.Screen name="notifications" options={{ headerShown: false }} />
+        <Stack.Screen name="settings" options={{ headerShown: false }} />
         <Stack.Screen name="help" options={{ title: 'Help & Support' }} />
         <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="chat/favorites" options={{ headerShown: false }} />
         <Stack.Screen name="community/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="chat/incoming-call" options={{ headerShown: false }} />
         <Stack.Screen name="chat/voice-call" options={{ headerShown: false }} />
       </Stack>
-      <StatusBar style="light" />
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <RootLayoutNav />
-      </GestureHandlerRootView>
-    </AuthProvider>
+    <FirebaseErrorBoundary>
+      <AuthProvider>
+        <AppThemeProvider>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <RootLayoutNav />
+          </GestureHandlerRootView>
+        </AppThemeProvider>
+      </AuthProvider>
+    </FirebaseErrorBoundary>
   );
 }
