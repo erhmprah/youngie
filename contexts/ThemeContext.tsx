@@ -87,4 +87,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 };
 
-export const useTheme = () => useContext(ThemeContext);
+export const useTheme = () => {
+  const context = useContext(ThemeContext);
+  // Return default values if context is not available to avoid hook order violations
+  if (!context) {
+    return {
+      theme: 'dark',
+      mode: 'system' as const,
+      setMode: () => {},
+      colorScheme: 'blue',
+      setColorScheme: () => {},
+    };
+  }
+  return context;
+};

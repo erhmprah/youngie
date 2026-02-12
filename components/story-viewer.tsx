@@ -214,8 +214,18 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const handleReaction = async (type: ReactionType) => {
         setShowReactions(false);
         try {
-            await storyAPI.reactStory(story._id, { reactionType: type });
-            // Optionally show a floating animation here
+            // Check if user already has this reaction
+            const hasSameReaction = story.reactions?.some(r => r.user._id === currentUserId && r.type === type);
+            
+            if (hasSameReaction) {
+                // Remove reaction if user is clicking the same reaction type again
+                // Note: You may need to implement a remove reaction API endpoint for stories
+                console.log('User already has this reaction');
+            } else {
+                // Add new reaction (and remove any existing reaction)
+                await storyAPI.reactStory(story._id, { reactionType: type });
+                // Optionally show a floating animation here
+            }
         } catch (error) {
             console.error('Failed to react to story:', error);
         }

@@ -19,6 +19,24 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getSocket } from '@/utils/socket';
 import { useRouter } from 'expo-router';
 
+const REACTION_ICONS: Record<ReactionType, keyof typeof Ionicons.glyphMap> = {
+    like: 'thumbs-up',
+    heart: 'heart',
+    laugh: 'happy',
+    wow: 'star',
+    sad: 'sad',
+    fire: 'flame',
+};
+
+const REACTION_COLORS: Record<ReactionType, string> = {
+    like: '#4A90E2',
+    heart: '#E0245E',
+    laugh: '#F7B500',
+    wow: '#9013FE',
+    sad: '#F5A623',
+    fire: '#FF5722',
+};
+
 interface FeedPost {
     _id: string;
     author: {
@@ -73,9 +91,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const backgroundColor = useThemeColor('background');
     const isOwner = post.author._id === currentUserId;
     const isLiked = post.likes.some(l => l._id === currentUserId);
+    const userReaction = post.reactions?.find(r => r.user._id === currentUserId);
     const [isFavorited, setIsFavorited] = useState(post.isFavorited ?? false);
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const lastTap = useRef<number | null>(null);
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const videoRef = useRef<Video>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -138,6 +158,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         if (!shouldPlay && videoRef.current) {
             videoRef.current.pauseAsync().catch(() => {});
         }
+        return () => {
+            if (longPressTimer.current) {
+                clearTimeout(longPressTimer.current);
+            }
+        };
     }, [shouldPlay]);
 
     const handleDoubleTap = () => {
@@ -150,6 +175,34 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             lastTap.current = null;
         } else {
             lastTap.current = now;
+        }
+    };
+
+    const handleLikePressIn = () => {
+        longPressTimer.current = setTimeout(() => {
+            setReactionPickerVisible(true);
+        }, 500);
+    };
+
+    const handleLikePressOut = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+    };
+
+    const handleLikePress = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+            return;
+        }
+        // Tap: toggle like
+        if (userReaction) {
+            // Remove reaction if already reacted
+            handleReactionSelect(userReaction.type);
+        } else {
+            onLike?.(post._id);
         }
     };
 
@@ -303,15 +356,29 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
     const handleReactionSelect = async (reaction: ReactionType) => {
         try {
-            await postAPI.reactPost(post._id, { reactionType: reaction });
-            const updatedPost = {
-                ...post,
-                reactions: [
-                    ...(post.reactions || []).filter(r => r.user._id !== currentUserId),
-                    { user: { _id: currentUserId, username: user?.username || '' }, type: reaction, createdAt: new Date().toISOString() }
-                ]
-            };
-            onUpdate?.(updatedPost);
+            // Check if user already has this reaction
+            const hasSameReaction = post.reactions?.some(r => r.user._id === currentUserId && r.type === reaction);
+            
+            if (hasSameReaction) {
+                // Remove reaction if user is clicking the same reaction type again
+                await postAPI.reactPost(post._id, { reactionType: 'remove' });
+                const updatedPost = {
+                    ...post,
+                    reactions: (post.reactions || []).filter(r => r.user._id !== currentUserId)
+                };
+                onUpdate?.(updatedPost);
+            } else {
+                // Add new reaction (and remove any existing reaction)
+                await postAPI.reactPost(post._id, { reactionType: reaction });
+                const updatedPost = {
+                    ...post,
+                    reactions: [
+                        ...(post.reactions || []).filter(r => r.user._id !== currentUserId),
+                        { user: { _id: currentUserId, username: user?.username || '' }, type: reaction, createdAt: new Date().toISOString() }
+                    ]
+                };
+                onUpdate?.(updatedPost);
+            }
         } catch (error) {
             console.error('Reaction failed:', error);
         }
@@ -472,15 +539,24 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                     <View style={styles.actionWithCount}>
                         <TouchableOpacity
                             style={styles.actionBtn}
-                            onPress={() => onLike?.(post._id)}
-                            onLongPress={() => setReactionPickerVisible(true)}
+                            onPress={handleLikePress}
+                            onPressIn={handleLikePressIn}
+                            onPressOut={handleLikePressOut}
                         >
-                            <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
+                            {userReaction ? (
+                                <Ionicons 
+                                    name={REACTION_ICONS[userReaction.type]} 
+                                    size={24} 
+                                    color={REACTION_COLORS[userReaction.type]} 
+                                />
+                            ) : (
+                                <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
+                            )}
                         </TouchableOpacity>
-                        {post.likes.length > 0 && (
+                        {(post.likes.length > 0 || (post.reactions && post.reactions.length > 0)) && (
                             <TouchableOpacity onPress={() => setLikesModalVisible(true)}>
                                 <ThemedText style={[styles.actionCount, { color: textColor }]}>
-                                    {post.likes.length.toLocaleString()}
+                                    {(post.likes.length + (post.reactions?.length || 0)).toLocaleString()}
                                 </ThemedText>
                             </TouchableOpacity>
                         )}

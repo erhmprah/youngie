@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Image, ActivityIndicator, TouchableOpacity, Alert, Animated, FlatList, Dimensions } from 'react-native';
+import { StyleSheet, View, Image, ActivityIndicator, TouchableOpacity, Alert, Animated, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,7 +12,7 @@ import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { shadows } from '@/constants/design-tokens';
 
-const { width } = Dimensions.get('window');
+
 
 interface UserProfile {
   _id: string;
@@ -209,6 +209,31 @@ export default function UserProfileScreen() {
     }
   };
 
+  const handleUnfriend = async () => {
+    if (!currentUser?._id || !profile) return;
+
+    Alert.alert(
+      'Unfriend User',
+      `Are you sure you want to unfriend ${profile.username}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unfriend',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await userAPI.unfriend(currentUser._id, profile._id);
+              await fetchProfile();
+              Alert.alert('Success', `${profile.username} has been unfriended`);
+            } catch (error: any) {
+              Alert.alert('Error', error.response?.data?.msg || 'Failed to unfriend user');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleMessage = async () => {
     if (!currentUser?._id || !profile) return;
     try {
@@ -262,7 +287,7 @@ export default function UserProfileScreen() {
   const renderPostItem = ({ item }: { item: Post }) => (
     <View style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
       {item.image && (
-        <Image source={{ uri: getImageUrl(item.image) }} style={styles.postImage} />
+        <Image source={{ uri: getImageUrl(item.image) }} style={styles.postImage} resizeMode="cover" />
       )}
       <ThemedText style={styles.postContent}>{item.content || 'No content'}</ThemedText>
       <View style={styles.postStats}>
@@ -278,52 +303,27 @@ export default function UserProfileScreen() {
     </View>
   );
 
-  const renderAlbumItem = ({ item }: { item: AlbumPhoto }) => (
-    <TouchableOpacity 
-      style={styles.albumItem} 
-      onPress={() => setSelectedImage(getImageUrl(item.image) || null)}
-    >
-      <Image source={{ uri: getImageUrl(item.image) }} style={styles.albumImage} />
-    </TouchableOpacity>
-  );
-
-  const getData = () => {
-    if (activeTab === 'posts') {
-      return posts.length > 0 ? posts : [{ type: 'empty' }];
-    } else {
-      return album.length > 0 ? album : [{ type: 'empty' }];
-    }
-  };
-
-  const renderItem = ({ item }: { item: any }) => {
-    if (item.type === 'empty') {
-      return (
-        <View style={styles.emptyContainer}>
-          <IconSymbol 
-            name={activeTab === 'posts' ? 'camera' : 'photo'} 
-            size={48} 
-            color={lightTextColor} 
-          />
-          <ThemedText style={[styles.emptyText, { color: textColor }]}>
-            {activeTab === 'posts' ? 'No posts yet' : 'No photos in album'}
-          </ThemedText>
-        </View>
-      );
-    }
-
-    if (activeTab === 'posts') {
-      return renderPostItem({ item });
-    } else {
-      return renderAlbumItem({ item });
-    }
-  };
+  const getPostsData = () => posts.length > 0 ? posts : null;
+  const getAlbumData = () => album.length > 0 ? album : null;
 
   return (
     <View style={{ flex: 1, backgroundColor }}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Loading View */}
-      <Animated.View style={[styles.loadingContainer, { opacity: loadingOpacity, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }]}>
+      <Animated.View style={[
+        styles.loadingContainer, 
+        { 
+          opacity: loadingOpacity, 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          zIndex: 1,
+          pointerEvents: isLoading ? 'auto' : 'none'
+        }
+      ]}>
         <ActivityIndicator size="large" color={primaryColor} />
       </Animated.View>
 
@@ -339,7 +339,7 @@ export default function UserProfileScreen() {
           </View>
   
           {profile && (
-            <>
+            <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <View style={[styles.actionButtons, { pointerEvents: 'auto' }]}>
                 {connectionStatus === 'none' && (
                   <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleSendRequest} activeOpacity={0.7}>
@@ -361,6 +361,9 @@ export default function UserProfileScreen() {
                     <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage} activeOpacity={0.7}>
                       <ThemedText style={{ color: textColor }}>Message</ThemedText>
                     </TouchableOpacity>
+                    <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={() => handleUnfriend()} activeOpacity={0.7}>
+                      <ThemedText style={{ color: errorColor }}>Unfriend</ThemedText>
+                    </TouchableOpacity>
                     <TouchableOpacity style={[styles.blockButton, { borderColor: errorColor }]} onPress={handleBlock} activeOpacity={0.7}>
                       <IconSymbol name="person.slash" size={18} color={errorColor} />
                     </TouchableOpacity>
@@ -368,92 +371,139 @@ export default function UserProfileScreen() {
                 )}
               </View>
 
-              <View style={{ flex: 1 }}>
-                <View style={styles.content}>
-                  <View style={styles.profileHeader}>
-                    <View style={styles.avatarWrapper}>
-                      <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
-                    </View>
-                    <View style={styles.nameRow}>
-                      <ThemedText type="heading2" style={styles.username}>{profile.username}</ThemedText>
-                      {profile.isPrivate && (
-                        <IconSymbol name="lock" size={20} color={textColor} />
-                      )}
-                    </View>
-                    {profile.bio && <ThemedText style={styles.bio}>{profile.bio}</ThemedText>}
-
-                    {profile.location && (
-                      <View style={styles.locationRow}>
-                        <IconSymbol name="location" size={16} color={lightTextColor} />
-                        <ThemedText style={{ color: lightTextColor }}>{profile.location}</ThemedText>
-                      </View>
+              <View style={styles.content}>
+                <View style={styles.profileHeader}>
+                  <View style={styles.avatarWrapper}>
+                    <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                  </View>
+                  <View style={styles.nameRow}>
+                    <ThemedText type="heading2" style={styles.username}>{profile.username}</ThemedText>
+                    {profile.isPrivate && (
+                      <IconSymbol name="lock" size={20} color={textColor} />
                     )}
                   </View>
+                  {profile.bio && <ThemedText style={styles.bio}>{profile.bio}</ThemedText>}
 
-                  <View style={[styles.statsBar, { backgroundColor: surfaceColor, borderColor }]}>
-                    <View style={[styles.statBox, { borderRightColor: borderColor }]}>
-                      <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.posts}</ThemedText>
-                      <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
-                    </View>
-                    <View style={[styles.statBox, { borderRightColor: borderColor }]}>
-                      <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.friends}</ThemedText>
-                      <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
-                    </View>
-                    <View style={styles.statBox}>
-                      <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{album.length}</ThemedText>
-                      <ThemedText style={{ color: lightTextColor }}>Photos</ThemedText>
-                    </View>
-                  </View>
-
-                  {profile.interests && profile.interests.length > 0 && (
-                    <View style={styles.section}>
-                      <ThemedText type="heading3" style={styles.sectionTitle}>Interests</ThemedText>
-                      <View style={styles.interestsContainer}>
-                        {profile.interests.map((interest, index) => (
-                          <View key={index} style={[styles.interestChip, { backgroundColor: surfaceColor }]}>
-                            <ThemedText>{interest}</ThemedText>
-                          </View>
-                        ))}
-                      </View>
+                  {profile.location && (
+                    <View style={styles.locationRow}>
+                      <IconSymbol name="location" size={16} color={lightTextColor} />
+                      <ThemedText style={{ color: lightTextColor }}>{profile.location}</ThemedText>
                     </View>
                   )}
+                </View>
 
-                  {/* Tabs */}
-                  <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
-                    <TouchableOpacity
-                      style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
-                      onPress={() => setActiveTab('posts')}
-                    >
-                      <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
-                      <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
-                      onPress={() => setActiveTab('album')}
-                    >
-                      <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
-                      <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
-                    </TouchableOpacity>
+                <View style={[styles.statsBar, { backgroundColor: surfaceColor, borderColor }]}>
+                  <View style={[styles.statBox, { borderRightColor: borderColor }]}>
+                    <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.posts}</ThemedText>
+                    <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
                   </View>
+                  <View style={[styles.statBox, { borderRightColor: borderColor }]}>
+                    <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.friends}</ThemedText>
+                    <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
+                  </View>
+                  <View style={styles.statBox}>
+                    <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{album.length}</ThemedText>
+                    <ThemedText style={{ color: lightTextColor }}>Photos</ThemedText>
+                  </View>
+                </View>
 
-                  {/* Posts/Album Grid */}
-                  <FlatList
-                    data={getData()}
-                    renderItem={renderItem}
-                    keyExtractor={(item, index) => item._id || `empty-${index}`}
-                    key={activeTab}
-                    numColumns={activeTab === 'album' ? 3 : 1}
-                    contentContainerStyle={activeTab === 'album' ? styles.albumGrid : styles.postsList}
-                    onEndReached={activeTab === 'posts' ? loadMorePosts : undefined}
-                    onEndReachedThreshold={0.5}
-                    showsVerticalScrollIndicator={false}
-                    ListFooterComponent={activeTab === 'posts' && loadingPosts ? (
-                      <ActivityIndicator size="small" color={primaryColor} style={styles.loadingMore} />
-                    ) : null}
-                  />
+                {profile.interests && profile.interests.length > 0 && (
+                  <View style={styles.section}>
+                    <ThemedText type="heading3" style={styles.sectionTitle}>Interests</ThemedText>
+                    <View style={styles.interestsContainer}>
+                      {profile.interests.map((interest, index) => (
+                        <View key={index} style={[styles.interestChip, { backgroundColor: surfaceColor }]}>
+                          <ThemedText>{interest}</ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Tabs */}
+                <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
+                  <TouchableOpacity
+                    style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
+                    onPress={() => setActiveTab('posts')}
+                  >
+                    <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
+                    <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
+                    onPress={() => setActiveTab('album')}
+                  >
+                    <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
+                    <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
+                  </TouchableOpacity>
                 </View>
               </View>
-            </>
+
+              {/* Posts/Album Grid */}
+              {activeTab === 'posts' && (
+                <View style={styles.postsList}>
+                  {getPostsData() ? (
+                    posts.map((post) => (
+                      <View key={post._id} style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
+                        {post.image && (
+                          <Image source={{ uri: getImageUrl(post.image) }} style={styles.postImage} resizeMode="cover" />
+                        )}
+                        <ThemedText style={styles.postContent}>{post.content || 'No content'}</ThemedText>
+                        <View style={styles.postStats}>
+                          <View style={styles.postStat}>
+                            <IconSymbol name="heart.fill" size={14} color={lightTextColor} />
+                            <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{post.likes?.length || 0}</ThemedText>
+                          </View>
+                          <View style={styles.postStat}>
+                            <IconSymbol name="message.fill" size={14} color={lightTextColor} />
+                            <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{post.comments?.length || 0}</ThemedText>
+                          </View>
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.emptyContainer}>
+                      <IconSymbol name="camera" size={48} color={lightTextColor} />
+                      <ThemedText style={[styles.emptyText, { color: textColor }]}>No posts yet</ThemedText>
+                    </View>
+                  )}
+                  {loadingPosts && <ActivityIndicator size="small" color={primaryColor} style={styles.loadingMore} />}
+                </View>
+              )}
+              {activeTab === 'album' && (
+                <View style={styles.albumGrid}>
+                  {getAlbumData() ? (
+                    album.map((photo) => (
+                      <TouchableOpacity
+                        key={photo._id}
+                        style={styles.albumItem}
+                        onPress={() => setSelectedImage(getImageUrl(photo.image) || null)}
+                        activeOpacity={0.8}
+                      >
+                        <Image source={{ uri: getImageUrl(photo.image) }} style={styles.albumImage} resizeMode="cover" />
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <View style={styles.emptyContainer}>
+                      <IconSymbol name="photo" size={48} color={lightTextColor} />
+                      <ThemedText style={[styles.emptyText, { color: textColor }]}>No photos in album</ThemedText>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Image Modal */}
+              {selectedImage && (
+                <View style={styles.modalOverlay}>
+                  <TouchableOpacity style={styles.modalContainer} onPress={() => setSelectedImage(null)} activeOpacity={1}>
+                    <Image source={{ uri: selectedImage }} style={styles.modalImage} resizeMode="contain" />
+                    <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedImage(null)} activeOpacity={0.7}>
+                      <IconSymbol name="xmark" size={24} color="white" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
           )}
       </SafeAreaView>
     </Animated.View>
@@ -466,39 +516,129 @@ const styles = StyleSheet.create({
   headerBackground: { position: 'absolute', top: 60, left: 0, right: 0, height: 200, zIndex: -1 },
   navHeader: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   backButton: { padding: spacing.xs },
-  content: { padding: spacing.lg },
+  scrollContent: { flex: 1 },
+  content: { flex: 1, padding: spacing.lg },
   profileHeader: { alignItems: 'center', marginBottom: spacing.lg },
-  avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
+  avatarWrapper: { marginBottom: spacing.md },
   avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
-  username: { fontWeight: 'bold' },
-  bio: { textAlign: 'center', color: '#666', marginBottom: spacing.sm },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
+  username: { fontWeight: 'bold', textAlign: 'center' },
+  bio: { textAlign: 'center', color: '#666', marginBottom: spacing.sm, paddingHorizontal: spacing.sm },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.xl, borderWidth: 1 },
+  statsBar: { 
+    flexDirection: 'row', 
+    borderRadius: borderRadius.lg, 
+    padding: spacing.xl, 
+    width: '100%', 
+    marginBottom: spacing.xxl, 
+    borderWidth: 1
+  },
   statBox: { flex: 1, alignItems: 'center' },
-  actionButtons: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginBottom: spacing.xl, pointerEvents: 'auto' },
-  primaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 120, alignItems: 'center' },
-  secondaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center', minWidth: 120 },
-  blockButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  buttonText: { color: 'white', fontWeight: 'bold' },
-  section: { marginBottom: spacing.lg },
+  actionButtons: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    gap: spacing.md, 
+    marginBottom: spacing.xxl, 
+    pointerEvents: 'auto', 
+    flexWrap: 'wrap', 
+    paddingHorizontal: spacing.sm 
+  },
+  primaryButton: { 
+    paddingHorizontal: spacing.xl, 
+    paddingVertical: spacing.md, 
+    borderRadius: borderRadius.md, 
+    alignItems: 'center', 
+    minWidth: 120
+  },
+  secondaryButton: { 
+    paddingHorizontal: spacing.xl, 
+    paddingVertical: spacing.md, 
+    borderRadius: borderRadius.md, 
+    borderWidth: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    minWidth: 120
+  },
+  blockButton: { 
+    paddingHorizontal: spacing.md, 
+    paddingVertical: spacing.md, 
+    borderRadius: borderRadius.md, 
+    borderWidth: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center'
+  },
+  buttonText: { color: 'white', fontWeight: 'bold', fontSize: typography.sizes.body1 },
+  section: { marginBottom: spacing.xxl },
   sectionTitle: { fontWeight: 'bold', marginBottom: spacing.md },
   interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  interestChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.round },
+  interestChip: { 
+    paddingHorizontal: spacing.md, 
+    paddingVertical: spacing.sm, 
+    borderRadius: borderRadius.round
+  },
   tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: spacing.md },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm, gap: spacing.xs },
-  tabText: { fontSize: typography.sizes.body2, fontFamily: typography.families.medium },
-  postsList: { paddingBottom: spacing.xl },
-  albumGrid: { paddingBottom: spacing.xl },
-  postItem: { padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderRadius: borderRadius.md },
+  tab: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: spacing.md, 
+    gap: spacing.sm 
+  },
+  tabText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
+  postsList: { paddingBottom: spacing.xxl, paddingHorizontal: spacing.sm },
+  albumGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingBottom: spacing.xxl, paddingHorizontal: spacing.xs },
+  postItem: { 
+    padding: spacing.xl, 
+    marginBottom: spacing.md, 
+    borderWidth: 1, 
+    borderRadius: borderRadius.lg
+  },
   postContent: { marginBottom: spacing.sm },
-  postImage: { width: '100%', height: 200, borderRadius: borderRadius.md, marginBottom: spacing.sm },
+  postImage: { width: '100%', height: 220, borderRadius: borderRadius.lg, marginBottom: spacing.md },
   postStats: { flexDirection: 'row', gap: spacing.md },
   postStat: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   postStatText: { fontSize: typography.sizes.caption },
-  albumItem: { width: (width - spacing.lg * 2 - spacing.sm * 2) / 3, height: (width - spacing.lg * 2 - spacing.sm * 2) / 3, margin: spacing.xs },
-  albumImage: { width: '100%', height: '100%', borderRadius: borderRadius.sm },
+  albumItem: { width: '33%', aspectRatio: 1, padding: 4 },
+  albumImage: { 
+    width: '100%', 
+    height: '100%', 
+    borderRadius: borderRadius.md
+  },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: spacing.xxl },
   emptyText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium, marginTop: spacing.md },
   loadingMore: { paddingVertical: spacing.md },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContainer: {
+    width: '90%',
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: borderRadius.lg,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: -40,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

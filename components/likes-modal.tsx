@@ -49,10 +49,29 @@ export function LikesModal({ visible, onClose, likes, reactions = [] }: LikesMod
     const surfaceColor = useThemeColor('surface');
     const router = useRouter();
 
-    const allInteractions = [
-        ...(likes || []).map(user => ({ user, type: 'default', _id: `like-${user._id}` })),
-        ...(reactions || []).map(reaction => ({ user: reaction.user, type: reaction.type, _id: `reaction-${reaction.user._id}-${reaction.type}` }))
-    ];
+    // Create a map to track users who have already interacted (either liked or reacted)
+    const userInteractionMap = new Map();
+    
+    // Add likes first
+    (likes || []).forEach(user => {
+        if (user && user._id) {
+            userInteractionMap.set(user._id, { user, type: 'default', _id: `like-${user._id}` });
+        }
+    });
+    
+    // Add reactions, replacing any existing interactions from the same user
+    (reactions || []).forEach(reaction => {
+        if (reaction.user && reaction.user._id) {
+            userInteractionMap.set(reaction.user._id, { 
+                user: reaction.user, 
+                type: reaction.type, 
+                _id: `reaction-${reaction.user._id}-${reaction.type}` 
+            });
+        }
+    });
+    
+    // Convert map to array
+    const allInteractions = Array.from(userInteractionMap.values());
 
     return (
         <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>

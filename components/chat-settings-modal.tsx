@@ -63,19 +63,27 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
         }
     }, [user?._id, chat?._id, isMuted, fontSize]);
 
-    // Memoize theme colors to prevent unnecessary re-renders
-    const themeColors = useMemo(() => ({
-        backgroundColor: useThemeColor('background'),
-        textColor: useThemeColor('text'),
-        primaryColor: useThemeColor('primary'),
-        whiteColor: useThemeColor('white'),
-        lightTextColor: useThemeColor('lightText'),
-        surfaceColor: useThemeColor('surface'),
-        borderColor: useThemeColor('border'),
-        errorColor: useThemeColor('error'),
-    }), []);
+    // Get theme colors at the top level (hooks must be called at top level)
+    const backgroundColor = useThemeColor('background');
+    const textColor = useThemeColor('text');
+    const primaryColor = useThemeColor('primary');
+    const whiteColor = useThemeColor('white');
+    const lightTextColor = useThemeColor('lightText');
+    const surfaceColor = useThemeColor('surface');
+    const borderColor = useThemeColor('border');
+    const errorColor = useThemeColor('error');
 
-    const { backgroundColor, textColor, primaryColor, white: whiteColor, lightTextColor, surfaceColor, borderColor, errorColor } = themeColors;
+    // Memoize theme colors object for reference
+    const themeColors = useMemo(() => ({
+        backgroundColor,
+        textColor,
+        primaryColor,
+        whiteColor,
+        lightTextColor,
+        surfaceColor,
+        borderColor,
+        errorColor,
+    }), [backgroundColor, textColor, primaryColor, whiteColor, lightTextColor, surfaceColor, borderColor, errorColor]);
 
     // For backward compatibility
     const white = whiteColor;

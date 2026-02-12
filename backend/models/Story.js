@@ -47,6 +47,20 @@ const StorySchema = new mongoose.Schema(
         ],
       },
     ],
+    reactions: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        type: {
+          type: String,
+          enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire'],
+          default: 'like',
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -54,5 +68,8 @@ const StorySchema = new mongoose.Schema(
 // Index for efficient queries
 StorySchema.index({ author: 1, createdAt: -1 });
 StorySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+// Unique index to enforce one reaction per user per story
+StorySchema.index({ _id: 1, 'reactions.user': 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Story', StorySchema);

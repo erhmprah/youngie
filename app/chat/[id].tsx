@@ -98,6 +98,33 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [audioStatus, setAudioStatus] = useState<Record<string, any>>({});
+
+  // Format last seen time to show relative time (e.g., "2 hours ago", "Yesterday")
+  const formatLastSeen = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) {
+      return 'Last seen just now';
+    } else if (diffMinutes < 60) {
+      return `Last seen ${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+    } else if (diffHours < 24) {
+      return `Last seen ${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else if (diffDays === 1) {
+      return 'Last seen yesterday';
+    } else if (diffDays < 7) {
+      return `Last seen ${diffDays} days ago`;
+    } else {
+      // For older dates, show the actual date
+      return `Last seen ${date.toLocaleDateString()}`;
+    }
+  };
+
   const typingTimeoutRef = useRef<number | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const swipeRefs = useRef(new Map<string, Swipeable>());
@@ -1065,7 +1092,7 @@ export default function ChatScreen() {
                   <ThemedText type="title" style={styles.headerTitle} numberOfLines={1}>{chatName}</ThemedText>
                   {isDirectChat && (
                       <ThemedText style={[styles.statusText, { color: lightTextColor }]}>
-                          {isTyping ? `${typingUser} is typing...` : isOnline ? 'Online' : lastSeen ? `Last seen ${new Date(lastSeen).toLocaleString()}` : 'Offline'}
+                          {isTyping ? `${typingUser} is typing...` : isOnline ? 'Online' : lastSeen ? formatLastSeen(lastSeen) : 'Offline'}
                       </ThemedText>
                   )}
                   {!isDirectChat && isTyping && (

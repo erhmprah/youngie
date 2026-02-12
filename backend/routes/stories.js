@@ -302,12 +302,14 @@ router.post('/:storyId/react', auth, async (req, res) => {
     // Remove any existing reaction from this user
     story.reactions = story.reactions.filter(r => r.user && r.user.toString() !== userId);
 
-    // Add new reaction
-    story.reactions.push({
-      user: userId,
-      type: reactionType,
-      createdAt: new Date()
-    });
+    // Add new reaction if not removing
+    if (reactionType !== 'remove') {
+      story.reactions.push({
+        user: userId,
+        type: reactionType,
+        createdAt: new Date()
+      });
+    }
 
     // Create notification if not reacting to own story
     if (story.author && story.author.toString() !== userId) {
