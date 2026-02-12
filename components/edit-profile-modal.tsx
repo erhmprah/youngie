@@ -58,13 +58,27 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
             return;
         }
 
-        const timer = setTimeout(async () => {
+         const timer = setTimeout(async () => {
             try {
                 // Using OpenStreetMap Nominatim API (No API key required)
                 const response = await fetch(
                     `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&addressdetails=1&limit=5`,
                     { headers: { 'User-Agent': 'YoungieApp/1.0' } }
                 );
+                
+                if (!response.ok) {
+                    console.log('Location search error: HTTP', response.status);
+                    setSuggestions([]);
+                    return;
+                }
+
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    console.log('Location search error: Expected JSON response, got', contentType);
+                    setSuggestions([]);
+                    return;
+                }
+
                 const data = await response.json();
 
                 if (Array.isArray(data)) {
@@ -78,6 +92,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                 }
             } catch (error) {
                 console.log('Location search error:', error);
+                setSuggestions([]);
             }
         }, 500);
 

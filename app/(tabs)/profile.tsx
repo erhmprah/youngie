@@ -331,9 +331,6 @@ export default function ProfileScreen() {
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/chat/favorites'); }}>
                         <IconSymbol name="heart.fill" size={20} color={textColor} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/blocked-users'); }}>
-                        <IconSymbol name="person.slash" size={20} color={textColor} />
-                    </TouchableOpacity>
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}>
                         <IconSymbol name="settings" size={20} color={textColor} />
                     </TouchableOpacity>
@@ -413,7 +410,7 @@ export default function ProfileScreen() {
 
         if (activeTab === 'posts') {
             return (
-                <TouchableOpacity style={[styles.postItem, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push({ pathname: '/', params: { postId: item._id } }); }}>
+                <TouchableOpacity style={[styles.postItem, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${item._id}`); }}>
                     <Image source={{ uri: getImageUrl(item.images?.[0] || item.image) }} style={styles.postThumbnail} />
                     <View style={styles.postOverlay}>
                         <View style={styles.postStats}>

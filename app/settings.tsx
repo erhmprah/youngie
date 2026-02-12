@@ -87,6 +87,7 @@ export default function SettingsScreen() {
                     <SettingItem icon="shield" label="Security" onPress={() => router.push('/security-settings')} />
                     <SettingItem icon="lock" label="Privacy" onPress={() => router.push('/privacy-settings')} />
                     <SettingItem icon="volume-mute" label="Muted Users" onPress={() => router.push('/muted-users')} />
+                    <SettingItem icon="person.slash" label="Blocked Users" onPress={() => router.push('/blocked-users')} />
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>App Settings</ThemedText>

@@ -45,7 +45,7 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const colorScheme = useColorScheme();
-  const colors = getColors(colorScheme);
+  const colors = getColors(colorScheme as 'light' | 'dark');
   const styles = dynamicStyles(colors);
 
   useEffect(() => {
@@ -474,14 +474,13 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     paddingTop: spacing.xl,
     backgroundColor: colors.background,
   },
-  notification: {
+   notification: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: spacing.md, // Consistent padding
     marginVertical: spacing.xs, // Add vertical margin between items
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md, // Softer corners
-    ...shadows.sm, // Add subtle shadow for depth
   },
   unread: {
     backgroundColor: colors.primary + '20', // More distinct tint for unread

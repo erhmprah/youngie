@@ -354,7 +354,7 @@ export default function ExploreScreen() {
                   <View style={styles.section}>
                     <ThemedText type="title" style={styles.sectionTitle}>Posts</ThemedText>
                     {searchResults.posts.map((post) => (
-                      <TouchableOpacity key={post._id} style={[styles.postRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push({ pathname: '/', params: { postId: post._id } }); }}>
+                      <TouchableOpacity key={post._id} style={[styles.postRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${post._id}`); }}>
                         <View style={styles.postHeader}>
                           {post.author.profilePhoto ? (
                             <Image source={{ uri: getImageUrl(post.author.profilePhoto) }} style={styles.postAvatar} />
@@ -413,7 +413,7 @@ export default function ExploreScreen() {
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendList}>
                   {trendingPosts.map((post) => (
-                    <TouchableOpacity key={post._id} style={styles.trendCard} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push({ pathname: '/', params: { postId: post._id } }); }}>
+                    <TouchableOpacity key={post._id} style={styles.trendCard} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${post._id}`); }}>
                       <LinearGradient colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.8)']} style={styles.trendGradient}>
                         <View>
                           <ThemedText style={[styles.trendHashtag, { color: white }]} numberOfLines={2}>
@@ -589,7 +589,6 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
-    ...shadows.md,
   },
   trendGradient: {
     flex: 1,

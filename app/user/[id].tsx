@@ -11,6 +11,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { shadows } from '@/constants/design-tokens';
+import { FeedCard } from '@/app/chat/FeedCard.component';
 
 
 
@@ -114,8 +115,11 @@ export default function UserProfileScreen() {
     if (!id) return;
     setLoadingPosts(true);
     try {
+      console.log('Fetching posts for user:', id, 'page:', page);
       const response = await postAPI.getUserPosts(id as string, page, 20);
+      console.log('Posts response:', response.data);
       const { posts: newPosts, hasMore } = response.data;
+      console.log('New posts:', newPosts);
       if (page === 1) {
         setPosts(newPosts);
       } else {
@@ -284,24 +288,27 @@ export default function UserProfileScreen() {
     );
   };
 
-  const renderPostItem = ({ item }: { item: Post }) => (
-    <View style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
-      {item.image && (
-        <Image source={{ uri: getImageUrl(item.image) }} style={styles.postImage} resizeMode="cover" />
-      )}
-      <ThemedText style={styles.postContent}>{item.content || 'No content'}</ThemedText>
-      <View style={styles.postStats}>
-        <View style={styles.postStat}>
-          <IconSymbol name="heart.fill" size={14} color={lightTextColor} />
-          <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{item.likes?.length || 0}</ThemedText>
-        </View>
-        <View style={styles.postStat}>
-          <IconSymbol name="message.fill" size={14} color={lightTextColor} />
-          <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{item.comments?.length || 0}</ThemedText>
-        </View>
-      </View>
-    </View>
-  );
+  const renderPostItem = ({ item }: { item: Post }) => {
+    // Ensure post has author information (since it's a user's profile, author is the profile user)
+    const postWithAuthor = {
+      ...item,
+      author: {
+        _id: profile?._id || '',
+        username: profile?.username || '',
+        profilePhoto: profile?.profilePhoto,
+        avatar: profile?.profilePhoto
+      },
+      updatedAt: item.createdAt || new Date().toISOString()
+    };
+
+    return (
+      <FeedCard
+        key={item._id}
+        post={postWithAuthor as any}
+        currentUserId={currentUser?._id || ''}
+      />
+    );
+  };
 
   const getPostsData = () => posts.length > 0 ? posts : null;
   const getAlbumData = () => album.length > 0 ? album : null;
@@ -340,37 +347,6 @@ export default function UserProfileScreen() {
   
           {profile && (
             <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-              <View style={[styles.actionButtons, { pointerEvents: 'auto' }]}>
-                {connectionStatus === 'none' && (
-                  <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleSendRequest} activeOpacity={0.7}>
-                    <ThemedText style={styles.buttonText}>Add Friend</ThemedText>
-                  </TouchableOpacity>
-                )}
-                {connectionStatus === 'requested' && (
-                  <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleCancelRequest} activeOpacity={0.7}>
-                    <ThemedText style={{ color: lightTextColor }}>Cancel Request</ThemedText>
-                  </TouchableOpacity>
-                )}
-                {connectionStatus === 'received' && (
-                  <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleAcceptRequest} activeOpacity={0.7}>
-                    <ThemedText style={styles.buttonText}>Accept Request</ThemedText>
-                  </TouchableOpacity>
-                )}
-                {connectionStatus === 'friend' && (
-                  <>
-                    <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage} activeOpacity={0.7}>
-                      <ThemedText style={{ color: textColor }}>Message</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={() => handleUnfriend()} activeOpacity={0.7}>
-                      <ThemedText style={{ color: errorColor }}>Unfriend</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.blockButton, { borderColor: errorColor }]} onPress={handleBlock} activeOpacity={0.7}>
-                      <IconSymbol name="person.slash" size={18} color={errorColor} />
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-
               <View style={styles.content}>
                 <View style={styles.profileHeader}>
                   <View style={styles.avatarWrapper}>
@@ -389,6 +365,37 @@ export default function UserProfileScreen() {
                       <IconSymbol name="location" size={16} color={lightTextColor} />
                       <ThemedText style={{ color: lightTextColor }}>{profile.location}</ThemedText>
                     </View>
+                  )}
+                </View>
+
+                <View style={[styles.actionButtons, { pointerEvents: 'auto' }]}>
+                  {connectionStatus === 'none' && (
+                    <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleSendRequest} activeOpacity={0.7}>
+                      <ThemedText style={styles.buttonText}>Add Friend</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  {connectionStatus === 'requested' && (
+                    <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleCancelRequest} activeOpacity={0.7}>
+                      <ThemedText style={{ color: lightTextColor }}>Cancel Request</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  {connectionStatus === 'received' && (
+                    <TouchableOpacity style={[styles.primaryButton, { backgroundColor: primaryColor }]} onPress={handleAcceptRequest} activeOpacity={0.7}>
+                      <ThemedText style={styles.buttonText}>Accept Request</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  {connectionStatus === 'friend' && (
+                    <>
+                      <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage} activeOpacity={0.7}>
+                        <ThemedText style={{ color: textColor }}>Message</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={() => handleUnfriend()} activeOpacity={0.7}>
+                        <ThemedText style={{ color: errorColor }}>Unfriend</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.blockButton, { borderColor: errorColor }]} onPress={handleBlock} activeOpacity={0.7}>
+                        <IconSymbol name="person.slash" size={18} color={errorColor} />
+                      </TouchableOpacity>
+                    </>
                   )}
                 </View>
 
@@ -443,24 +450,25 @@ export default function UserProfileScreen() {
               {activeTab === 'posts' && (
                 <View style={styles.postsList}>
                   {getPostsData() ? (
-                    posts.map((post) => (
-                      <View key={post._id} style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
-                        {post.image && (
-                          <Image source={{ uri: getImageUrl(post.image) }} style={styles.postImage} resizeMode="cover" />
-                        )}
-                        <ThemedText style={styles.postContent}>{post.content || 'No content'}</ThemedText>
-                        <View style={styles.postStats}>
-                          <View style={styles.postStat}>
-                            <IconSymbol name="heart.fill" size={14} color={lightTextColor} />
-                            <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{post.likes?.length || 0}</ThemedText>
-                          </View>
-                          <View style={styles.postStat}>
-                            <IconSymbol name="message.fill" size={14} color={lightTextColor} />
-                            <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{post.comments?.length || 0}</ThemedText>
-                          </View>
-                        </View>
-                      </View>
-                    ))
+                    posts.map((post) => {
+                      const postWithAuthor = {
+                        ...post,
+                        author: {
+                          _id: profile?._id || '',
+                          username: profile?.username || '',
+                          profilePhoto: profile?.profilePhoto,
+                          avatar: profile?.profilePhoto
+                        },
+                        updatedAt: post.createdAt || new Date().toISOString()
+                      };
+                      return (
+                        <FeedCard
+                          key={post._id}
+                          post={postWithAuthor as any}
+                          currentUserId={currentUser?._id || ''}
+                        />
+                      );
+                    })
                   ) : (
                     <View style={styles.emptyContainer}>
                       <IconSymbol name="camera" size={48} color={lightTextColor} />
