@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { Header } from '@/components/header';
-import { FeedCard } from '@/app/chat/FeedCard';
+import { FeedCard } from '@/app/chat/FeedCard.component';
 import { postAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';

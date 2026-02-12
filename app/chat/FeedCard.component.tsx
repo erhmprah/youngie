@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-import { FeedPostOptions } from '@/app/chat/FeedPostOptions';
+import { FeedPostOptions } from '@/app/chat/FeedPostOptions.component';
 import { EditPostModal } from '@/components/edit-post-modal';
 import { PollView } from '@/components/poll-view';
 import { ReactionPicker, ReactionType } from '@/components/reaction-picker';
@@ -170,7 +170,8 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             }
         }
     };
-    const { width } = Dimensions.get('window');
+    const { width: screenWidth } = Dimensions.get('window');
+    const availableWidth = screenWidth - (spacing.lg * 2); // 16px padding on each side
 
     const handleEdit = () => {
         setOptionsVisible(false);
@@ -244,9 +245,6 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             };
 
             if (media) {
-                // Here you would handle uploading the media if media.uri is a local file uri
-                // and then replace media.uri with the remote URL.
-                // For now, we just pass it assuming the API can handle it or it's already a URL.
                 updateData.media = [{ url: media.uri, type: media.type }];
             }
 
@@ -273,10 +271,8 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                     text: 'Share',
                     onPress: async () => {
                         try {
-                            // First, call share API to increment shares and notify author
                             await postAPI.sharePost(post._id);
 
-                            // Then, repost to user's feed
                             const repostContent = post.content ? `Shared: ${post.content}` : 'Shared post';
                             
                             const newPostData: any = {
@@ -308,7 +304,6 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const handleReactionSelect = async (reaction: ReactionType) => {
         try {
             await postAPI.reactPost(post._id, { reactionType: reaction });
-            // Update the local post data with the new reaction
             const updatedPost = {
                 ...post,
                 reactions: [
@@ -382,72 +377,58 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
             <View>
                 {post.media && post.media.length > 0 ? (
-                    <View style={[styles.postMedia, { height: width }]}>
-                        <FlatList
-                            data={post.media}
-                            renderItem={({ item }) => (
-                                <View style={{ width: width, height: width }}>
-                                    {item.type === 'image' ? (
-                                        <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                                            <Image
-                                                source={{ uri: getImageUrl(item.url) }}
-                                                style={{ width: width, height: width, backgroundColor: '#E0E0E0' }}
-                                                resizeMode="cover"
-                                            />
-                                        </TouchableWithoutFeedback>
-                                    ) : (
-                                        <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                                            <Video
-                                                ref={videoRef}
-                                                source={{ uri: getImageUrl(item.url) }}
-                                                style={{ width: width, height: width }}
-                                                resizeMode={ResizeMode.COVER}
-                                                shouldPlay={shouldPlay}
-                                                isLooping={true}
-                                            />
-                                        </TouchableWithoutFeedback>
-                                    )}
-                                </View>
-                            )}
-                            keyExtractor={(item, index) => `${post._id}-media-${index}`}
-                            horizontal
-                            pagingEnabled
-                            showsHorizontalScrollIndicator={false}
-                            onViewableItemsChanged={onViewableItemsChanged}
-                            viewabilityConfig={viewabilityConfig}
-                            style={{ width: width }}
-                            snapToInterval={width}
-                            decelerationRate="fast"
-                        />
-                        {(post.media?.length || 0) > 1 && (
-                            <>
-                                <View style={styles.imageCounter}>
-                                    <ThemedText style={styles.imageCounterText}>{activeImageIndex + 1}/{post.media?.length || 0}</ThemedText>
-                                </View>
-                                <View style={styles.swipeIndicator}>
-                                    {post.media?.map((_, index) => (
-                                        <View
-                                            key={index}
-                                            style={[
-                                                styles.swipeDot,
-                                                { backgroundColor: index === activeImageIndex ? primaryColor : 'rgba(255,255,255,0.5)' }
-                                            ]}
+                <View style={[styles.postMedia, { height: availableWidth }]}>
+                    <FlatList
+                        data={post.media}
+                        renderItem={({ item }) => (
+                            <View style={{ width: availableWidth, height: availableWidth }}>
+                                {item.type === 'image' ? (
+                                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                        <Image
+                                            source={{ uri: getImageUrl(item.url) || '' }}
+                                            style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
+                                            resizeMode="cover"
                                         />
-                                    ))}
-                                </View>
-                            </>
+                                    </TouchableWithoutFeedback>
+                                ) : (
+                                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                        <Video
+                                            ref={videoRef}
+                                            source={{ uri: getImageUrl(item.url) || '' }}
+                                            style={{ width: availableWidth, height: availableWidth }}
+                                            resizeMode={ResizeMode.COVER}
+                                            shouldPlay={shouldPlay}
+                                            isLooping={true}
+                                        />
+                                    </TouchableWithoutFeedback>
+                                )}
+                            </View>
                         )}
-                    </View>
+                        keyExtractor={(item, index) => `${post._id}-media-${index}`}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        onViewableItemsChanged={onViewableItemsChanged}
+                        viewabilityConfig={viewabilityConfig}
+                        style={{ width: availableWidth }}
+                    />
+                    {(post.media?.length || 0) > 1 && (
+                        <>
+                            <View style={styles.imageCounter}>
+                                <ThemedText style={styles.imageCounterText}>{activeImageIndex + 1}/{post.media?.length || 0}</ThemedText>
+                            </View>
+                        </>
+                    )}
+                </View>
                 ) : post.images && post.images.length > 0 ? (
-                    <View style={[styles.postMedia, { height: width }]}>
+                    <View style={[styles.postMedia, { height: availableWidth }]}>
                         <FlatList
                             data={post.images}
                             renderItem={({ item }) => (
-                                <View style={{ width: width, height: width }}>
+                                <View style={{ width: availableWidth, height: availableWidth }}>
                                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
                                         <Image
                                             source={{ uri: getImageUrl(item) }}
-                                            style={{ width: width, height: width, backgroundColor: '#E0E0E0' }}
+                                            style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
                                             resizeMode="cover"
                                         />
                                     </TouchableWithoutFeedback>
@@ -455,43 +436,29 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                             )}
                             keyExtractor={(item, index) => `${post._id}-img-${index}`}
                             horizontal
-                            pagingEnabled
                             showsHorizontalScrollIndicator={false}
                             onViewableItemsChanged={onViewableItemsChanged}
                             viewabilityConfig={viewabilityConfig}
-                            style={{ width: width }}
-                            snapToInterval={width}
-                            decelerationRate="fast"
+                            style={{ width: availableWidth }}
                         />
                         {post.images.length > 1 && (
                             <>
                                 <View style={styles.imageCounter}>
                                     <ThemedText style={styles.imageCounterText}>{activeImageIndex + 1}/{post.images.length}</ThemedText>
                                 </View>
-                                <View style={styles.swipeIndicator}>
-                                    {post.images.map((_, index) => (
-                                        <View
-                                            key={index}
-                                            style={[
-                                                styles.swipeDot,
-                                                { backgroundColor: index === activeImageIndex ? primaryColor : 'rgba(255,255,255,0.5)' }
-                                            ]}
-                                        />
-                                    ))}
-                                </View>
                             </>
                         )}
                     </View>
                 ) : post.image ? (
                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                        <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width, height: width }]} resizeMode="cover" />
+                        <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width: availableWidth, height: availableWidth }]} resizeMode="cover" />
                     </TouchableWithoutFeedback>
                 ) : post.video ? (
                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
                         <Video
                             ref={videoRef}
-                            source={{ uri: getImageUrl(post.video) }}
-                            style={[styles.postMedia, { width, height: width }]}
+                            source={{ uri: getImageUrl(post.video) || '' }}
+                            style={[styles.postMedia, { width: availableWidth, height: availableWidth }]}
                             resizeMode={ResizeMode.COVER}
                             shouldPlay={shouldPlay}
                             isLooping={true}
@@ -669,6 +636,7 @@ const styles = StyleSheet.create({
     postMedia: {
         backgroundColor: '#E0E0E0',
         marginBottom: spacing.md,
+        alignItems: 'center',
     },
     actionBar: {
         flexDirection: 'row',

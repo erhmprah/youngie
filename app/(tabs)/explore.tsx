@@ -12,7 +12,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { CreateCommunityModal } from './create-community-modal';
+import { CreateCommunityModal } from './create-community-modal.component';
 import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
