@@ -42,4 +42,11 @@ const ChatSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+// Indexes for frequently queried fields
+ChatSchema.index({ participants: 1 });
+ChatSchema.index({ 'participants': 1, 'createdAt': -1 });
+ChatSchema.index({ relatedCommunity: 1 });
+ChatSchema.index({ isGroupChat: 1, createdAt: -1 });
+ChatSchema.index({ expiresAt: 1 }, { sparse: true });
+
 module.exports = mongoose.model('Chat', ChatSchema);

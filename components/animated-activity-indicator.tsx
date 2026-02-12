@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { ActivityIndicator, Animated, ViewStyle } from 'react-native';
 
 interface AnimatedActivityIndicatorProps {
@@ -7,7 +7,7 @@ interface AnimatedActivityIndicatorProps {
   style?: ViewStyle;
 }
 
-export default function AnimatedActivityIndicator({ size = 'large', color, style }: AnimatedActivityIndicatorProps) {
+const AnimatedActivityIndicatorComponent = ({ size = 'large', color, style }: AnimatedActivityIndicatorProps) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -29,9 +29,14 @@ export default function AnimatedActivityIndicator({ size = 'large', color, style
     return () => pulse.stop();
   }, [scale]);
 
+  // Memoize the animated view style
+  const animatedStyle = useMemo(() => [{ transform: [{ scale }] }, style], [scale, style]);
+
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+    <Animated.View style={animatedStyle}>
       <ActivityIndicator size={size} color={color} />
     </Animated.View>
   );
-}
+};
+
+export default React.memo(AnimatedActivityIndicatorComponent);

@@ -16,4 +16,8 @@ const AlbumPhotoSchema = new mongoose.Schema({
   }
 });
 
+// Indexes for frequently queried fields
+AlbumPhotoSchema.index({ user: 1, createdAt: -1 });
+AlbumPhotoSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('AlbumPhoto', AlbumPhotoSchema);

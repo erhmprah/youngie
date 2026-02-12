@@ -1,47 +1,52 @@
 // components/themed-view.tsx
 
+import React, { useMemo } from 'react';
 import { View, type ViewProps, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { borderRadius as br, shadows, spacing } from '@/constants/design-tokens';
-import { ColorName } from '@/hooks/use-theme-color'; // Assuming ColorName is exported from the hook
+import { ColorName } from '@/hooks/use-theme-color';
 
 export type ThemedViewProps = ViewProps & {
   color?: ColorName;
   variant?: 'default' | 'surface' | 'outline';
-  safe?: boolean; // Automatically applies safe area padding
-  gutter?: boolean; // Applies standard horizontal screen padding
+  safe?: boolean;
+  gutter?: boolean;
 };
 
-export function ThemedView({ 
-  style, 
+const ThemedViewComponent = ({
+  style,
   color,
-  variant = 'default', 
+  variant = 'default',
   safe = false,
   gutter = false,
-  ...otherProps 
-}: ThemedViewProps) {
+  ...otherProps
+}: ThemedViewProps) => {
   const insets = useSafeAreaInsets();
   
-  // Determine background color
   const defaultColor = variant === 'surface' ? 'surface' : 'background';
   const backgroundColor = useThemeColor(color || defaultColor);
   const borderColor = useThemeColor('border');
 
+  // Memoize style to prevent unnecessary re-renders
+  const memoizedStyle = useMemo(() => [
+    { backgroundColor },
+    variant === 'surface' && styles.surface,
+    variant === 'outline' && [styles.outline, { borderColor }],
+    gutter && styles.gutter,
+    safe && { paddingTop: insets.top, paddingBottom: insets.bottom },
+    style,
+  ].filter(Boolean), [backgroundColor, variant, borderColor, gutter, safe, insets.top, insets.bottom, style]);
+
   return (
     <View 
-      style={[
-        { backgroundColor },
-        variant === 'surface' && styles.surface,
-        variant === 'outline' && [styles.outline, { borderColor }],
-        gutter && styles.gutter,
-        safe && { paddingTop: insets.top, paddingBottom: insets.bottom },
-        style
-      ]} 
+      style={memoizedStyle}
       {...otherProps} 
     />
   );
-}
+};
+
+export const ThemedView = React.memo(ThemedViewComponent);
 
 const styles = StyleSheet.create({
   surface: {

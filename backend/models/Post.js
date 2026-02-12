@@ -119,4 +119,16 @@ const PostSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for frequently queried fields
+PostSchema.index({ author: 1, createdAt: -1 });
+PostSchema.index({ isPublic: 1, createdAt: -1 });
+PostSchema.index({ likes: 1 });
+PostSchema.index({ 'reactions.type': 1 });
+PostSchema.index({ tags: 1 });
+PostSchema.index({ 'comments.category': 1 });
+PostSchema.index({ createdAt: -1 });
+
+// Text index for content search
+PostSchema.index({ content: 'text' });
+
 module.exports = mongoose.model('Post', PostSchema);

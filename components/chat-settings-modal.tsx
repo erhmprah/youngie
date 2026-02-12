@@ -1,6 +1,6 @@
 // components/chat-settings-modal.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Switch, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from './themed-view';
@@ -20,7 +20,7 @@ interface ChatSettingsModalProps {
     onFontSizeChange?: (size: 'small' | 'medium' | 'large') => void;
 }
 
-export function ChatSettingsModal({ visible, onClose, chat, onChatUpdate, onMessagesUpdate, onFontSizeChange }: ChatSettingsModalProps) {
+const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMessagesUpdate, onFontSizeChange }: ChatSettingsModalProps) => {
     const { user } = useAuth();
     const [chatName, setChatName] = useState(chat?.name || '');
     const [isMuted, setIsMuted] = useState(false);
@@ -31,13 +31,8 @@ export function ChatSettingsModal({ visible, onClose, chat, onChatUpdate, onMess
     const [searchResults, setSearchResults] = useState<any[]>([]);
 
     // Load settings when modal opens
-    useEffect(() => {
-        if (visible && chat?._id && user?._id) {
-            loadChatSettings();
-        }
-    }, [visible, chat?._id, user?._id]);
-
-    const loadChatSettings = async () => {
+    const loadChatSettings = useCallback(async () => {
+        if (!user?._id || !chat?._id) return;
         try {
             const settingsKey = `chat_settings_${user._id}_${chat._id}`;
             const settings = await AsyncStorage.getItem(settingsKey);
@@ -49,31 +44,50 @@ export function ChatSettingsModal({ visible, onClose, chat, onChatUpdate, onMess
         } catch (error) {
             console.error('Failed to load chat settings:', error);
         }
-    };
+    }, [user?._id, chat?._id]);
 
-    const saveChatSettings = async (newSettings: { isMuted?: boolean; fontSize?: 'small' | 'medium' | 'large' }) => {
+    useEffect(() => {
+        if (visible && chat?._id && user?._id) {
+            loadChatSettings();
+        }
+    }, [visible, chat?._id, user?._id, loadChatSettings]);
+
+    const saveChatSettings = useCallback(async (newSettings: { isMuted?: boolean; fontSize?: 'small' | 'medium' | 'large' }) => {
         try {
-            const settingsKey = `chat_settings_${user._id}_${chat._id}`;
+            const settingsKey = `chat_settings_${user?._id}_${chat?._id}`;
             const currentSettings = { isMuted, fontSize };
             const updatedSettings = { ...currentSettings, ...newSettings };
             await AsyncStorage.setItem(settingsKey, JSON.stringify(updatedSettings));
         } catch (error) {
             console.error('Failed to save chat settings:', error);
         }
-    };
+    }, [user?._id, chat?._id, isMuted, fontSize]);
 
-    const backgroundColor = useThemeColor('background');
-    const textColor = useThemeColor('text');
-    const primaryColor = useThemeColor('primary');
-    const white = useThemeColor('white');
-    const lightTextColor = useThemeColor('lightText');
-    const surfaceColor = useThemeColor('surface');
-    const borderColor = useThemeColor('border');
-    const errorColor = useThemeColor('error');
+    // Memoize theme colors to prevent unnecessary re-renders
+    const themeColors = useMemo(() => ({
+        backgroundColor: useThemeColor('background'),
+        textColor: useThemeColor('text'),
+        primaryColor: useThemeColor('primary'),
+        whiteColor: useThemeColor('white'),
+        lightTextColor: useThemeColor('lightText'),
+        surfaceColor: useThemeColor('surface'),
+        borderColor: useThemeColor('border'),
+        errorColor: useThemeColor('error'),
+    }), []);
 
-    const isGroupChat = chat?.isGroupChat;
-    const isAdmin = chat?.admin === user?._id;
-    const isMember = chat?.participants?.some((p: any) => p._id === user?._id);
+    const { backgroundColor, textColor, primaryColor, white: whiteColor, lightTextColor, surfaceColor, borderColor, errorColor } = themeColors;
+
+    // For backward compatibility
+    const white = whiteColor;
+
+    // Memoize derived values
+    const computedValues = useMemo(() => ({
+        isGroupChat: chat?.isGroupChat,
+        isAdmin: chat?.admin === user?._id,
+        isMember: chat?.participants?.some((p: any) => p._id === user?._id),
+    }), [chat?.isGroupChat, chat?.admin, chat?.participants, user?._id]);
+
+    const { isGroupChat, isAdmin, isMember } = computedValues;
 
     const handleUpdateChatName = async () => {
         if (!chatName.trim() || !isAdmin) return;
@@ -509,6 +523,8 @@ export function ChatSettingsModal({ visible, onClose, chat, onChatUpdate, onMess
         </Modal>
     );
 }
+
+export const ChatSettingsModal = React.memo(ChatSettingsModalComponent);
 
 const styles = StyleSheet.create({
     container: { flex: 1 },

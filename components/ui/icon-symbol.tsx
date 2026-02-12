@@ -1,5 +1,6 @@
 // components/ui/icon-symbol.tsx
 
+import React, { useMemo } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
@@ -90,9 +91,6 @@ const MAPPING: IconMapping = {
   'star': 'star',
   'star.fill': 'star',
   'sparkles': 'star',
-  'flame': 'flame',
-  'flask': 'flask',
-  'bug': 'bug',
   'chevron.up': 'chevron-up',
   'chevron.down': 'chevron-down',
   'eye': 'eye',
@@ -145,10 +143,10 @@ export function IconSymbol({
   color: string;
   style?: StyleProp<TextStyle>;
 }) {
-  const iconName = MAPPING[name];
+  // Memoize the icon lookup to avoid recomputation on re-renders
+  const iconName = useMemo(() => MAPPING[name], [name]);
 
   if (!iconName) {
-    // Fallback for any unmapped icons
     return <Feather name="alert-circle" size={size} color={color} style={style} />;
   }
 

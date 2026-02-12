@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Image, ActivityIndicator, TouchableOpacity, Alert, Animated } from 'react-native';
+import { StyleSheet, View, Image, ActivityIndicator, TouchableOpacity, Alert, Animated, FlatList, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +11,8 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { shadows } from '@/constants/design-tokens';
+
+const { width } = Dimensions.get('window');
 
 interface UserProfile {
   _id: string;
@@ -33,7 +35,12 @@ interface Post {
   createdAt: string;
   likes: any[];
   comments: any[];
-  // Add other fields as needed
+}
+
+interface AlbumPhoto {
+  _id: string;
+  image: string;
+  createdAt: string;
 }
 
 export default function UserProfileScreen() {
@@ -47,9 +54,13 @@ export default function UserProfileScreen() {
   const loadingOpacity = useRef(new Animated.Value(1)).current;
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const [posts, setPosts] = useState<Post[]>([]);
+  const [album, setAlbum] = useState<AlbumPhoto[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [hasMorePosts, setHasMorePosts] = useState(true);
   const [postsPage, setPostsPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<'posts' | 'album'>('posts');
+  const [loadingAlbum, setLoadingAlbum] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -57,6 +68,8 @@ export default function UserProfileScreen() {
   const lightTextColor = useThemeColor('lightText');
   const surfaceColor = useThemeColor('surface');
   const borderColor = useThemeColor('border');
+  const white = useThemeColor('white');
+  const errorColor = useThemeColor('error');
 
   const fetchProfile = useCallback(async () => {
     if (!id || !currentUser?._id) return;
@@ -117,6 +130,20 @@ export default function UserProfileScreen() {
     }
   }, [id]);
 
+  const fetchAlbum = useCallback(async () => {
+    if (!id) return;
+    setLoadingAlbum(true);
+    try {
+      const response = await userAPI.getAlbum(id as string);
+      setAlbum(response.data || []);
+    } catch (error) {
+      console.error('Error fetching album:', error);
+      setAlbum([]);
+    } finally {
+      setLoadingAlbum(false);
+    }
+  }, [id]);
+
   const loadMorePosts = () => {
     if (!loadingPosts && hasMorePosts) {
       fetchPosts(postsPage + 1);
@@ -130,8 +157,9 @@ export default function UserProfileScreen() {
   useEffect(() => {
     if (profile) {
       fetchPosts(1);
+      fetchAlbum();
     }
-  }, [profile, fetchPosts]);
+  }, [profile, fetchPosts, fetchAlbum]);
 
   useEffect(() => {
     Animated.parallel([
@@ -152,7 +180,7 @@ export default function UserProfileScreen() {
     if (!currentUser?._id || !profile) return;
     try {
       await userAPI.sendFriendRequest(currentUser._id, profile._id);
-      await fetchProfile(); // Refetch to update status
+      await fetchProfile();
       Alert.alert('Success', 'Friend request sent');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to send request');
@@ -163,7 +191,7 @@ export default function UserProfileScreen() {
     if (!currentUser?._id || !profile) return;
     try {
       await userAPI.acceptFriendRequest(currentUser._id, profile._id);
-      await fetchProfile(); // Refetch to update status
+      await fetchProfile();
       Alert.alert('Success', 'Friend request accepted');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to accept request');
@@ -174,7 +202,7 @@ export default function UserProfileScreen() {
     if (!currentUser?._id || !profile) return;
     try {
       await userAPI.cancelFriendRequest(currentUser._id, profile._id);
-      await fetchProfile(); // Refetch to update status
+      await fetchProfile();
       Alert.alert('Success', 'Friend request cancelled');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.msg || 'Failed to cancel request');
@@ -202,6 +230,91 @@ export default function UserProfileScreen() {
     } catch (error) {
         console.error('Error opening chat:', error);
         Alert.alert('Error', 'Failed to open chat');
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!currentUser?._id || !profile) return;
+
+    Alert.alert(
+      'Block User',
+      `Are you sure you want to block ${profile.username}? This will remove them from your friends and prevent them from contacting you.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await userAPI.blockUser(currentUser._id, profile._id);
+              Alert.alert('Success', `${profile.username} has been blocked`);
+              router.back();
+            } catch (error) {
+              console.error('Error blocking user:', error);
+              Alert.alert('Error', 'Failed to block user');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderPostItem = ({ item }: { item: Post }) => (
+    <View style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
+      {item.image && (
+        <Image source={{ uri: getImageUrl(item.image) }} style={styles.postImage} />
+      )}
+      <ThemedText style={styles.postContent}>{item.content || 'No content'}</ThemedText>
+      <View style={styles.postStats}>
+        <View style={styles.postStat}>
+          <IconSymbol name="heart.fill" size={14} color={lightTextColor} />
+          <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{item.likes?.length || 0}</ThemedText>
+        </View>
+        <View style={styles.postStat}>
+          <IconSymbol name="message.fill" size={14} color={lightTextColor} />
+          <ThemedText style={[styles.postStatText, { color: lightTextColor }]}>{item.comments?.length || 0}</ThemedText>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderAlbumItem = ({ item }: { item: AlbumPhoto }) => (
+    <TouchableOpacity 
+      style={styles.albumItem} 
+      onPress={() => setSelectedImage(getImageUrl(item.image) || null)}
+    >
+      <Image source={{ uri: getImageUrl(item.image) }} style={styles.albumImage} />
+    </TouchableOpacity>
+  );
+
+  const getData = () => {
+    if (activeTab === 'posts') {
+      return posts.length > 0 ? posts : [{ type: 'empty' }];
+    } else {
+      return album.length > 0 ? album : [{ type: 'empty' }];
+    }
+  };
+
+  const renderItem = ({ item }: { item: any }) => {
+    if (item.type === 'empty') {
+      return (
+        <View style={styles.emptyContainer}>
+          <IconSymbol 
+            name={activeTab === 'posts' ? 'camera' : 'photo'} 
+            size={48} 
+            color={lightTextColor} 
+          />
+          <ThemedText style={[styles.emptyText, { color: textColor }]}>
+            {activeTab === 'posts' ? 'No posts yet' : 'No photos in album'}
+          </ThemedText>
+        </View>
+      );
+    }
+
+    if (activeTab === 'posts') {
+      return renderPostItem({ item });
+    } else {
+      return renderAlbumItem({ item });
     }
   };
 
@@ -244,9 +357,14 @@ export default function UserProfileScreen() {
                   </TouchableOpacity>
                 )}
                 {connectionStatus === 'friend' && (
-                  <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage} activeOpacity={0.7}>
-                    <ThemedText style={{ color: textColor }}>Message</ThemedText>
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={handleMessage} activeOpacity={0.7}>
+                      <ThemedText style={{ color: textColor }}>Message</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.blockButton, { borderColor: errorColor }]} onPress={handleBlock} activeOpacity={0.7}>
+                      <IconSymbol name="person.slash" size={18} color={errorColor} />
+                    </TouchableOpacity>
+                  </>
                 )}
               </View>
 
@@ -277,9 +395,13 @@ export default function UserProfileScreen() {
                       <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.posts}</ThemedText>
                       <ThemedText style={{ color: lightTextColor }}>Posts</ThemedText>
                     </View>
-                    <View style={styles.statBox}>
+                    <View style={[styles.statBox, { borderRightColor: borderColor }]}>
                       <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stats.friends}</ThemedText>
                       <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
+                    </View>
+                    <View style={styles.statBox}>
+                      <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{album.length}</ThemedText>
+                      <ThemedText style={{ color: lightTextColor }}>Photos</ThemedText>
                     </View>
                   </View>
 
@@ -296,19 +418,39 @@ export default function UserProfileScreen() {
                     </View>
                   )}
 
-                  {/* Posts Section */}
-                  {posts.length > 0 && (
-                    <View style={styles.section}>
-                      <ThemedText type="heading3" style={styles.sectionTitle}>Posts</ThemedText>
-                      {posts.map((item) => (
-                        <View key={item._id} style={[styles.postItem, { backgroundColor: surfaceColor, borderColor }]}>
-                          <ThemedText>{item.content || 'No content'}</ThemedText>
-                          {item.image && <Image source={{ uri: getImageUrl(item.image) }} style={styles.postImage} />}
-                        </View>
-                      ))}
-                      {loadingPosts && <ActivityIndicator size="small" color={primaryColor} />}
-                    </View>
-                  )}
+                  {/* Tabs */}
+                  <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
+                    <TouchableOpacity
+                      style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
+                      onPress={() => setActiveTab('posts')}
+                    >
+                      <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
+                      <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
+                      onPress={() => setActiveTab('album')}
+                    >
+                      <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
+                      <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Posts/Album Grid */}
+                  <FlatList
+                    data={getData()}
+                    renderItem={renderItem}
+                    keyExtractor={(item, index) => item._id || `empty-${index}`}
+                    key={activeTab}
+                    numColumns={activeTab === 'album' ? 3 : 1}
+                    contentContainerStyle={activeTab === 'album' ? styles.albumGrid : styles.postsList}
+                    onEndReached={activeTab === 'posts' ? loadMorePosts : undefined}
+                    onEndReachedThreshold={0.5}
+                    showsVerticalScrollIndicator={false}
+                    ListFooterComponent={activeTab === 'posts' && loadingPosts ? (
+                      <ActivityIndicator size="small" color={primaryColor} style={styles.loadingMore} />
+                    ) : null}
+                  />
                 </View>
               </View>
             </>
@@ -320,28 +462,43 @@ export default function UserProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    headerBackground: { position: 'absolute', top: 60, left: 0, right: 0, height: 200, zIndex: -1 },
-    navHeader: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-    backButton: { padding: spacing.xs },
-    content: { padding: spacing.lg },
-    profileHeader: { alignItems: 'center', marginBottom: spacing.lg },
-    avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
-    avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
-    nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
-    username: { fontWeight: 'bold' },
-    bio: { textAlign: 'center', color: '#666', marginBottom: spacing.sm },
-    locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.xl, borderWidth: 1 },
-    statBox: { flex: 1, alignItems: 'center', borderRightWidth: 1 },
-    actionButtons: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginBottom: spacing.xl, pointerEvents: 'auto' },
-    primaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 120, alignItems: 'center' },
-    secondaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center', minWidth: 120 },
-    buttonText: { color: 'white', fontWeight: 'bold' },
-    section: { marginBottom: spacing.lg },
-    sectionTitle: { fontWeight: 'bold', marginBottom: spacing.md },
-    interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    interestChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.round },
-    postItem: { padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderRadius: borderRadius.md },
-    postImage: { width: '100%', height: 200, borderRadius: borderRadius.md, marginTop: spacing.sm },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  headerBackground: { position: 'absolute', top: 60, left: 0, right: 0, height: 200, zIndex: -1 },
+  navHeader: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  backButton: { padding: spacing.xs },
+  content: { padding: spacing.lg },
+  profileHeader: { alignItems: 'center', marginBottom: spacing.lg },
+  avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
+  avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  username: { fontWeight: 'bold' },
+  bio: { textAlign: 'center', color: '#666', marginBottom: spacing.sm },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.xl, borderWidth: 1 },
+  statBox: { flex: 1, alignItems: 'center' },
+  actionButtons: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginBottom: spacing.xl, pointerEvents: 'auto' },
+  primaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 120, alignItems: 'center' },
+  secondaryButton: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center', minWidth: 120 },
+  blockButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  buttonText: { color: 'white', fontWeight: 'bold' },
+  section: { marginBottom: spacing.lg },
+  sectionTitle: { fontWeight: 'bold', marginBottom: spacing.md },
+  interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  interestChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.round },
+  tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: spacing.md },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm, gap: spacing.xs },
+  tabText: { fontSize: typography.sizes.body2, fontFamily: typography.families.medium },
+  postsList: { paddingBottom: spacing.xl },
+  albumGrid: { paddingBottom: spacing.xl },
+  postItem: { padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderRadius: borderRadius.md },
+  postContent: { marginBottom: spacing.sm },
+  postImage: { width: '100%', height: 200, borderRadius: borderRadius.md, marginBottom: spacing.sm },
+  postStats: { flexDirection: 'row', gap: spacing.md },
+  postStat: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  postStatText: { fontSize: typography.sizes.caption },
+  albumItem: { width: (width - spacing.lg * 2 - spacing.sm * 2) / 3, height: (width - spacing.lg * 2 - spacing.sm * 2) / 3, margin: spacing.xs },
+  albumImage: { width: '100%', height: '100%', borderRadius: borderRadius.sm },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: spacing.xxl },
+  emptyText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium, marginTop: spacing.md },
+  loadingMore: { paddingVertical: spacing.md },
 });

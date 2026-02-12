@@ -175,4 +175,17 @@ UserSchema.methods.comparePassword = async function (password) {
   return await bcrypt.compare(password, this.password);
 };
 
+// Indexes for frequently queried fields
+UserSchema.index({ username: 1 });
+UserSchema.index({ email: 1 });
+UserSchema.index({ firebaseUid: 1 });
+UserSchema.index({ suspended: 1, isActive: 1 });
+UserSchema.index({ createdAt: -1 });
+UserSchema.index({ followers: 1 });
+UserSchema.index({ following: 1 });
+UserSchema.index({ interests: 1 });
+
+// Text index for search functionality
+UserSchema.index({ username: 'text', bio: 'text' });
+
 module.exports = mongoose.model('User', UserSchema);

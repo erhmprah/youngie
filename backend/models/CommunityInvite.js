@@ -38,8 +38,11 @@ const CommunityInviteSchema = new mongoose.Schema({
   },
 });
 
-// Index for efficient token lookup
+// Indexes for frequently queried fields
 CommunityInviteSchema.index({ inviteToken: 1 });
+CommunityInviteSchema.index({ community: 1, createdAt: -1 });
+CommunityInviteSchema.index({ expiresAt: 1 }, { sparse: true });
+CommunityInviteSchema.index({ isActive: 1, expiresAt: 1 });
 
 // Auto-remove expired invites
 CommunityInviteSchema.pre('find', function() {

@@ -45,4 +45,11 @@ const NotificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for frequently queried fields
+NotificationSchema.index({ recipient: 1, createdAt: -1 });
+NotificationSchema.index({ recipient: 1, isRead: 1 });
+NotificationSchema.index({ sender: 1, createdAt: -1 });
+NotificationSchema.index({ type: 1, createdAt: -1 });
+NotificationSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('Notification', NotificationSchema);

@@ -57,4 +57,14 @@ CommunitySchema.pre('save', function(next) {
   next();
 });
 
+// Indexes for frequently queried fields
+CommunitySchema.index({ name: 1 });
+CommunitySchema.index({ creator: 1, createdAt: -1 });
+CommunitySchema.index({ members: 1 });
+CommunitySchema.index({ isPrivate: 1, createdAt: -1 });
+CommunitySchema.index({ createdAt: -1 });
+
+// Text index for search
+CommunitySchema.index({ name: 'text', description: 'text' });
+
 module.exports = mongoose.model('Community', CommunitySchema);

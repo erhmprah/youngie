@@ -331,6 +331,9 @@ export default function ProfileScreen() {
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/chat/favorites'); }}>
                         <IconSymbol name="heart.fill" size={20} color={textColor} />
                     </TouchableOpacity>
+                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/blocked-users'); }}>
+                        <IconSymbol name="person.slash" size={20} color={textColor} />
+                    </TouchableOpacity>
                     <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}>
                         <IconSymbol name="settings" size={20} color={textColor} />
                     </TouchableOpacity>
