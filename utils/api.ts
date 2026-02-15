@@ -225,6 +225,8 @@ export const chatAPI = {
   clearChat: (chatId: string) => api.post(`/chats/${chatId}/clear`),
   acceptInvitation: (chatId: string) => api.post(`/chats/${chatId}/accept`),
   rejectInvitation: (chatId: string) => api.post(`/chats/${chatId}/reject`),
+  updateGroupName: (chatId: string, name: string) => api.put(`/chats/${chatId}/name`, { name }),
+  updateGroupPhoto: (chatId: string, groupPhoto: string) => api.put(`/chats/${chatId}/photo`, { groupPhoto }),
   uploadAttachment: async (formData: FormData, options?: any) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/chats/upload-attachment`, {
@@ -234,6 +236,23 @@ export const chatAPI = {
         'Accept': 'application/json',
       },
       body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return { data };
+  },
+  uploadAttachmentBase64: async (imageData: string, filename: string) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/chats/upload-attachment-base64`, {
+      method: 'POST',
+      headers: {
+        'x-auth-token': token || '',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ imageData, filename }),
     });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -375,7 +394,7 @@ export const communityAPI = {
   getAll: () => api.get('/communities'),
   search: (query: string) => api.get('/communities/search', { params: { q: query } }),
   getCommunity: (communityId: string) => api.get(`/communities/${communityId}`),
-  create: (data: { name: string; description: string; image?: string; requiresApproval?: boolean }) =>
+  create: (data: { name: string; description: string; image?: string; requiresApproval?: boolean; isAnonymous?: boolean }) =>
     api.post('/communities', data),
   join: (communityId: string) => api.post(`/communities/${communityId}/join`),
   leave: (communityId: string) => api.post(`/communities/${communityId}/leave`),

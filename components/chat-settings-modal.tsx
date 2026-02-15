@@ -320,6 +320,19 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                     <View style={styles.section}>
                         <ThemedText type="title" style={styles.sectionTitle}>Chat Info</ThemedText>
 
+                        {/* Group Profile Photo - Only for group chats */}
+                        {isGroupChat && chat?.groupPhoto && (
+                            <View style={styles.groupPhotoContainer}>
+                                <ThemedText style={styles.label}>Group Photo</ThemedText>
+                                <View style={styles.groupPhotoRow}>
+                                    <Image 
+                                        source={{ uri: chat?.groupPhoto }} 
+                                        style={styles.groupPhoto}
+                                    />
+                                </View>
+                            </View>
+                        )}
+
                         {isGroupChat && isAdmin && (
                             <View style={styles.inputContainer}>
                                 <ThemedText style={styles.label}>Chat Name</ThemedText>
@@ -555,6 +568,48 @@ const styles = StyleSheet.create({
         fontSize: typography.sizes.body1,
         fontFamily: typography.families.medium,
         marginBottom: spacing.sm,
+    },
+    groupPhotoContainer: {
+        marginBottom: spacing.lg,
+    },
+    groupPhotoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    groupPhotoButton: {
+        position: 'relative',
+    },
+    groupPhoto: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        borderWidth: 3,
+        borderColor: '#4A90E2',
+    },
+    groupPhotoPlaceholder: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#CCCCCC',
+        borderStyle: 'dashed',
+        backgroundColor: '#F5F5F5',
+    },
+    editBadge: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    helperText: {
+        fontSize: typography.sizes.caption,
+        marginTop: spacing.sm,
     },
     inputRow: {
         flexDirection: 'row',

@@ -19,6 +19,7 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
     const [description, setDescription] = useState('');
     const [image, setImage] = useState<string | null>(null);
     const [requiresApproval, setRequiresApproval] = useState(true);
+    const [isAnonymous, setIsAnonymous] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     const backgroundColor = useThemeColor('background');
@@ -67,7 +68,8 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
                 name,
                 description,
                 image: uploadedImageUrl,
-                requiresApproval
+                requiresApproval,
+                isAnonymous,
             });
 
             Alert.alert('Success', 'Community created!');
@@ -77,6 +79,7 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
             setName('');
             setDescription('');
             setImage(null);
+            setIsAnonymous(false);
         } catch (error: any) {
             console.error('Error creating community:', error);
             Alert.alert('Error', error.response?.data?.msg || 'Failed to create community.');
@@ -116,6 +119,11 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
                     <View style={styles.switchContainer}>
                         <ThemedText>Require Approval to Join</ThemedText>
                         <Switch value={requiresApproval} onValueChange={setRequiresApproval} trackColor={{ false: '#767577', true: primaryColor }} />
+                    </View>
+
+                    <View style={styles.switchContainer}>
+                        <ThemedText>Create as Anonymous</ThemedText>
+                        <Switch value={isAnonymous} onValueChange={setIsAnonymous} trackColor={{ false: '#767577', true: primaryColor }} />
                     </View>
                 </View>
             </ThemedView>

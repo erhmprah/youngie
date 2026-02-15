@@ -139,7 +139,7 @@ router.get('/:communityId', auth, async (req, res) => {
 // Create a community
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, description, image, requiresApproval } = req.body;
+    const { name, description, image, requiresApproval, isAnonymous } = req.body;
 
     if (!name || !description) {
       return res.status(400).json({ msg: 'Name and description are required' });
@@ -151,6 +151,7 @@ router.post('/', auth, async (req, res) => {
       isGroupChat: true,
       name: name,
       admin: req.userId,
+      isAnonymous: isAnonymous === true || isAnonymous === 'true',
     });
     await chat.save();
 
@@ -160,6 +161,7 @@ router.post('/', auth, async (req, res) => {
       image,
       creator: req.userId,
       requiresApproval: requiresApproval !== false, // Default to true
+      isAnonymous: isAnonymous === true || isAnonymous === 'true',
       members: [req.userId], // Creator is automatically a member
       chat: chat._id,
     });

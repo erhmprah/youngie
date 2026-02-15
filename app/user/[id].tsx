@@ -12,6 +12,8 @@ import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { shadows } from '@/constants/design-tokens';
 import { FeedCard } from '@/app/chat/FeedCard.component';
+import { ImageViewerModal } from '@/components/image-viewer-modal';
+import { CustomAlert } from '@/utils/alert';
 
 
 
@@ -63,6 +65,8 @@ export default function UserProfileScreen() {
   const [activeTab, setActiveTab] = useState<'posts' | 'album'>('posts');
   const [loadingAlbum, setLoadingAlbum] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const isOwnProfile = currentUser?._id === id;
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -314,6 +318,26 @@ export default function UserProfileScreen() {
   const getPostsData = () => posts.length > 0 ? posts : null;
   const getAlbumData = () => album.length > 0 ? album : null;
 
+  const handleDeleteAlbumPhoto = async (photoId: string) => {
+    if (!currentUser?._id) return;
+    CustomAlert.confirm(
+      'Delete Photo',
+      'Are you sure you want to delete this photo?',
+      async () => {
+        try {
+          CustomAlert.loading('Deleting photo...', 'Please wait');
+          await userAPI.deleteAlbumPhoto(currentUser._id, photoId);
+          setAlbum(prev => prev.filter(p => p._id !== photoId));
+          setSelectedImage(null);
+          setSelectedPhotoId(null);
+          CustomAlert.success('Deleted', 'Photo has been deleted');
+        } catch (error) {
+          CustomAlert.error('Error', 'Failed to delete photo');
+        }
+      }
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor }}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -500,7 +524,7 @@ export default function UserProfileScreen() {
                       <TouchableOpacity
                         key={photo._id}
                         style={styles.albumItem}
-                        onPress={() => setSelectedImage(getImageUrl(photo.image) || null)}
+                        onPress={() => { setSelectedImage(getImageUrl(photo.image) || null); setSelectedPhotoId(photo._id); }}
                         activeOpacity={0.8}
                       >
                         <Image source={{ uri: getImageUrl(photo.image) }} style={styles.albumImage} resizeMode="cover" />
@@ -516,16 +540,12 @@ export default function UserProfileScreen() {
               )}
 
               {/* Image Modal */}
-              {selectedImage && (
-                <View style={styles.modalOverlay}>
-                  <TouchableOpacity style={styles.modalContainer} onPress={() => setSelectedImage(null)} activeOpacity={1}>
-                    <Image source={{ uri: selectedImage }} style={styles.modalImage} resizeMode="contain" />
-                    <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedImage(null)} activeOpacity={0.7}>
-                      <IconSymbol name="xmark" size={24} color="white" />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                </View>
-              )}
+              <ImageViewerModal 
+                visible={!!selectedImage} 
+                onClose={() => { setSelectedImage(null); setSelectedPhotoId(null); }} 
+                imageUrl={selectedImage} 
+                onDelete={isOwnProfile && selectedPhotoId ? () => handleDeleteAlbumPhoto(selectedPhotoId) : null} 
+              />
             </ScrollView>
           )}
       </SafeAreaView>

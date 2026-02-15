@@ -476,6 +476,12 @@ export default function FeedScreen() {
                     ListHeaderComponent={renderHeader}
                     refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={primaryColor} />}
                     contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: spacing.lg }}
+                    // Performance optimization props
+                    initialNumToRender={5}
+                    maxToRenderPerBatch={10}
+                    windowSize={10}
+                    updateCellsBatchingPeriod={50}
+                    removeClippedSubviews={true}
                     onScrollToIndexFailed={(info) => {
                         const wait = new Promise(resolve => setTimeout(resolve, 500));
                         wait.then(() => {

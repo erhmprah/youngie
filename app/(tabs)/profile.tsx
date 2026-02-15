@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { CustomAlert } from '@/utils/alert';
 import { userAPI, postAPI, chatAPI, getImageUrl } from '@/utils/api';
 import { cachedUserAPI, cachedPostAPI } from '@/utils/cachedApi';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
     const [album, setAlbum] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
     const { user, logout, updateUser } = useAuth();
     const router = useRouter();
 
@@ -111,14 +113,15 @@ export default function ProfileScreen() {
     const handleEditProfile = async (profileData: any) => {
         if (!user?._id) return;
         try {
+            CustomAlert.loading('Updating profile...', 'Please wait');
             await userAPI.updateProfile(user._id, profileData);
             updateUser(profileData);
             setIsEditModalVisible(false);
-            Alert.alert('Success', 'Profile updated successfully');
+            CustomAlert.success('Success', 'Profile updated successfully');
             fetchProfileData();
         } catch (error: any) {
             console.error('Error updating profile:', error);
-            Alert.alert('Error', error.response?.data?.msg || 'Failed to update profile');
+            CustomAlert.error('Error', error.response?.data?.msg || 'Failed to update profile');
         }
     };
 
@@ -138,6 +141,7 @@ export default function ProfileScreen() {
 
             try {
                 console.log('Uploading profile photo...');
+                CustomAlert.loading('Uploading photo...', 'Please wait');
                 const response = await userAPI.uploadProfilePhotoBase64(user._id, {
                     imageData: `data:image/jpeg;base64,${base64}`,
                     filename
@@ -147,11 +151,11 @@ export default function ProfileScreen() {
                     console.log('Profile photo path:', response.profilePhoto);
                     console.log('Full image URL:', getImageUrl(response.profilePhoto));
                     updateUser({ profilePhoto: response.profilePhoto });
-                    Alert.alert('Success', 'Profile photo updated successfully');
+                    CustomAlert.success('Success', 'Profile photo updated successfully');
                     fetchProfileData();
                 }            } catch (error) {
                 console.error('Profile photo upload error:', error);
-                Alert.alert('Error', 'Failed to upload profile photo');
+                CustomAlert.error('Error', 'Failed to upload profile photo');
             }
         }
     };
@@ -171,18 +175,19 @@ export default function ProfileScreen() {
             const filename = `cover-photo-${Date.now()}.jpg`;
 
             try {
+                CustomAlert.loading('Uploading cover photo...', 'Please wait');
                 const response = await userAPI.uploadCoverPhotoBase64(user._id, {
                     imageData: `data:image/jpeg;base64,${base64}`,
                     filename
                 }) as any;
                 if (response.coverPhoto) {
                     updateUser({ coverPhoto: response.coverPhoto });
-                    Alert.alert('Success', 'Cover photo updated successfully');
+                    CustomAlert.success('Success', 'Cover photo updated successfully');
                     fetchProfileData();
                 }
             } catch (error) {
                 console.error('Cover photo upload error:', error);
-                Alert.alert('Error', 'Failed to upload cover photo');
+                CustomAlert.error('Error', 'Failed to upload cover photo');
             }
         }
     };
@@ -201,36 +206,36 @@ export default function ProfileScreen() {
             const filename = `album-photo-${Date.now()}.jpg`;
 
             try {
+                CustomAlert.loading('Uploading photo...', 'Please wait');
                 await userAPI.uploadAlbumPhoto(user._id, {
                     imageData: `data:image/jpeg;base64,${base64}`,
                     filename
                 });
-                Alert.alert('Success', 'Photo added to album');
+                CustomAlert.success('Success', 'Photo added to album');
                 fetchProfileData();
             } catch (error) {
                 console.error('Album upload error:', error);
-                Alert.alert('Error', 'Failed to upload photo');
+                CustomAlert.error('Error', 'Failed to upload photo');
             }
         }
     };
 
     const handleDeleteAlbumPhoto = async (photoId: string) => {
         if (!user?._id) return;
-        Alert.alert('Delete Photo', 'Are you sure you want to delete this photo?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                    try {
-                        await userAPI.deleteAlbumPhoto(user._id, photoId);
-                        setAlbum(prev => prev.filter(p => p._id !== photoId));
-                    } catch (error) {
-                        Alert.alert('Error', 'Failed to delete photo');
-                    }
+        CustomAlert.confirm(
+            'Delete Photo',
+            'Are you sure you want to delete this photo?',
+            async () => {
+                try {
+                    CustomAlert.loading('Deleting photo...', 'Please wait');
+                    await userAPI.deleteAlbumPhoto(user._id, photoId);
+                    setAlbum(prev => prev.filter(p => p._id !== photoId));
+                    CustomAlert.success('Deleted', 'Photo has been deleted');
+                } catch (error) {
+                    CustomAlert.error('Error', 'Failed to delete photo');
                 }
             }
-        ]);
+        );
     };
 
     const handleMessage = async (friendId: string) => {
@@ -701,7 +706,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity 
                     style={[styles.postItem, { borderColor }]} 
                     onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleDeleteAlbumPhoto(item._id); }}
-                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedImage(getImageUrl(item.image) ?? null); }}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedImage(getImageUrl(item.image) ?? null); setSelectedPhotoId(item._id); }}
                 >
                     <Image source={{ uri: getImageUrl(item.image) }} style={styles.postThumbnail} />
                 </TouchableOpacity>
@@ -731,7 +736,12 @@ export default function ProfileScreen() {
                 />
             )}
             <EditProfileModal visible={isEditModalVisible} onClose={() => setIsEditModalVisible(false)} onSave={handleEditProfile} initialData={user} />
-            <ImageViewerModal visible={!!selectedImage} onClose={() => setSelectedImage(null)} imageUrl={selectedImage} />
+            <ImageViewerModal 
+                visible={!!selectedImage} 
+                onClose={() => { setSelectedImage(null); setSelectedPhotoId(null); }} 
+                imageUrl={selectedImage} 
+                onDelete={selectedPhotoId ? () => handleDeleteAlbumPhoto(selectedPhotoId) : null} 
+            />
         </SafeAreaView>
     );
 }

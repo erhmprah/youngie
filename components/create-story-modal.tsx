@@ -8,6 +8,7 @@ import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
+import { MediaPickerButton, MediaPickerResult } from './media-picker-button';
 import { storyAPI, getImageUrl } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -21,6 +22,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
     const { user } = useAuth();
     const [content, setContent] = useState('');
     const [image, setImage] = useState<string | null>(null);
+    const [video, setVideo] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [showPoll, setShowPoll] = useState(false);
     const [pollOptions, setPollOptions] = useState(['Yes', 'No']);
@@ -41,7 +43,35 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
 
         if (!result.canceled) {
             setImage(result.assets[0].uri);
+            setVideo(null); // Clear video when selecting image
         }
+    };
+
+    const handlePickVideo = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            allowsEditing: true,
+            aspect: [9, 16],
+            quality: 1,
+            videoMaxDuration: 60, // 60 seconds max for stories
+        });
+
+        if (!result.canceled) {
+            setVideo(result.assets[0].uri);
+            setImage(null); // Clear image when selecting video
+        }
+    };
+
+    // Handle unified media picker selection
+    const handleMediaSelected = (result: MediaPickerResult) => {
+        if (result.type === 'photo') {
+            setImage(result.uri);
+            setVideo(null);
+        } else if (result.type === 'video') {
+            setVideo(result.uri);
+            setImage(null);
+        }
+        // Audio is not supported for stories
     };
 
     const handleCreateStory = async () => {
@@ -85,6 +115,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
             onClose();
             setContent('');
             setImage(null);
+            setVideo(null);
             setShowPoll(false);
             setPollOptions(['Yes', 'No']);
         } catch (error) {
@@ -162,10 +193,11 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
                 </ScrollView>
 
                 <View style={styles.actions}>
-                    <TouchableOpacity onPress={handlePickImage} style={styles.actionButton}>
-                        <IconSymbol name="camera" size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>Photo</ThemedText>
-                    </TouchableOpacity>
+                    <MediaPickerButton
+                        onMediaSelected={handleMediaSelected}
+                        icon="camera"
+                        size={24}
+                    />
                     <TouchableOpacity onPress={() => setShowPoll(!showPoll)} style={styles.actionButton}>
                         <IconSymbol name="chart.bar.fill" size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>Poll</ThemedText>

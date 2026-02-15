@@ -8,9 +8,10 @@ interface ImageViewerModalProps {
     visible: boolean;
     onClose: () => void;
     imageUrl: string | null;
+    onDelete?: (() => void) | null;
 }
 
-export function ImageViewerModal({ visible, onClose, imageUrl }: ImageViewerModalProps) {
+export function ImageViewerModal({ visible, onClose, imageUrl, onDelete }: ImageViewerModalProps) {
     // Don't render if not visible or no image URL
     if (!visible || !imageUrl) return null;
 
@@ -22,6 +23,11 @@ export function ImageViewerModal({ visible, onClose, imageUrl }: ImageViewerModa
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                     <Ionicons name="close" size={30} color="white" />
                 </TouchableOpacity>
+                {onDelete && (
+                    <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
+                        <Ionicons name="trash-outline" size={26} color="white" />
+                    </TouchableOpacity>
+                )}
                 <View style={styles.imageContainer}>
                     <Image source={{ uri: imageUrl }} style={styles.image} resizeMode="contain" />
                 </View>
@@ -41,6 +47,13 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 50,
         right: 20,
+        zIndex: 1,
+        padding: 10,
+    },
+    deleteButton: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
         zIndex: 1,
         padding: 10,
     },

@@ -14,6 +14,7 @@ import { getSocket, joinChat, leaveChat, sendMessage, sendTypingStart, sendTypin
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ChatSettingsModal } from '@/components/chat-settings-modal';
 import { MediaPreviewModal } from '@/components/media-preview-modal';
+import { MediaPickerButton, MediaPickerResult } from '@/components/media-picker-button';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { Swipeable, RectButton } from 'react-native-gesture-handler';
 import { Animated } from 'react-native';
@@ -289,8 +290,29 @@ export default function ChatScreen() {
         socket.off('user_status_change', handleStatusChange);
       }
       leaveChat(id as string);
+      
+      // Clean up preview sound
       if (previewSound.current) {
         previewSound.current.unloadAsync();
+        previewSound.current = null;
+      }
+      
+      // Clean up all sound refs to prevent memory leaks
+      if (soundRefs.current) {
+        soundRefs.current.forEach(async (sound) => {
+          try {
+            await sound.unloadAsync();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        });
+        soundRefs.current.clear();
+      }
+      
+      // Clean up typing timeout if pending
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
       }
     };
   }, [id]);
@@ -479,7 +501,7 @@ export default function ChatScreen() {
       await chatAPI.sendMessage(id as string, messageData);
 
       // Also emit via socket for real-time updates to other users
-      sendMessage(id as string, user._id, currentMessageContent, currentReplyTo?._id, messageData.isAnonymous, attachmentData);
+      sendMessage(id as string, user._id, currentMessageContent, currentReplyTo?._id, messageData.isAnonymous, attachmentData, tempId);
 
       // Mark as sent successfully and clear input
       setMessages(prevMessages => prevMessages.map(msg =>
@@ -554,6 +576,19 @@ export default function ChatScreen() {
     if (!result.canceled) {
       setAttachment(result.assets[0]);
     }
+  };
+
+  // Handle unified media picker selection
+  const handleMediaSelected = async (result: MediaPickerResult) => {
+    if (result.type === 'photo' || result.type === 'video') {
+      // Set the attachment directly
+      setAttachment({
+        uri: result.uri,
+        fileName: result.fileName,
+        type: result.type === 'photo' ? 'image/jpeg' : 'video/mp4',
+      });
+    }
+    // For audio, the recording is handled separately via the recording callbacks
   };
 
   const startRecording = async () => {
@@ -850,7 +885,11 @@ export default function ChatScreen() {
     );
   };
 
-  const handleMediaPreview = (attachmentData: any) => {
+  const handleMediaPreview = (attachmentData: any, resolvedUrl?: string) => {
+    // If a resolved URL is provided, use it as the uri
+    if (resolvedUrl) {
+        attachmentData = { ...attachmentData, uri: resolvedUrl };
+    }
     setSelectedMediaAttachment(attachmentData);
     setShowMediaPreview(true);
   };
@@ -887,7 +926,7 @@ export default function ChatScreen() {
     if (attachment.type && attachment.type.startsWith('image')) {
       const isImageError = imageErrors.get(normalizedUrl) || false;
       return !isImageError ? (
-        <TouchableOpacity onPress={() => handleMediaPreview(attachment)}>
+        <TouchableOpacity onPress={() => handleMediaPreview(attachment, attachmentUrl)}>
           <Image
             key={attachmentUrl}
             source={{ uri: attachmentUrl }}
@@ -909,7 +948,7 @@ export default function ChatScreen() {
       );
     } else if (attachment.type && attachment.type.startsWith('video')) {
       return (
-        <TouchableOpacity onPress={() => handleMediaPreview(attachment)} style={{ position: 'relative' }}>
+        <TouchableOpacity onPress={() => handleMediaPreview(attachment, attachmentUrl)} style={{ position: 'relative' }}>
           <Video
             source={{ uri: attachmentUrl }}
             style={styles.attachmentVideo}
@@ -1117,6 +1156,12 @@ export default function ChatScreen() {
             keyExtractor={(item) => item._id}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            // Performance optimization props
+            initialNumToRender={20}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={true}
           />
 
           {/* Reply Context */}
@@ -1205,9 +1250,12 @@ export default function ChatScreen() {
                 <IconSymbol name="eyeglasses" size={24} color={isAnonymous ? primaryColor : lightTextColor} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity onPress={pickMedia} style={styles.attachmentButton} disabled={isUploading}>
-              <IconSymbol name="paperclip" size={24} color={attachment ? primaryColor : lightTextColor} />
-            </TouchableOpacity>
+            <MediaPickerButton
+              onMediaSelected={handleMediaSelected}
+              icon="add"
+              size={24}
+              disabled={isUploading}
+            />
             <TouchableOpacity
               onPressIn={startRecording}
               onPressOut={stopRecording}

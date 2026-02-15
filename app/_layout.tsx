@@ -9,8 +9,10 @@ import { AppState } from 'react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { CacheProvider } from '@/contexts/CacheContext';
+import { AlertProvider } from '@/contexts/AlertContext';
 import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
+import AlertContainer from '@/components/ui/AlertContainer';
 import { initSocket, disconnectSocket, onVoiceCallOffer, offVoiceCallOffer } from '@/utils/socket';
 import { setupGlobalErrorHandlers, getErrorLog } from '@/utils/global-error-handler';
 import CallService from '@/utils/call-service';
@@ -163,7 +165,10 @@ export default function RootLayout() {
           <CacheProvider>
             <AppThemeProvider>
               <GestureHandlerRootView style={{ flex: 1 }}>
-                <RootLayoutNav />
+                <AlertProvider>
+                  <RootLayoutNav />
+                  <AlertContainer />
+                </AlertProvider>
               </GestureHandlerRootView>
             </AppThemeProvider>
           </CacheProvider>

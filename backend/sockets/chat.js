@@ -27,8 +27,8 @@ module.exports = function (io) {
       console.log(`User ${socket.id} joined chat ${chatId}`);
     });
 
-    // Listen for a new message
-    socket.on('new-message', async ({ chatId, senderId, content, attachment, isAnonymous }) => {
+    // Listen for a new message (via socket - for real-time, but don't save as REST API handles persistence)
+    socket.on('new-message', async ({ chatId, senderId, content, attachment, isAnonymous, tempId }) => {
       try {
         const chat = await Chat.findById(chatId);
         if (!chat) {
@@ -36,24 +36,9 @@ module.exports = function (io) {
           return;
         }
 
-        // Create Message document for database consistency
-        const newMessage = new Message({
-          chat: chatId,
-          sender: senderId,
-          content: content || null,
-          attachment: attachment || null,
-          readBy: [senderId],
-          isAnonymous: isAnonymous || false,
-        });
-
-        await newMessage.save();
-
-        // Update chat's last message info
-        chat.lastMessage = attachment ? `📎 ${attachment.fileName}` : content;
-        chat.lastMessageTime = new Date();
-
-        await chat.save();
-
+        // Don't save here - REST API already saves the message
+        // Just broadcast the message for real-time updates to other users
+        
         // Populate sender info for the message
         let senderData = chat.isAnonymous
           ? { _id: senderId, username: 'Anonymous', profilePhoto: null }
@@ -63,15 +48,23 @@ module.exports = function (io) {
           senderData = { _id: senderId, username: 'Unknown User', profilePhoto: null };
         }
 
-        const populatedMessage = {
-            ...newMessage.toObject(),
-            _id: newMessage._id,
+        // Create a message object for broadcasting (use tempId if provided, otherwise generate one)
+        // This allows the sender to match and replace their temporary message
+        const messageId = tempId || `temp-${Date.now()}`;
+
+        const broadcastMessage = {
+            _id: messageId,
+            chat: chatId,
             sender: senderData,
-            isAnonymous: newMessage.isAnonymous,
+            content: content || null,
+            attachment: attachment || null,
+            isAnonymous: isAnonymous || false,
+            createdAt: new Date().toISOString(),
+            readBy: [senderId],
         };
 
         // Broadcast the new message to all clients in the chat room
-        io.to(chatId).emit('message-received', populatedMessage);
+        io.to(chatId).emit('message-received', broadcastMessage);
         
         // Also send a notification to other participants
         chat.participants.forEach(participantId => {
@@ -79,7 +72,7 @@ module.exports = function (io) {
             if (participantId.toString() !== senderId && participantSocketId) {
                 io.to(participantSocketId).emit('new-notification', {
                     type: 'message',
-                    message: `New message from ${populatedMessage.sender.username}`,
+                    message: `New message from ${senderData.username}`,
                 });
             }
         });

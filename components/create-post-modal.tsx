@@ -14,6 +14,7 @@ import { postAPI, userAPI, getImageUrl } from '@/utils/api';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { MediaPickerButton, MediaPickerResult } from '@/components/media-picker-button';
 import * as Haptics from 'expo-haptics';
 
 interface CreatePostModalProps {
@@ -172,6 +173,18 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
         if (!result.canceled) {
             setMedia([{ uri: result.assets[0].uri, type: 'video' as const }]);
         }
+    };
+
+    // Handle unified media picker selection
+    const handleMediaSelected = (result: MediaPickerResult) => {
+        if (result.type === 'photo') {
+            // For photos, use the existing pickImage flow
+            handlePickImage();
+        } else if (result.type === 'video') {
+            // For videos, use the existing pickVideo flow
+            handlePickVideo();
+        }
+        // Audio is not supported for posts, only for chat
     };
 
     const handlePost = async () => {
@@ -368,18 +381,11 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                 </ScrollView>
 
                 <View style={styles.actions}>
-                    <TouchableOpacity
-                        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handlePickImage(); }}
-                        style={styles.actionButton}
-                        disabled={media.filter(m => m.type === 'image').length >= MAX_IMAGES}
-                    >
-                        <Ionicons name="camera" size={24} color={media.filter(m => m.type === 'image').length >= MAX_IMAGES ? lightTextColor : primaryColor} />
-                        <ThemedText style={{ color: media.filter(m => m.type === 'image').length >= MAX_IMAGES ? lightTextColor : primaryColor }}>Photo</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handlePickVideo(); }} style={styles.actionButton}>
-                        <Ionicons name="videocam" size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>Video</ThemedText>
-                    </TouchableOpacity>
+                    <MediaPickerButton
+                        onMediaSelected={handleMediaSelected}
+                        icon="camera"
+                        size={24}
+                    />
                     <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsPublic(!isPublic); }} style={styles.actionButton}>
                         <Ionicons name={isPublic ? "globe" : "people"} size={24} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor }}>{isPublic ? 'Public' : 'Friends'}</ThemedText>

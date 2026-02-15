@@ -53,8 +53,8 @@ export const leaveChat = (chatId: string) => {
   socket?.emit('leave-chat', { chatId });
 };
 
-export const sendMessage = (chatId: string, senderId: string, content: string, replyTo?: string, isAnonymous?: boolean, attachment?: any) => {
-  socket?.emit('new-message', { chatId, senderId, content, replyTo, isAnonymous, attachment });
+export const sendMessage = (chatId: string, senderId: string, content: string, replyTo?: string, isAnonymous?: boolean, attachment?: any, tempId?: string) => {
+  socket?.emit('new-message', { chatId, senderId, content, replyTo, isAnonymous, attachment, tempId });
 };
 
 export const sendTypingStart = (chatId: string, username: string) => {

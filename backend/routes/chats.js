@@ -479,6 +479,25 @@ router.put('/:chatId/name', auth, async (req, res) => {
   }
 });
 
+// Update group photo (admin only)
+router.put('/:chatId/photo', auth, async (req, res) => {
+  try {
+    const { groupPhoto } = req.body;
+    const chat = await Chat.findById(req.params.chatId);
+
+    if (!chat) return res.status(404).json({ msg: 'Chat not found' });
+    if (!chat.isGroupChat) return res.status(400).json({ msg: 'Not a group chat' });
+    if (chat.admin.toString() !== req.userId) return res.status(403).json({ msg: 'Only admin can change group photo' });
+
+    chat.groupPhoto = groupPhoto;
+    await chat.save();
+
+    res.json(chat);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Invite member to group (admin only) - adds to pending
 router.post('/:chatId/members', auth, async (req, res) => {
   try {

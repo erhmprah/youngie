@@ -1,5 +1,5 @@
-import React from 'react';
-import { Modal, StyleSheet, View, TouchableOpacity, Image, Dimensions, Text, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Modal, StyleSheet, View, TouchableOpacity, Image, Dimensions, Text, Alert, ActivityIndicator } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
@@ -20,6 +20,12 @@ interface MediaPreviewModalProps {
 export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreviewModalProps) {
     const white = useThemeColor('white');
     const insets = useSafeAreaInsets();
+    const [mediaError, setMediaError] = useState(false);
+
+    // Reset error state when attachment or visibility changes
+    useEffect(() => {
+        setMediaError(false);
+    }, [attachment, visible]);
 
     if (!attachment) return null;
 
@@ -36,29 +42,25 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
     const isVideo = parsedAttachment.type?.startsWith('video') || parsedAttachment.type === 'video';
 
     // Handle both uri (composed) and url (sent/received)
-    const rawUri = parsedAttachment.uri || parsedAttachment.url;
-    if (!rawUri) return null;
+    // If uri is already a full URL (http/https), use it directly
+    let uri = parsedAttachment.uri || parsedAttachment.url;
+    if (!uri) return null;
 
     // Normalize path separators for Windows backends
-    const normalizedUrl = rawUri.replace(/\\/g, '/');
+    uri = uri.replace(/\\/g, '/');
 
-    // Check if it's a local file (file:// or content://)
-    const isLocalFile = /^(file|content):/.test(normalizedUrl);
+    // Check if it's already a full URL - if so, use it directly
+    const isFullUrl = /^(http|https):/.test(uri);
 
-    // Check if it's already a full URL (http, https)
-    const isFullUrl = /^(http|https):/.test(normalizedUrl);
-
-    // If it's a local file or full URL, use it directly. Otherwise, use getImageUrl.
-    const uri = (isLocalFile || isFullUrl)
-      ? normalizedUrl
-      : getImageUrl(normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`);
+    // Only run through getImageUrl if it's not already a full URL
+    if (!isFullUrl) {
+        uri = getImageUrl(uri.startsWith('/') ? uri : `/${uri}`);
+    }
 
     console.log('MediaPreviewModal URI debug:', {
-      rawUri,
-      normalizedUrl,
-      isLocalFile,
-      isFullUrl,
+      rawUri: parsedAttachment.uri || parsedAttachment.url,
       finalUri: uri,
+      isFullUrl,
       attachment: parsedAttachment
     });
 
@@ -106,23 +108,39 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
 
                 <View style={styles.mediaContainer}>
                     <View style={styles.mediaWrapper}>
-                        {isVideo ? (
-                            <Video
-                                source={{ uri }}
-                                style={styles.media}
-                                useNativeControls
-                                resizeMode={ResizeMode.CONTAIN}
-                                shouldPlay={false}
-                                key={uri}
-                            />
+                        {mediaError ? (
+                            <View style={styles.errorContainer}>
+                                <IconSymbol name="exclamationmark.triangle" size={48} color={white} />
+                                <ThemedText style={{ color: white, marginTop: 8 }}>Failed to load media</ThemedText>
+                            </View>
                         ) : (
-                            <Image
-                                source={{ uri }}
-                                style={styles.media}
-                                resizeMode="contain"
-                                key={uri}
-                                onError={(e) => console.log('Media load error:', e.nativeEvent.error, uri)}
-                            />
+                            <>
+                                {isVideo ? (
+                                    <Video
+                                        source={{ uri }}
+                                        style={styles.media}
+                                        useNativeControls
+                                        resizeMode={ResizeMode.CONTAIN}
+                                        shouldPlay={false}
+                                        key={uri}
+                                        onError={(e) => {
+                                            console.log('Video load error:', e);
+                                            setMediaError(true);
+                                        }}
+                                    />
+                                ) : (
+                                    <Image
+                                        source={{ uri }}
+                                        style={styles.media}
+                                        resizeMode="contain"
+                                        key={uri}
+                                        onError={(e) => {
+                                            console.log('Media load error:', e.nativeEvent.error, uri);
+                                            setMediaError(true);
+                                        }}
+                                    />
+                                )}
+                            </>
                         )}
                     </View>
                 </View>
@@ -166,7 +184,7 @@ const styles = StyleSheet.create({
         maxHeight: height * 0.8,
     },
     mediaWrapper: {
-        maxWidth: height * 0.7,
+        maxWidth: width * 0.9,
         maxHeight: height * 0.7,
     },
     media: {
@@ -188,6 +206,16 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
         marginBottom: 5,
+    },
+    errorContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: 200,
+    },
+    loadingContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: 200,
     },
     fileSize: {
         color: 'white',
