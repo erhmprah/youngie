@@ -123,6 +123,37 @@ export const userAPI = {
     }
     return response.json();
   },
+  uploadCoverPhoto: async (userId: string, formData: FormData) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/users/${userId}/upload-cover-photo`, {
+      method: 'POST',
+      headers: {
+        'x-auth-token': token || '',
+        'Accept': 'application/json',
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return { data };
+  },
+  uploadCoverPhotoBase64: async (userId: string, data: { imageData: string; filename: string }) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/users/${userId}/upload-cover-photo-base64`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-token': token || '',
+      },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  },
   searchUsers: (query: string) => api.get('/users/search/query', { params: { q: query } }),
   getNearbyUsers: (filters?: any) => api.get('/users/nearby/all', { params: filters }),
   sendFriendRequest: (userId: string, targetUserId: string) =>

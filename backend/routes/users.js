@@ -288,6 +288,7 @@ router.put('/:userId', auth, async (req, res) => {
     if (location !== undefined) user.location = location;
     if (username !== undefined) user.username = username;
     if (isPrivate !== undefined) user.isPrivate = isPrivate;
+    if (coverPhoto !== undefined) user.coverPhoto = coverPhoto;
 
     await user.save();
     res.json(user);
@@ -361,6 +362,75 @@ router.post('/:userId/upload-profile-photo-base64', auth, async (req, res) => {
     res.json({ msg: 'Profile photo uploaded successfully', profilePhoto: user.profilePhoto });
   } catch (error) {
     console.error('❌ Profile photo upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload cover photo
+router.post('/:userId/upload-cover-photo', auth, upload.single('coverPhoto'), async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Authorization check
+    if (user._id.toString() !== req.userId) {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ msg: 'No file uploaded' });
+    }
+
+    user.coverPhoto = `/uploads/cover-photos/${req.file.filename}`;
+    await user.save();
+
+    res.json({ msg: 'Cover photo uploaded successfully', coverPhoto: user.coverPhoto });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload cover photo (base64)
+router.post('/:userId/upload-cover-photo-base64', auth, async (req, res) => {
+  try {
+    const { imageData, filename } = req.body;
+    if (!imageData || !filename) {
+      return res.status(400).json({ msg: 'Image data and filename required' });
+    }
+
+    const user = await User.findById(req.params.userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Authorization check
+    if (user._id.toString() !== req.userId) {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    // Create uploads directory if it doesn't exist
+    const uploadDir = 'uploads/cover-photos/';
+    if (!require('fs').existsSync(uploadDir)) {
+      require('fs').mkdirSync(uploadDir, { recursive: true });
+    }
+
+    // Save base64 image as file
+    const timestamp = Date.now();
+    const filenameSafe = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filepath = `${uploadDir}${timestamp}-${filenameSafe}`;
+    const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    require('fs').writeFileSync(filepath, buffer);
+
+    user.coverPhoto = `/uploads/cover-photos/${timestamp}-${filenameSafe}`;
+    await user.save();
+
+    console.log('✅ Cover photo uploaded (base64):', user.coverPhoto);
+    res.json({ msg: 'Cover photo uploaded successfully', coverPhoto: user.coverPhoto });
+  } catch (error) {
+    console.error('❌ Cover photo upload error:', error);
     res.status(500).json({ error: error.message });
   }
 });

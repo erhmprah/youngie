@@ -11,7 +11,10 @@ interface ImageViewerModalProps {
 }
 
 export function ImageViewerModal({ visible, onClose, imageUrl }: ImageViewerModalProps) {
-    if (!imageUrl) return null;
+    // Don't render if not visible or no image URL
+    if (!visible || !imageUrl) return null;
+
+    console.log('ImageViewerModal rendering with imageUrl:', imageUrl);
 
     return (
         <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
@@ -42,8 +45,8 @@ const styles = StyleSheet.create({
         padding: 10,
     },
     imageContainer: {
-        maxWidth: height * 0.8,
-        maxHeight: height * 0.8,
+        width: width * 0.9,
+        height: height * 0.8,
     },
     image: {
         width: '100%',

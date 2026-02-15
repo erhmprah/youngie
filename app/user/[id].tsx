@@ -20,6 +20,7 @@ interface UserProfile {
   username: string;
   bio?: string;
   profilePhoto?: string;
+  coverPhoto?: string;
   avatar?: string;
   location?: string;
   interests?: string[];
@@ -347,10 +348,24 @@ export default function UserProfileScreen() {
   
           {profile && (
             <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              {/* Cover Photo */}
+              <View style={styles.coverPhotoContainer}>
+                {profile.coverPhoto ? (
+                  <Image source={{ uri: getImageUrl(profile.coverPhoto) }} style={styles.coverPhoto} />
+                ) : (
+                  <LinearGradient colors={[primaryColor + '20', primaryColor + '10']} style={styles.coverPhotoPlaceholder} />
+                )}
+              </View>
+              
               <View style={styles.content}>
                 <View style={styles.profileHeader}>
                   <View style={styles.avatarWrapper}>
-                    <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                    <TouchableOpacity 
+                        onPress={() => setSelectedImage(getImageUrl(profile.profilePhoto) || null)}
+                        activeOpacity={0.8}
+                    >
+                        <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                    </TouchableOpacity>
                   </View>
                   <View style={styles.nameRow}>
                     <ThemedText type="heading2" style={styles.username}>{profile.username}</ThemedText>
@@ -521,13 +536,16 @@ export default function UserProfileScreen() {
 
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  coverPhotoContainer: { width: '100%', height: 180, position: 'relative' },
+  coverPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
+  coverPhotoPlaceholder: { width: '100%', height: '100%' },
   headerBackground: { position: 'absolute', top: 60, left: 0, right: 0, height: 200, zIndex: -1 },
   navHeader: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   backButton: { padding: spacing.xs },
   scrollContent: { flex: 1 },
-  content: { flex: 1, padding: spacing.lg },
-  profileHeader: { alignItems: 'center', marginBottom: spacing.lg },
-  avatarWrapper: { marginBottom: spacing.md },
+  content: { flex: 1, paddingHorizontal: spacing.lg },
+  profileHeader: { alignItems: 'center', marginTop: -60, paddingBottom: spacing.lg },
+  avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
   avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
   username: { fontWeight: 'bold', textAlign: 'center' },

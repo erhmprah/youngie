@@ -17,6 +17,7 @@ interface User {
    interests?: string[];
    avatar?: string;
    profilePhoto?: string;
+   coverPhoto?: string;
    friends?: any[];
    followers?: any[];
    following?: any[];

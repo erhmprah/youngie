@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { notificationAPI, userAPI, communityAPI, chatAPI } from '@/utils/api';
+import { notificationAPI, userAPI, communityAPI, chatAPI, getImageUrl } from '@/utils/api';
 import { getColors, spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -276,7 +276,12 @@ export default function NotificationsScreen() {
             <View style={[styles.avatarContainer, { backgroundColor: colors.surface }]}>
               {item.sender.profilePhoto ? (
                 <Image
-                  source={{ uri: item.sender.profilePhoto }}
+                  source={{ uri: getImageUrl(item.sender.profilePhoto) }}
+                  style={styles.avatar}
+                />
+              ) : item.sender.avatar ? (
+                <Image
+                  source={{ uri: getImageUrl(item.sender.avatar) }}
                   style={styles.avatar}
                 />
               ) : (

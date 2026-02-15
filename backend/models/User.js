@@ -41,6 +41,7 @@ const UserSchema = new mongoose.Schema(
     interests: [String],
     avatar: String,
     profilePhoto: String,
+    coverPhoto: String,
     location: {
       type: String,
       default: 'Nearby',

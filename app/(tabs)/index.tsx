@@ -17,7 +17,9 @@ import { NotificationBell } from '@/components/notification-bell';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { postAPI, storyAPI, getImageUrl } from '@/utils/api';
+import { cachedPostAPI, cachedStoryAPI } from '@/utils/cachedApi';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { getSocket } from '@/utils/socket';
 
@@ -113,14 +115,24 @@ export default function FeedScreen() {
         }
         try {
             const [postsResponse, storiesResponse] = await Promise.all([
-                postAPI.getPosts(isIncognito, page, 20),
-                page === 1 ? storyAPI.getStories() : Promise.resolve({ data: [] }),
+                cachedPostAPI.getPosts(isIncognito, page, 20),
+                page === 1 ? cachedStoryAPI.getStories() : Promise.resolve({ data: [] }),
             ]);
             const postsData = postsResponse.data.posts || postsResponse.data;
             const newPosts = (Array.isArray(postsData) ? postsData : []).filter((p: any) => p && p._id);
             if (page === 1) {
                 setPosts(newPosts);
-                setStories(storiesResponse.data.filter((s: any) => s && s.user && s.user._id));
+                // Calculate allViewed for each story group
+                const storiesWithAllViewed = storiesResponse.data
+                    .filter((s: any) => s && s.user && s.user._id)
+                    .map((group: any) => ({
+                        ...group,
+                        allViewed: group.stories.every((story: any) => {
+                            if (story.author._id === user?._id) return true;
+                            return story.viewers?.some((viewer: any) => viewer.user?._id === user?._id);
+                        })
+                    }));
+                setStories(storiesWithAllViewed);
             } else {
                 setPosts(prev => [...prev, ...newPosts]);
             }
@@ -272,10 +284,10 @@ export default function FeedScreen() {
                     const updatedStories = [...group.stories];
                     const story = updatedStories[storyIndex];
                     
+                    // Always update the story to mark it as viewed
                     const isAlreadyViewed = story.viewers?.some(v => v.user?._id === user?._id);
-
                     if (user && !isAlreadyViewed) {
-                         updatedStories[storyIndex] = {
+                        updatedStories[storyIndex] = {
                             ...story,
                             viewers: [
                                 ...(story.viewers || []),
@@ -292,6 +304,7 @@ export default function FeedScreen() {
                         };
                     }
 
+                    // Recalculate allViewed for the entire group
                     const allViewed = updatedStories.every(s => {
                         if (s.author._id === user?._id) return true;
                         return s.viewers?.some(v => v.user?._id === user?._id);
@@ -471,9 +484,27 @@ export default function FeedScreen() {
                     }}
                     onEndReached={loadMorePosts}
                     onEndReachedThreshold={0.5}
-                    ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={primaryColor} style={{ marginVertical: 20 }} /> : null}
+                    ListFooterComponent={
+                        isLoading ? (
+                            <View style={{ paddingVertical: 20 }}>
+                                <SkeletonCard />
+                                <SkeletonCard />
+                            </View>
+                        ) : loadingMore ? (
+                            <ActivityIndicator size="small" color={primaryColor} style={{ marginVertical: 20 }} />
+                        ) : null
+                    }
                     onViewableItemsChanged={onViewableItemsChanged}
                     viewabilityConfig={viewabilityConfig}
+                    ListEmptyComponent={
+                        isLoading ? (
+                            <View style={{ paddingHorizontal: spacing.lg, paddingTop: 20 }}>
+                                <SkeletonCard />
+                                <SkeletonCard />
+                                <SkeletonCard />
+                            </View>
+                        ) : null
+                    }
                 />
 
                 <TouchableOpacity

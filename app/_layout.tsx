@@ -2,14 +2,17 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppState } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { CacheProvider } from '@/contexts/CacheContext';
 import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
+import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
 import { initSocket, disconnectSocket, onVoiceCallOffer, offVoiceCallOffer } from '@/utils/socket';
+import { setupGlobalErrorHandlers, getErrorLog } from '@/utils/global-error-handler';
 import CallService from '@/utils/call-service';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import AuthLoadingScreen from '@/components/auth-loading-screen';
@@ -138,15 +141,34 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  // Set up global error handlers once on app start
+  const [errorHandlersReady, setErrorHandlersReady] = useState(false);
+  
+  useEffect(() => {
+    // Initialize global error handlers
+    setupGlobalErrorHandlers();
+    setErrorHandlersReady(true);
+    
+    // Log any previous errors on startup
+    const previousErrors = getErrorLog();
+    if (previousErrors.length > 0) {
+      console.log('Previous errors found:', previousErrors.length);
+    }
+  }, []);
+  
   return (
-    <FirebaseErrorBoundary>
-      <AuthProvider>
-        <AppThemeProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <RootLayoutNav />
-          </GestureHandlerRootView>
-        </AppThemeProvider>
-      </AuthProvider>
-    </FirebaseErrorBoundary>
+    <GlobalErrorBoundary>
+      <FirebaseErrorBoundary>
+        <AuthProvider>
+          <CacheProvider>
+            <AppThemeProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <RootLayoutNav />
+              </GestureHandlerRootView>
+            </AppThemeProvider>
+          </CacheProvider>
+        </AuthProvider>
+      </FirebaseErrorBoundary>
+    </GlobalErrorBoundary>
   );
 }

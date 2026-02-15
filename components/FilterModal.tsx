@@ -8,8 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
+  Pressable,
   PanResponder,
   ActivityIndicator,
 } from 'react-native';
@@ -218,19 +217,23 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
       transparent={true}
       onRequestClose={onClose}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-              <View style={[styles.modalContent, { backgroundColor }]}>
-                <View style={styles.header}>
-                  <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>Filters</ThemedText>
-                  <TouchableOpacity onPress={onClose}>
-                    <IconSymbol name="xmark" size={24} color={textColor} />
-                  </TouchableOpacity>
-                </View>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+          <Pressable style={[styles.modalContent, { backgroundColor }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.header}>
+              <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>Filters</ThemedText>
+              <TouchableOpacity onPress={onClose}>
+                <IconSymbol name="xmark" size={24} color={textColor} />
+              </TouchableOpacity>
+            </View>
 
-                <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <ScrollView 
+              contentContainerStyle={styles.scrollContent} 
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+              showsVerticalScrollIndicator={true}
+              scrollEnabled={true}
+            >
                   {/* Age Range */}
                   <View style={styles.section}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm }}>
@@ -345,11 +348,9 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
                     <ThemedText style={{ color: white, fontWeight: 'bold' }}>Apply Filters</ThemedText>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </TouchableWithoutFeedback>
+          </Pressable>
           </KeyboardAvoidingView>
-        </View>
-      </TouchableWithoutFeedback>
+        </Pressable>
     </Modal>
   );
 }

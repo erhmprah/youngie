@@ -14,7 +14,9 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { userAPI, postAPI, chatAPI, getImageUrl } from '@/utils/api';
+import { cachedUserAPI, cachedPostAPI } from '@/utils/cachedApi';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { SkeletonProfile, SkeletonGrid } from '@/components/ui/skeleton';
 import { spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
 import * as Haptics from 'expo-haptics';
@@ -23,6 +25,7 @@ const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState('posts');
+    const [friendRequestTab, setFriendRequestTab] = useState<'friends' | 'sent' | 'received'>('friends');
     const [favoritedPosts, setFavoritedPosts] = useState<any[]>([]);
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [stats, setStats] = useState([
@@ -32,6 +35,8 @@ export default function ProfileScreen() {
     ]);
     const [userPosts, setUserPosts] = useState<any[]>([]);
     const [friends, setFriends] = useState<any[]>([]);
+    const [sentRequests, setSentRequests] = useState<any[]>([]);
+    const [receivedRequests, setReceivedRequests] = useState<any[]>([]);
     const [album, setAlbum] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -51,10 +56,13 @@ export default function ProfileScreen() {
         if (!user?._id) return;
         setLoading(true);
         try {
-            const [statsResponse, postsResponse, albumResponse] = await Promise.all([
-                userAPI.getProfile(user._id),
-                postAPI.getUserPosts(user._id),
+            // Use cached API for profile and posts
+            const [statsResponse, postsResponse, albumResponse, sentRequestsResponse, receivedRequestsResponse] = await Promise.all([
+                cachedUserAPI.getProfile(user._id),
+                cachedPostAPI.getUserPosts(user._id),
                 userAPI.getAlbum(user._id).catch(() => ({ data: [] })),
+                userAPI.getSentFriendRequests().catch(() => ({ data: [] })),
+                userAPI.getIncomingFriendRequests().catch(() => ({ data: [] })),
             ]);
             const userData = statsResponse.data;
             const postsData = Array.isArray(postsResponse.data) ? postsResponse.data : [];
@@ -67,6 +75,8 @@ export default function ProfileScreen() {
             setFriends(userData.friends || []);
             setUserPosts(postsData);
             setAlbum(albumResponse.data || []);
+            setSentRequests(sentRequestsResponse.data || []);
+            setReceivedRequests(receivedRequestsResponse.data || []);
         } catch (error: any) {
             console.error('Error fetching profile data:', error);
             if (error.response?.status === 401) {
@@ -127,18 +137,52 @@ export default function ProfileScreen() {
             const filename = `profile-photo-${Date.now()}.jpg`;
 
             try {
+                console.log('Uploading profile photo...');
                 const response = await userAPI.uploadProfilePhotoBase64(user._id, {
                     imageData: `data:image/jpeg;base64,${base64}`,
                     filename
                 }) as any;
+                console.log('Upload response:', response);
                 if (response.profilePhoto) {
+                    console.log('Profile photo path:', response.profilePhoto);
+                    console.log('Full image URL:', getImageUrl(response.profilePhoto));
                     updateUser({ profilePhoto: response.profilePhoto });
                     Alert.alert('Success', 'Profile photo updated successfully');
                     fetchProfileData();
-                }
-            } catch (error) {
+                }            } catch (error) {
                 console.error('Profile photo upload error:', error);
                 Alert.alert('Error', 'Failed to upload profile photo');
+            }
+        }
+    };
+
+    const handleCoverPhotoUpload = async () => {
+        if (!user?._id) return;
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [2, 1],
+            quality: 0.7,
+        });
+
+        if (!result.canceled) {
+            const uri = result.assets[0].uri;
+            const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+            const filename = `cover-photo-${Date.now()}.jpg`;
+
+            try {
+                const response = await userAPI.uploadCoverPhotoBase64(user._id, {
+                    imageData: `data:image/jpeg;base64,${base64}`,
+                    filename
+                }) as any;
+                if (response.coverPhoto) {
+                    updateUser({ coverPhoto: response.coverPhoto });
+                    Alert.alert('Success', 'Cover photo updated successfully');
+                    fetchProfileData();
+                }
+            } catch (error) {
+                console.error('Cover photo upload error:', error);
+                Alert.alert('Error', 'Failed to upload cover photo');
             }
         }
     };
@@ -267,111 +311,232 @@ export default function ProfileScreen() {
         );
     };
 
-    const renderHeader = () => (
-        <ThemedView style={styles.container}>
-            <LinearGradient colors={[primaryColor + '20', 'transparent']} style={styles.headerBackground} />
-            <View style={styles.headerContent}>
-                <View style={styles.avatarWrapper}>
-                    <TouchableOpacity onPress={handleProfilePhotoUpload}>
-                        <Image source={{ uri: getImageUrl(user?.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
-                        <View style={[styles.editBadge, { backgroundColor: primaryColor, borderColor: white }]}>
-                            <IconSymbol name="camera" size={18} color={white} />
-                        </View>
-                    </TouchableOpacity>
-                </View>
-                <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>{user?.username}</ThemedText>
-                <ThemedText style={{ color: lightTextColor, marginBottom: spacing.md }}>{user?.bio}</ThemedText>
+    const handleCancelRequest = async (requestId: string, username: string) => {
+        if (!user?._id) return;
 
-                <View style={styles.profileDetails}>
-                    {user?.location && user.location.trim() && (
-                        <View style={styles.detailRow}>
-                            <IconSymbol name="location" size={16} color={lightTextColor} />
-                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.location}</ThemedText>
-                        </View>
-                    )}
-                    {user?.gender && (
-                        <View style={styles.detailRow}>
-                            <IconSymbol name="person.fill" size={16} color={lightTextColor} />
-                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2, textTransform: 'capitalize' }}>{user.gender}</ThemedText>
-                        </View>
-                    )}
-                    {user?.birthYear && (
-                        <View style={styles.detailRow}>
-                            <IconSymbol name="calendar" size={16} color={lightTextColor} />
-                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{new Date().getFullYear() - user.birthYear} years old</ThemedText>
-                        </View>
-                    )}
-                    {user?.interests && user.interests.length > 0 && (
-                        <View style={styles.detailRow}>
-                            <IconSymbol name="star.fill" size={16} color={lightTextColor} />
-                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.interests.join(', ')}</ThemedText>
-                        </View>
-                    )}
-                </View>
+        Alert.alert(
+            'Cancel Request',
+            `Are you sure you want to cancel your friend request to ${username}?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Cancel Request',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await userAPI.cancelFriendRequest(user._id, requestId);
+                            setSentRequests(prev => prev.filter(r => r._id !== requestId));
+                            Alert.alert('Success', 'Friend request cancelled');
+                        } catch (error) {
+                            console.error('Error canceling request:', error);
+                            Alert.alert('Error', 'Failed to cancel friend request');
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
-                <View style={[styles.statsBar, { backgroundColor: cardBackgroundColor, borderColor }]}>
-                    {stats.map((stat, i) => (
-                        <View key={i} style={[styles.statBox, i !== stats.length - 1 && { borderRightColor: borderColor }]}>
-                            <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stat.value}</ThemedText>
-                            <ThemedText style={{ color: lightTextColor }}>{stat.label}</ThemedText>
-                        </View>
-                    ))}
-                </View>
+    const handleAcceptRequest = async (requestId: string, username: string) => {
+        if (!user?._id) return;
 
-                <View style={styles.actionRow}>
-                    {activeTab === 'album' ? (
-                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleAddPhotoToAlbum(); }}>
-                            <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Add Photo</ThemedText>
-                        </TouchableOpacity>
+        try {
+            await userAPI.acceptFriendRequest(user._id, requestId);
+            setReceivedRequests(prev => prev.filter(r => r._id !== requestId));
+            setFriends(prev => [...prev, { _id: requestId, username, profilePhoto: null }]);
+            setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(parseInt(s.value) + 1) } : s));
+            Alert.alert('Success', `You are now friends with ${username}`);
+        } catch (error) {
+            console.error('Error accepting request:', error);
+            Alert.alert('Error', 'Failed to accept friend request');
+        }
+    };
+
+    const handleDeclineRequest = async (requestId: string, username: string) => {
+        if (!user?._id) return;
+
+        Alert.alert(
+            'Decline Request',
+            `Are you sure you want to decline the friend request from ${username}?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Decline',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await userAPI.ignoreFriendRequest(user._id, requestId);
+                            setReceivedRequests(prev => prev.filter(r => r._id !== requestId));
+                            Alert.alert('Success', 'Friend request declined');
+                        } catch (error) {
+                            console.error('Error declining request:', error);
+                            Alert.alert('Error', 'Failed to decline friend request');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const renderHeader = () => {
+        console.log('User profilePhoto:', user?.profilePhoto);
+        console.log('Full profile photo URL:', getImageUrl(user?.profilePhoto));
+        return (
+            <ThemedView style={styles.container}>
+                <View style={styles.coverPhotoContainer}>
+                    {user?.coverPhoto ? (
+                        <Image source={{ uri: getImageUrl(user.coverPhoto) }} style={styles.coverPhoto} />
                     ) : (
-                        <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsEditModalVisible(true); }}>
-                            <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Edit Profile</ThemedText>
-                        </TouchableOpacity>
+                        <LinearGradient colors={[primaryColor + '20', primaryColor + '10']} style={styles.coverPhotoPlaceholder} />
                     )}
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/chat/favorites'); }}>
-                        <IconSymbol name="heart.fill" size={20} color={textColor} />
+                    <TouchableOpacity style={styles.coverPhotoEditButton} onPress={handleCoverPhotoUpload}>
+                        <IconSymbol name="camera" size={20} color={white} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}>
-                        <IconSymbol name="settings" size={20} color={textColor} />
+                    
+                    {/* Profile Photo Overlapping Cover Photo */}
+                    <View style={styles.avatarWrapperAbsolute}>
+                        <TouchableOpacity 
+                            onPress={() => {
+                                const profilePhotoUrl: string | null = user?.profilePhoto ? getImageUrl(user.profilePhoto) ?? null : null;
+                                console.log('Selected image URL:', profilePhotoUrl);
+                                setSelectedImage(profilePhotoUrl);
+                            }}
+                            onLongPress={handleProfilePhotoUpload}
+                            delayLongPress={500}
+                        >
+                            <Image source={{ uri: getImageUrl(user?.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
+                            <View style={[styles.editBadge, { backgroundColor: primaryColor, borderColor: white }]}>
+                                <IconSymbol name="camera" size={18} color={white} />
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+                
+                <View style={styles.headerContent}>
+                    <ThemedText type="heading2" style={{ fontFamily: typography.families.bold }}>{user?.username}</ThemedText>
+                    <ThemedText style={{ color: lightTextColor, marginBottom: spacing.md }}>{user?.bio}</ThemedText>
+
+                    <View style={styles.profileDetails}>
+                        {user?.location && user.location.trim() && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="location" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.location}</ThemedText>
+                            </View>
+                        )}
+                        {user?.gender && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="person.fill" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2, textTransform: 'capitalize' }}>{user.gender}</ThemedText>
+                            </View>
+                        )}
+                        {user?.birthYear && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="calendar" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{new Date().getFullYear() - user.birthYear} years old</ThemedText>
+                            </View>
+                        )}
+                        {user?.interests && user.interests.length > 0 && (
+                            <View style={styles.detailRow}>
+                                <IconSymbol name="star.fill" size={16} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.interests.join(', ')}</ThemedText>
+                            </View>
+                        )}
+                    </View>
+
+                    <View style={[styles.statsBar, { backgroundColor: cardBackgroundColor, borderColor }]}>
+                        {stats.map((stat, i) => (
+                            <View key={i} style={[styles.statBox, i !== stats.length - 1 && { borderRightColor: borderColor }]}>
+                                <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{stat.value}</ThemedText>
+                                <ThemedText style={{ color: lightTextColor }}>{stat.label}</ThemedText>
+                            </View>
+                        ))}
+                    </View>
+
+                    <View style={styles.actionRow}>
+                        {activeTab === 'album' ? (
+                            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleAddPhotoToAlbum(); }}>
+                                <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Add Photo</ThemedText>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsEditModalVisible(true); }}>
+                                <ThemedText style={{ color: white, fontFamily: typography.families.bold }}>Edit Profile</ThemedText>
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/chat/favorites'); }}>
+                            <IconSymbol name="heart.fill" size={20} color={textColor} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}>
+                            <IconSymbol name="settings" size={20} color={textColor} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); logout(); }}>
+                            <IconSymbol name="logout" size={20} color={textColor} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Tabs */}
+                <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
+                        onPress={() => { Haptics.selectionAsync(); setActiveTab('posts'); }}
+                    >
+                        <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); logout(); }}>
-                        <IconSymbol name="logout" size={20} color={textColor} />
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'friends' && { borderBottomColor: primaryColor }]}
+                        onPress={() => { Haptics.selectionAsync(); setActiveTab('friends'); }}
+                    >
+                        <IconSymbol name="person.2.fill" size={20} color={activeTab === 'friends' ? primaryColor : lightTextColor} />
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'friends' ? primaryColor : lightTextColor }]}>Friends</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
+                        onPress={() => { Haptics.selectionAsync(); setActiveTab('album'); }}
+                    >
+                        <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
+                        <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
                     </TouchableOpacity>
                 </View>
-            </View>
 
-            {/* Tabs */}
-            <View style={[styles.tabsContainer, { borderBottomColor: borderColor }]}>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'posts' && { borderBottomColor: primaryColor }]}
-                    onPress={() => { Haptics.selectionAsync(); setActiveTab('posts'); }}
-                >
-                    <IconSymbol name="grid" size={20} color={activeTab === 'posts' ? primaryColor : lightTextColor} />
-                    <ThemedText style={[styles.tabText, { color: activeTab === 'posts' ? primaryColor : lightTextColor }]}>Posts</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'friends' && { borderBottomColor: primaryColor }]}
-                    onPress={() => { Haptics.selectionAsync(); setActiveTab('friends'); }}
-                >
-                    <IconSymbol name="person.2.fill" size={20} color={activeTab === 'friends' ? primaryColor : lightTextColor} />
-                    <ThemedText style={[styles.tabText, { color: activeTab === 'friends' ? primaryColor : lightTextColor }]}>Friends</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'album' && { borderBottomColor: primaryColor }]}
-                    onPress={() => { Haptics.selectionAsync(); setActiveTab('album'); }}
-                >
-                    <IconSymbol name="photo.fill" size={20} color={activeTab === 'album' ? primaryColor : lightTextColor} />
-                    <ThemedText style={[styles.tabText, { color: activeTab === 'album' ? primaryColor : lightTextColor }]}>Album</ThemedText>
-                </TouchableOpacity>
-            </View>
-        </ThemedView>
-    );
+                {/* Friend Request Sub-tabs */}
+                {activeTab === 'friends' && (
+                    <View style={[styles.friendSubTabs, { borderBottomColor: borderColor }]}>
+                        <TouchableOpacity
+                            style={[styles.subTab, friendRequestTab === 'friends' && { borderBottomColor: primaryColor }]}
+                            onPress={() => { Haptics.selectionAsync(); setFriendRequestTab('friends'); }}
+                        >
+                            <ThemedText style={[styles.subTabText, { color: friendRequestTab === 'friends' ? primaryColor : lightTextColor }]}>Friends ({friends.length})</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.subTab, friendRequestTab === 'sent' && { borderBottomColor: primaryColor }]}
+                            onPress={() => { Haptics.selectionAsync(); setFriendRequestTab('sent'); }}
+                        >
+                            <ThemedText style={[styles.subTabText, { color: friendRequestTab === 'sent' ? primaryColor : lightTextColor }]}>Sent ({sentRequests.length})</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.subTab, friendRequestTab === 'received' && { borderBottomColor: primaryColor }]}
+                            onPress={() => { Haptics.selectionAsync(); setFriendRequestTab('received'); }}
+                        >
+                            <ThemedText style={[styles.subTabText, { color: friendRequestTab === 'received' ? primaryColor : lightTextColor }]}>Received ({receivedRequests.length})</ThemedText>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </ThemedView>
+        );
+    };
 
     const getData = () => {
         if (activeTab === 'posts') {
             return userPosts.length > 0 ? userPosts : [{ type: 'empty' }];
         } else if (activeTab === 'friends') {
-            return friends.length > 0 ? friends : [{ type: 'empty' }];
+            if (friendRequestTab === 'friends') {
+                return friends.length > 0 ? friends : [{ type: 'empty' }];
+            } else if (friendRequestTab === 'sent') {
+                return sentRequests.length > 0 ? sentRequests : [{ type: 'empty' }];
+            } else {
+                return receivedRequests.length > 0 ? receivedRequests : [{ type: 'empty' }];
+            }
         } else {
             return album.length > 0 ? album : [{ type: 'empty' }];
         }
@@ -388,13 +553,31 @@ export default function ProfileScreen() {
                     </View>
                 );
             } else if (activeTab === 'friends') {
-                return (
-                    <View style={styles.emptyContainer}>
-                        <IconSymbol name="person.2" size={48} color={lightTextColor} />
-                        <ThemedText style={[styles.emptyText, { color: textColor }]}>No friends yet</ThemedText>
-                        <ThemedText style={[styles.emptySubtext, { color: lightTextColor }]}>Start connecting with people!</ThemedText>
-                    </View>
-                );
+                if (friendRequestTab === 'friends') {
+                    return (
+                        <View style={styles.emptyContainer}>
+                            <IconSymbol name="person.2" size={48} color={lightTextColor} />
+                            <ThemedText style={[styles.emptyText, { color: textColor }]}>No friends yet</ThemedText>
+                            <ThemedText style={[styles.emptySubtext, { color: lightTextColor }]}>Start connecting with people!</ThemedText>
+                        </View>
+                    );
+                } else if (friendRequestTab === 'sent') {
+                    return (
+                        <View style={styles.emptyContainer}>
+                            <IconSymbol name="paperplane" size={48} color={lightTextColor} />
+                            <ThemedText style={[styles.emptyText, { color: textColor }]}>No sent requests</ThemedText>
+                            <ThemedText style={[styles.emptySubtext, { color: lightTextColor }]}>Send friend requests to connect!</ThemedText>
+                        </View>
+                    );
+                } else {
+                    return (
+                        <View style={styles.emptyContainer}>
+                            <IconSymbol name="person.badge.plus" size={48} color={lightTextColor} />
+                            <ThemedText style={[styles.emptyText, { color: textColor }]}>No received requests</ThemedText>
+                            <ThemedText style={[styles.emptySubtext, { color: lightTextColor }]}>When someone sends you a request, it will appear here!</ThemedText>
+                        </View>
+                    );
+                }
             } else {
                 return (
                     <View style={styles.emptyContainer}>
@@ -427,6 +610,63 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
             );
         } else if (activeTab === 'friends') {
+            // Handle sent requests
+            if (friendRequestTab === 'sent') {
+                return (
+                    <View style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}>
+                        {item.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
+                        ) : (
+                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: borderColor }]}>
+                                <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                            </View>
+                        )}
+                        <View style={styles.friendInfo}>
+                            <ThemedText style={{ fontFamily: typography.families.bold, fontSize: typography.sizes.body1 }}>{item.username}</ThemedText>
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Request sent</ThemedText>
+                        </View>
+                        <TouchableOpacity 
+                            style={[styles.cancelBtn, { backgroundColor: errorColor || '#FF3B30' }]} 
+                            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleCancelRequest(item._id || item.recipient?._id || item.recipient, item.username || item.recipient?.username || 'User'); }}
+                        >
+                            <ThemedText style={{ color: white, fontSize: typography.sizes.caption, fontFamily: typography.families.medium }}>Cancel</ThemedText>
+                        </TouchableOpacity>
+                    </View>
+                );
+            }
+            // Handle received requests
+            if (friendRequestTab === 'received') {
+                return (
+                    <View style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}>
+                        {item.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
+                        ) : (
+                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: borderColor }]}>
+                                <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                            </View>
+                        )}
+                        <View style={styles.friendInfo}>
+                            <ThemedText style={{ fontFamily: typography.families.bold, fontSize: typography.sizes.body1 }}>{item.username || item.sender?.username || 'User'}</ThemedText>
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Wants to connect</ThemedText>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                            <TouchableOpacity 
+                                style={[styles.acceptBtn, { backgroundColor: primaryColor }]} 
+                                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleAcceptRequest(item._id || item.sender?._id || item.sender, item.username || item.sender?.username || 'User'); }}
+                            >
+                                <IconSymbol name="checkmark" size={18} color={white} />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.declineBtn, { backgroundColor: errorColor || '#FF3B30' }]} 
+                                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleDeclineRequest(item._id || item.sender?._id || item.sender, item.username || item.sender?.username || 'User'); }}
+                            >
+                                <IconSymbol name="xmark" size={18} color={white} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                );
+            }
+            // Handle friends list
             return (
                 <TouchableOpacity 
                     style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}
@@ -461,7 +701,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity 
                     style={[styles.postItem, { borderColor }]} 
                     onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleDeleteAlbumPhoto(item._id); }}
-                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedImage(getImageUrl(item.image) || null); }}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedImage(getImageUrl(item.image) ?? null); }}
                 >
                     <Image source={{ uri: getImageUrl(item.image) }} style={styles.postThumbnail} />
                 </TouchableOpacity>
@@ -471,16 +711,25 @@ export default function ProfileScreen() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor }}>
-            <FlatList
-                data={getData()}
-                renderItem={renderItem}
-                keyExtractor={(item, index) => item._id || `empty-${index}`}
-                ListHeaderComponent={renderHeader}
-                key={activeTab}
-                numColumns={activeTab === 'friends' ? 1 : 3}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={activeTab === 'posts' ? styles.postsGrid : styles.friendsList}
-            />
+            {loading ? (
+                <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+                    <SkeletonProfile />
+                    <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+                        <SkeletonGrid columns={3} rows={4} itemHeight={100} />
+                    </View>
+                </ScrollView>
+            ) : (
+                <FlatList
+                    data={getData()}
+                    renderItem={renderItem}
+                    keyExtractor={(item, index) => item._id || `empty-${index}`}
+                    ListHeaderComponent={renderHeader}
+                    key={activeTab}
+                    numColumns={activeTab === 'friends' ? 1 : 3}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={activeTab === 'posts' ? styles.postsGrid : styles.friendsList}
+                />
+            )}
             <EditProfileModal visible={isEditModalVisible} onClose={() => setIsEditModalVisible(false)} onSave={handleEditProfile} initialData={user} />
             <ImageViewerModal visible={!!selectedImage} onClose={() => setSelectedImage(null)} imageUrl={selectedImage} />
         </SafeAreaView>
@@ -489,8 +738,19 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
+    coverPhotoContainer: { width: '100%', height: 180, position: 'relative' },
+    coverPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
+    avatarWrapperAbsolute: { 
+        position: 'absolute', 
+        bottom: -60, 
+        left: '50%', 
+        transform: [{ translateX: -60 }], 
+        ...shadows.lg 
+    },
+    coverPhotoPlaceholder: { width: '100%', height: '100%' },
+    coverPhotoEditButton: { position: 'absolute', bottom: 16, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
     headerBackground: { position: 'absolute', top: 0, left: 0, right: 0, height: 200 },
-    headerContent: { alignItems: 'center', paddingTop: 40, paddingHorizontal: spacing.xl },
+    headerContent: { alignItems: 'center', paddingTop: 60, paddingHorizontal: spacing.xl },
     avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
     avatarImage: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
     editBadge: { position: 'absolute', bottom: 5, right: 5, width: 32, height: 32, borderRadius: 16, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
@@ -504,6 +764,9 @@ const styles = StyleSheet.create({
     tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: spacing.md },
     tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent', gap: spacing.sm },
     tabText: { fontSize: typography.sizes.body2, fontFamily: typography.families.medium },
+    friendSubTabs: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: spacing.sm, marginHorizontal: spacing.md },
+    subTab: { flex: 1, paddingVertical: spacing.sm, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    subTabText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
     postsGrid: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
     postItem: { flex: 1/3, aspectRatio: 1, margin: 1, borderRadius: borderRadius.sm, overflow: 'hidden', borderWidth: 1 },
     postThumbnail: { width: '100%', height: '100%' },
@@ -517,6 +780,9 @@ const styles = StyleSheet.create({
     friendAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: spacing.md },
     friendInfo: { flex: 1 },
     messageBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+    cancelBtn: { paddingHorizontal: spacing.md, height: 36, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+    acceptBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+    declineBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 50 },
     emptyText: { marginTop: spacing.md, fontSize: typography.sizes.title, fontFamily: typography.families.bold },
     emptySubtext: { marginTop: spacing.xs, fontSize: typography.sizes.body2, textAlign: 'center', opacity: 0.6 },

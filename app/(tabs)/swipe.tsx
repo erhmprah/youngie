@@ -50,6 +50,7 @@ export default function SwipeScreen() {
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [viewMode, setViewMode] = useState<'swipe' | 'grid'>('swipe');
+    const [swipeHistory, setSwipeHistory] = useState<any[]>([]);
 
     const pan = useRef(new Animated.ValueXY()).current;
 
@@ -164,6 +165,12 @@ export default function SwipeScreen() {
             pan.setValue({ x: 0, y: 0 });
 
             setCurrentImageIndex(0); // Reset image index when swiping
+            
+            // Add to swipe history
+            if (currentProfile) {
+                setSwipeHistory(prev => [...prev, currentProfile]);
+            }
+            
             if (direction === 'right' && currentProfile && user?._id) {
                 try {
                     await userAPI.sendFriendRequest(user._id, currentProfile._id);
@@ -247,6 +254,30 @@ export default function SwipeScreen() {
                     console.error('Error during logout:', logoutErr);
                 }
             }
+        }
+    };
+
+    const undoLastSwipe = () => {
+        if (swipeHistory.length === 0) {
+            return;
+        }
+
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        const lastSwipedProfile = swipeHistory[swipeHistory.length - 1];
+        
+        // Remove from history
+        setSwipeHistory(prev => prev.slice(0, -1));
+        
+        // Insert the profile back into the profiles array at the current index
+        setProfiles(prev => {
+            const newProfiles = [...prev];
+            newProfiles.splice(currentIndex, 0, lastSwipedProfile);
+            return newProfiles;
+        });
+        
+        // Decrement current index to show the undo profile
+        if (currentIndex > 0) {
+            setCurrentIndex(prev => prev - 1);
         }
     };
 
@@ -395,6 +426,14 @@ export default function SwipeScreen() {
                             </View>
 
                             <View style={styles.footer}>
+                                <TouchableOpacity
+                                    style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }, swipeHistory.length === 0 && { opacity: 0.5 }]}
+                                    onPress={undoLastSwipe}
+                                    disabled={swipeHistory.length === 0}
+                                >
+                                    <IconSymbol name="arrow.uturn.backward" size={30} color={primaryColor} />
+                                </TouchableOpacity>
+
                                 <TouchableOpacity
                                     style={[styles.roundButton, { backgroundColor: surfaceColor, borderColor }]}
                                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); completeSwipe('left'); }}
