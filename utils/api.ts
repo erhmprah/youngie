@@ -86,7 +86,14 @@ export const authAPI = {
   getCurrentUser: () => api.get('/auth/me'),
   checkUsername: (username: string) => api.get(`/auth/check-username/${username}`),
   checkEmail: (email: string) => api.get(`/auth/check-email/${email}`),
+  checkGoogleUser: (email: string) => api.get(`/auth/google-user/${email}`),
   checkConnection: () => axios.get(`${BASE_URL}/health`),
+  // Password reset
+  forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token: string, newPassword: string) => 
+    api.post('/auth/reset-password', { token, newPassword }),
+  setPassword: (email: string, newPassword: string) =>
+    api.post('/auth/set-password', { email, newPassword }),
 };
 
 export const userAPI = {

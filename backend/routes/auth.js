@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
@@ -322,7 +323,7 @@ router.get('/check-email/:email', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (user) {
-      return res.json({ available: false, msg: 'Email is already registered' });
+      return res.json({ available: false, msg: 'Email is already registered', isGoogleUser: !!user.firebaseUid });
     }
 
     res.json({ available: true });
@@ -332,6 +333,152 @@ router.get('/check-email/:email', async (req, res) => {
   }
 });
 
+// Check if email is a Google user
+router.get('/google-user/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.json({ isGoogleUser: false, msg: 'No account found with this email' });
+    }
+
+    // Check if user has firebaseUid (Google user)
+    if (user.firebaseUid) {
+      return res.json({ isGoogleUser: true, msg: 'This account was created with Google' });
+    }
+
+    res.json({ isGoogleUser: false, msg: 'This account uses email and password' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Forgot Password - Send reset email
+router.post('/forgot-password', [
+  body('email').isEmail().normalizeEmail(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    // Always return success to prevent email enumeration
+    // This is a security best practice
+    if (!user) {
+      return res.json({ msg: 'If an account exists with this email, a password reset link has been sent.' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = Date.now() + 3600000; // 1 hour from now
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = resetTokenExpiry;
+    await user.save();
+
+    // In production, you would send an email with the reset link
+    // For now, we'll return the token in the response (for development only)
+    // In production, use a proper email service like SendGrid, Nodemailer, etc.
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    if (isProduction) {
+      // In production, send email with reset link
+      // TODO: Implement email sending
+      console.log('Password reset token (production):', resetToken);
+      console.log('Reset link would be sent to:', email);
+    }
+
+    // For development, return the reset token in the response
+    res.json({ 
+      msg: 'If an account exists with this email, a password reset link has been sent.',
+      resetToken: isProduction ? undefined : resetToken // Only return token in development
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset Password
+router.post('/reset-password', [
+  body('token').notEmpty(),
+  body('newPassword').isLength({ min: 6 }),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { token, newPassword } = req.body;
+
+    // Find user with valid reset token that hasn't expired
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid or expired reset token' });
+    }
+
+    // Update password
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ msg: 'Password has been reset successfully' });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Set Password (for Google users who want to add a password)
+router.post('/set-password', [
+  body('email').isEmail().normalizeEmail(),
+  body('newPassword').isLength({ min: 6 }),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, newPassword } = req.body;
+
+    // Find user by email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Check if user has a firebaseUid (Google user)
+    if (!user.firebaseUid) {
+      return res.status(400).json({ msg: 'This account was not created with Google. Please use the forgot password option.' });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ msg: 'Password has been set successfully' });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 
 module.exports = router;
