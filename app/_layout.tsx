@@ -18,6 +18,8 @@ import { setupGlobalErrorHandlers, getErrorLog } from '@/utils/global-error-hand
 import CallService from '@/utils/call-service';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import AuthLoadingScreen from '@/components/auth-loading-screen';
+import { supabase } from '@/utils/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Conditionally import expo-notifications
 let Notifications: any = null;
@@ -32,6 +34,8 @@ function RootLayoutNav() {
   const { theme } = useTheme();
   const router = useRouter();
   const primaryColor = useThemeColor('primary');
+  const [hasSupabaseSession, setHasSupabaseSession] = useState(false);
+  const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
 
   const navigationTheme = useMemo(() => {
     const baseTheme = theme === 'dark' ? DarkTheme : DefaultTheme;
@@ -104,16 +108,60 @@ function RootLayoutNav() {
 
 
   useEffect(() => {
-    if (isLoading) return;
+    // Check Supabase session on app start
+    const checkSupabaseSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setHasSupabaseSession(!!session);
+        
+        // If there's a Supabase session but no MongoDB token, check if profile is complete
+        if (session) {
+          const mongoToken = await AsyncStorage.getItem('authToken');
+          if (!mongoToken) {
+            // User has Supabase session but no MongoDB - needs to complete profile
+            setHasSupabaseSession(true);
+          }
+        }
+      } catch (error) {
+        console.warn('Error checking Supabase session:', error);
+      } finally {
+        setIsCheckingSupabase(false);
+      }
+    };
+    
+    checkSupabaseSession();
+    
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setHasSupabaseSession(!!session);
+      
+      // If user just logged in to Supabase but not MongoDB
+      if (session) {
+        const mongoToken = await AsyncStorage.getItem('authToken');
+        if (!mongoToken) {
+          // Navigate to complete profile
+          router.replace('/complete-profile');
+        }
+      }
+    });
+    
+    return () => subscription.unsubscribe();
+  }, [router]);
 
-    if (isSignedIn) {
+  useEffect(() => {
+    if (isLoading || isCheckingSupabase) return;
+
+    // If user has Supabase session but no MongoDB session, go to complete-profile
+    if (hasSupabaseSession && !isSignedIn) {
+      router.replace('/complete-profile');
+    } else if (isSignedIn) {
       router.replace('/(tabs)');
     } else {
       router.replace('/login');
     }
-  }, [isLoading, isSignedIn, user, router]);
+  }, [isLoading, isCheckingSupabase, hasSupabaseSession, isSignedIn, user, router]);
 
-  if (isLoading) {
+  if (isLoading || isCheckingSupabase) {
     return <AuthLoadingScreen />;
   }
 
@@ -123,6 +171,7 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />
+        <Stack.Screen name="complete-profile" options={{ headerShown: false }} />
         <Stack.Screen name="verify-email" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="muted-users" options={{ title: 'Muted Users' }} />

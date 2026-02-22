@@ -230,3 +230,91 @@ export const signOut = async () => {
     throw error;
   }
 };
+
+// ============================================
+// EMAIL/PASSWORD AUTHENTICATION
+// ============================================
+
+// Sign up with email and password
+export const signUpWithEmail = async (
+  email: string,
+  password: string,
+  options?: {
+    emailRedirectTo?: string;
+    data?: Record<string, any>;
+  }
+): Promise<{ data: { session: Session | null; user: any }; error: Error | null }> => {
+  try {
+    const redirectTo = options?.emailRedirectTo || 'youngie://auth/callback';
+    
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectTo,
+        data: options?.data,
+      },
+    });
+
+    if (error) throw error;
+    
+    return { data: { session: data.session, user: data.user }, error: null };
+  } catch (error: any) {
+    console.error('Sign Up Error:', error);
+    return { data: { session: null, user: null }, error };
+  }
+};
+
+// Sign in with email and password
+export const signInWithEmail = async (
+  email: string,
+  password: string
+): Promise<{ data: { session: Session | null; user: any }; error: Error | null }> => {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) throw error;
+    
+    return { data: { session: data.session, user: data.user }, error: null };
+  } catch (error: any) {
+    console.error('Sign In Error:', error);
+    return { data: { session: null, user: null }, error };
+  }
+};
+
+// Reset password (send reset email)
+export const resetPassword = async (email: string): Promise<{ error: Error | null }> => {
+  try {
+    const redirectTo = 'youngie://reset-password';
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+
+    if (error) throw error;
+    
+    return { error: null };
+  } catch (error: any) {
+    console.error('Reset Password Error:', error);
+    return { error };
+  }
+};
+
+// Update password (when user has a valid session)
+export const updatePassword = async (newPassword: string): Promise<{ error: Error | null }> => {
+  try {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) throw error;
+    
+    return { error: null };
+  } catch (error: any) {
+    console.error('Update Password Error:', error);
+    return { error };
+  }
+};

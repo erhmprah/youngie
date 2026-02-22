@@ -19,11 +19,16 @@ const UserSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: function() { return !this.firebaseUid; },
+      required: function() { return !this.firebaseUid && !this.supabaseUserId; },
       minlength: 6,
       select: false,
     },
     firebaseUid: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    supabaseUserId: {
       type: String,
       unique: true,
       sparse: true,
@@ -183,6 +188,7 @@ UserSchema.methods.comparePassword = async function (password) {
 UserSchema.index({ username: 1 });
 UserSchema.index({ email: 1 });
 UserSchema.index({ firebaseUid: 1 });
+UserSchema.index({ supabaseUserId: 1 });
 UserSchema.index({ suspended: 1, isActive: 1 });
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ followers: 1 });

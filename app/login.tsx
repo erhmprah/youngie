@@ -1,26 +1,22 @@
 // app/login.tsx
 
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import GoogleSignInButton from '@/components/google-signin-button';
-import { signInWithGoogle, getSession, handleOAuthCallback, supabase } from '@/utils/supabase';
+import { signInWithEmail } from '@/utils/supabase';
 
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { login, isLoading } = useAuth();
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -30,168 +26,43 @@ export default function LoginScreen() {
   const inputBorderColor = useThemeColor('inputBorder');
   const white = useThemeColor('white');
 
-  // Listen for deep links to handle OAuth callback
-  useEffect(() => {
-    const handleDeepLink = async (event: { url: string }) => {
-      const { url } = event;
-      console.log('Deep link received:', url);
-      
-      // Handle custom callback URL scheme (youngie://auth/callback)
-      if (url.includes('youngie://auth/callback') || url.includes('auth/callback')) {
-        try {
-          const session = await handleOAuthCallback(url);
-          if (session) {
-            // Get user data and navigate to signup with pre-filled data
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user?.email) {
-              router.push({
-                pathname: '/signup',
-                params: {
-                  email: user.email,
-                  name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-                  photo: user.user_metadata?.avatar_url || user.user_metadata?.picture || '',
-                },
-              });
-            }
-          }
-        } catch (error) {
-          console.error('OAuth callback error:', error);
-          Alert.alert('Authentication Error', 'Failed to complete Google sign-in. Please try again.');
-        } finally {
-          setGoogleLoading(false);
-        }
-      }
-      
-      // Handle Supabase callback URLs (legacy support)
-      if (url.includes('supabase.co/auth/v1/callback')) {
-        try {
-          const session = await handleOAuthCallback(url);
-          if (session) {
-            // Get user data and navigate to signup with pre-filled data
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user?.email) {
-              router.push({
-                pathname: '/signup',
-                params: {
-                  email: user.email,
-                  name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-                  photo: user.user_metadata?.avatar_url || user.user_metadata?.picture || '',
-                },
-              });
-            }
-          }
-        } catch (error) {
-          console.error('OAuth callback error:', error);
-          Alert.alert('Authentication Error', 'Failed to complete Google sign-in. Please try again.');
-        } finally {
-          setGoogleLoading(false);
-        }
-      }
-    };
-
-    // Add listener for deep links
-    const subscription = Linking.addEventListener('url', handleDeepLink);
-    
-    // Check if app was opened with a deep link
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        handleDeepLink({ url });
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [router]);
-
-  // Also listen for auth state changes - this is the primary way to handle OAuth
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.email) {
-          router.push({
-            pathname: '/signup',
-            params: {
-              email: user.email,
-              name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-              photo: user.user_metadata?.avatar_url || user.user_metadata?.picture || '',
-            },
-          });
-        }
-        setGoogleLoading(false);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [router]);
-
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
+    setIsLoading(true);
     try {
-      await login(email, password);
-      router.replace('/(tabs)');
-    } catch (error: any) {
-      Alert.alert('Login Failed', error.toString());
-    }
-  };
+      // Sign in with Supabase
+      const { data, error } = await signInWithEmail(email, password);
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    try {
-      // Sign in with Google using Supabase
-      const result = await signInWithGoogle();
-      
-      if (result?.error) {
-        Alert.alert('Sign-in Failed', 'An error occurred while signing in with Google.');
-        setGoogleLoading(false);
-        return;
+      if (error) {
+        if (error.message?.toLowerCase().includes('email')) {
+          Alert.alert(
+            'Login Failed',
+            'No account found with this email. Please sign up first.',
+            [{ text: 'Sign Up', onPress: () => router.push('/signup') }, { text: 'OK', style: 'cancel' }]
+          );
+          setIsLoading(false);
+          return;
+        }
+        if (error.message?.toLowerCase().includes('password')) {
+          Alert.alert('Login Failed', 'Incorrect password. Please try again.');
+          setIsLoading(false);
+          return;
+        }
+        throw error;
       }
 
-      // If we got a URL back, open it in a browser (for mobile)
-      if (result?.data?.url) {
-        console.log('Opening OAuth URL:', result.data.url);
-        
-        // For mobile, we'll use the browser auth flow
-        // The callback will be handled by the auth state change listener
-        const browserResult = await WebBrowser.openAuthSessionAsync(
-          result.data.url,
-          'youngie://'
-        );
-
-        if (browserResult.type === 'success') {
-          // Handle the callback URL
-          await handleOAuthCallback(browserResult.url);
-        } else if (browserResult.type === 'cancel') {
-          setGoogleLoading(false);
-        }
-      } else {
-        // Already have a session, get user data
-        const session = await getSession();
-        if (session) {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user?.email) {
-            router.push({
-              pathname: '/signup',
-              params: {
-                email: user.email,
-                name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-                photo: user.user_metadata?.avatar_url || user.user_metadata?.picture || '',
-              },
-            });
-          }
-        }
-        setGoogleLoading(false);
+      if (data?.session) {
+        // Login successful with Supabase
+        setIsLoading(false);
+        router.replace('/(tabs)');
       }
     } catch (error: any) {
-      Alert.alert('Sign-in Failed', 'An error occurred while signing in with Google.');
-      setGoogleLoading(false);
+      setIsLoading(false);
+      Alert.alert('Login Failed', error.message || 'An unexpected error occurred. Please try again.');
     }
   };
 
@@ -270,11 +141,9 @@ export default function LoginScreen() {
             {/* Signup Section */}
             <View style={styles.footer}>
               <ThemedText style={{ color: lightTextColor }}>Don't have an account? </ThemedText>
-              <GoogleSignInButton 
-                onPress={handleGoogleSignIn}
-                disabled={isLoading || googleLoading}
-                label={googleLoading ? "Signing in..." : "Sign Up with Google"}
-              />
+              <TouchableOpacity onPress={() => router.push('/signup')} disabled={isLoading}>
+                <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign Up</ThemedText>
+              </TouchableOpacity>
             </View>
           </View>
         </ThemedView>

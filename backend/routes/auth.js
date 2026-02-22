@@ -480,5 +480,100 @@ router.post('/set-password', [
   }
 });
 
+// Complete Profile (for Supabase users - creates MongoDB user after Supabase signup)
+router.post('/complete-profile', [
+  body('supabaseUserId').notEmpty().trim(),
+  body('email').isEmail().normalizeEmail(),
+  body('username').isLength({ min: 3 }).trim().escape(),
+  body('birthYear').isInt({ min: new Date().getFullYear() - 29, max: new Date().getFullYear() }),
+  body('gender').isIn(['male', 'female', 'other']),
+  body('location').optional().isString().trim().escape(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { supabaseUserId, email, username, birthYear, gender, location, deviceName, clientLocation } = req.body;
+
+    // Check if user already exists
+    let user = await User.findOne({ $or: [{ email }, { username }] });
+    if (user) {
+      return res.status(400).json({ msg: 'User already exists' });
+    }
+
+    // Also check if supabaseUserId is already used
+    user = await User.findOne({ supabaseUserId });
+    if (user) {
+      return res.status(400).json({ msg: 'Supabase user already linked to an account' });
+    }
+
+    // Create new user in MongoDB with Supabase user ID
+    user = new User({
+      username,
+      email,
+      supabaseUserId, // Store the Supabase user ID
+      birthYear,
+      gender,
+      location: location || 'Nearby',
+    });
+
+    // Record initial login activity
+    const userAgent = req.get('User-Agent') || 'Unknown';
+    const ipAddress = req.ip || req.connection.remoteAddress || req.socket?.remoteAddress || 'Unknown';
+    
+    let device = deviceName || 'Unknown Device';
+    if (!deviceName) {
+       if (userAgent.includes('Mobile')) device = 'Mobile Device';
+       else if (userAgent.includes('Windows')) device = 'Windows Device';
+       else if (userAgent.includes('Macintosh')) device = 'Mac Device';
+       else device = 'Web Browser';
+    }
+
+    user.loginActivity.push({
+      device,
+      location: clientLocation || location || 'Unknown Location',
+      ipAddress,
+      userAgent,
+      loginTime: new Date(),
+      isActive: true
+    });
+
+    await user.save();
+
+    // Generate JWT token for the user
+    const payload = { userId: user._id };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const currentSession = user.loginActivity[user.loginActivity.length - 1];
+
+    res.status(201).json({
+      msg: 'Profile completed successfully',
+      token,
+      sessionId: currentSession._id,
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        birthYear: user.birthYear,
+        gender: user.gender,
+        bio: user.bio,
+        location: user.location,
+        interests: user.interests,
+        avatar: user.avatar,
+        friends: user.friends,
+        followers: user.followers,
+        following: user.following,
+        posts: user.posts,
+        suspended: user.suspended,
+      },
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 module.exports = router;

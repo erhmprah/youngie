@@ -94,6 +94,9 @@ export const authAPI = {
     api.post('/auth/reset-password', { token, newPassword }),
   setPassword: (email: string, newPassword: string) =>
     api.post('/auth/set-password', { email, newPassword }),
+  // Complete profile (for Supabase users)
+  completeProfile: (data: { supabaseUserId: string; email: string; username: string; birthYear: number; gender: string; location: string }) =>
+    api.post('/auth/complete-profile', data),
 };
 
 export const userAPI = {
