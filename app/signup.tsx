@@ -1,7 +1,7 @@
 // app/signup.tsx
 
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -17,6 +17,7 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
 
   const router = useRouter();
 
@@ -33,6 +34,11 @@ export default function SignupScreen() {
     // Validation
     if (!email || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!acceptTerms) {
+      Alert.alert('Terms Required', 'Please accept the Terms of Service and Privacy Policy to continue');
       return;
     }
 
@@ -167,6 +173,32 @@ export default function SignupScreen() {
               </View>
             </View>
 
+            {/* Policy Acceptance */}
+            <TouchableOpacity 
+              style={styles.termsContainer} 
+              onPress={() => setAcceptTerms(!acceptTerms)}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.checkbox, 
+                { borderColor: inputBorderColor, backgroundColor: acceptTerms ? primaryColor : 'transparent' }
+              ]}>
+                {acceptTerms && <IconSymbol name="check" size={14} color={white} />}
+              </View>
+              <View style={styles.termsTextContainer}>
+                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>
+                  I agree to the{' '}
+                </ThemedText>
+                <TouchableOpacity onPress={() => router.push('/terms')}>
+                  <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Terms of Service</ThemedText>
+                </TouchableOpacity>
+                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}> and </ThemedText>
+                <TouchableOpacity onPress={() => router.push('/privacy')}>
+                  <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Privacy Policy</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+
             {/* Create Account Button */}
             <TouchableOpacity
               style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
@@ -257,5 +289,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: spacing.md,
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: spacing.sm,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+    marginTop: 2,
+  },
+  termsTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
 });

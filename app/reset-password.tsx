@@ -1,28 +1,35 @@
 // app/reset-password.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { supabase } from '@/utils/supabase';
 import { authAPI } from '@/utils/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function ResetPasswordScreen() {
   const params = useLocalSearchParams();
   const token = typeof params.token === 'string' ? params.token : '';
   const email = typeof params.email === 'string' ? params.email : '';
   const isGoogleUser = params.google === 'true';
+  const accessToken = typeof params.access_token === 'string' ? params.access_token : '';
   
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState<{ level: number; label: string; color: string } | null>(null);
+  const [isSupabaseReset, setIsSupabaseReset] = useState(false);
+  const [isValidating, setIsValidating] = useState(true);
   
   const router = useRouter();
+  const { updateUser } = useAuth();
   
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -62,16 +69,88 @@ export default function ResetPasswordScreen() {
     setPasswordStrength(calculatePasswordStrength(text));
   };
 
-  // Validate token on mount (only for non-Google users)
+  // Validate token on mount and check for Supabase access token
   useEffect(() => {
-    if (!isGoogleUser && !token) {
-      Alert.alert(
-        'Invalid Link',
-        'This password reset link is invalid or has expired.',
-        [{ text: 'OK', onPress: () => router.push('/login') }]
-      );
-    }
-  }, [token, isGoogleUser]);
+    const validateToken = async () => {
+      // First check params from Expo Router (may not be available on initial deep link load)
+      if (accessToken) {
+        setIsSupabaseReset(true);
+        // Set the session with the access token
+        supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: '',
+        }).then(({ error }) => {
+          if (error) {
+            console.error('Error setting Supabase session:', error);
+          }
+        });
+        return;
+      }
+      
+      // For deep links, we need to get the URL directly
+      try {
+        const initialUrl = await Linking.getInitialURL();
+        console.log('Reset password initial URL:', initialUrl);
+        
+        if (initialUrl) {
+          // Parse the URL to extract parameters
+          const urlObj = new URL(initialUrl);
+          const urlAccessToken = urlObj.searchParams.get('access_token');
+          const urlRefreshToken = urlObj.searchParams.get('refresh_token');
+          const urlToken = urlObj.searchParams.get('token');
+          const urlEmail = urlObj.searchParams.get('email');
+          const urlGoogle = urlObj.searchParams.get('google');
+          
+          console.log('URL params - access_token:', !!urlAccessToken, 'refresh_token:', !!urlRefreshToken, 'token:', !!urlToken);
+          
+          // If we have an access_token from the URL, this is a Supabase password reset
+          if (urlAccessToken) {
+            setIsSupabaseReset(true);
+            supabase.auth.setSession({
+              access_token: urlAccessToken,
+              refresh_token: urlRefreshToken || '',
+            }).then(({ error }) => {
+              if (error) {
+                console.error('Error setting Supabase session from URL:', error);
+                // Don't show alert here - let the user try to reset password anyway
+                // If the session is invalid, the updateUser call will fail
+              }
+            });
+            return;
+          }
+          
+          // Check for token (non-Supabase reset)
+          if (!urlToken && !urlGoogle) {
+            Alert.alert(
+              'Invalid Link',
+              'This password reset link is invalid or has expired.',
+              [{ text: 'OK', onPress: () => router.push('/login') }]
+            );
+          }
+        } else if (!isGoogleUser && !token) {
+          // No URL and no token - invalid link
+          Alert.alert(
+            'Invalid Link',
+            'This password reset link is invalid or has expired.',
+            [{ text: 'OK', onPress: () => router.push('/login') }]
+          );
+        }
+      } catch (error) {
+        console.error('Error parsing reset password URL:', error);
+        
+        // If we can't parse the URL and don't have params, show error
+        if (!accessToken && !token && !isGoogleUser) {
+          Alert.alert(
+            'Invalid Link',
+            'This password reset link is invalid or has expired.',
+            [{ text: 'OK', onPress: () => router.push('/login') }]
+          );
+        }
+      }
+    };
+    
+    validateToken().finally(() => setIsValidating(false));
+  }, [token, isGoogleUser, accessToken, router]);
 
   const handleResetPassword = async () => {
     if (!newPassword) {
@@ -91,7 +170,34 @@ export default function ResetPasswordScreen() {
 
     setIsLoading(true);
     try {
-      if (isGoogleUser) {
+      if (isSupabaseReset) {
+        // Supabase password reset
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword
+        });
+        
+        if (error) throw error;
+        
+        // Also sync to MongoDB backend
+        try {
+          // Get the current user
+          const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+          
+          if (supabaseUser?.email) {
+            // Try to update password in MongoDB
+            await authAPI.setPassword(supabaseUser.email, newPassword);
+          }
+        } catch (syncError) {
+          console.log('MongoDB sync warning:', syncError);
+          // Continue anyway - password is reset in Supabase
+        }
+        
+        Alert.alert(
+          'Password Reset Successful',
+          'Your password has been reset. You can now sign in with your new password.',
+          [{ text: 'OK', onPress: () => router.push('/login') }]
+        );
+      } else if (isGoogleUser) {
         // Set password for Google user
         await authAPI.setPassword(email, newPassword);
         Alert.alert(
@@ -100,7 +206,7 @@ export default function ResetPasswordScreen() {
           [{ text: 'OK', onPress: () => router.push('/login') }]
         );
       } else {
-        // Regular password reset
+        // Regular password reset via backend
         await authAPI.resetPassword(token, newPassword);
         Alert.alert(
           'Password Reset Successful',
@@ -112,14 +218,26 @@ export default function ResetPasswordScreen() {
       console.error('Reset password error:', error);
       Alert.alert(
         'Error',
-        error.response?.data?.msg || 'Failed to reset password. The link may have expired.'
+        error.message || error.response?.data?.msg || 'Failed to reset password. The link may have expired.'
       );
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!isGoogleUser && !token) {
+  // Show loading while validating the URL
+  if (isValidating) {
+    return (
+      <ThemedView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={primaryColor} />
+        <ThemedText style={{ marginTop: spacing.md, color: lightTextColor }}>
+          Validating reset link...
+        </ThemedText>
+      </ThemedView>
+    );
+  }
+
+  if (!isSupabaseReset && !isGoogleUser && !token) {
     return (
       <ThemedView style={styles.loadingContainer}>
         <ThemedText>Invalid reset link</ThemedText>

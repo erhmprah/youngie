@@ -4,6 +4,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
+import { supabase } from '@/utils/supabase';
 
 interface User {
    _id: string;
@@ -153,8 +154,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
          // Clear token from storage
          await AsyncStorage.removeItem('authToken');
          await AsyncStorage.removeItem('sessionId');
+         
+         // Sign out from Supabase and wait for it to complete
+         await supabase.auth.signOut();
+         
          setUser(null);
          setSessionId(null);
+         
+         // Force a small delay to ensure state updates
+         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error: any) {
          console.error('Logout error:', error);
          disconnectSocket(); // Ensure socket is disconnected

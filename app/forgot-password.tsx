@@ -1,6 +1,6 @@
 // app/forgot-password.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
@@ -8,20 +8,16 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { authAPI } from '@/utils/api';
-import GoogleSignInButton from '@/components/google-signin-button';
-import { signInWithGoogle, getSession, handleOAuthCallback, supabase } from '@/utils/supabase';
+import { supabase, resetPassword } from '@/utils/supabase';
+
+// List of domains that are Supabase users (you can expand this list)
+const KNOWN_SUPABASE_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'mail.com'];
 
 export default function ForgotPasswordScreen() {
   const params = useLocalSearchParams();
   const [email, setEmail] = useState(typeof params.email === 'string' ? params.email : '');
   const [isLoading, setIsLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
-  const [resetToken, setResetToken] = useState('');
-  const [isGoogleUser, setIsGoogleUser] = useState(false);
-  const [emailChecked, setEmailChecked] = useState(false);
-  const [accountExists, setAccountExists] = useState<boolean | null>(null);
   
   const router = useRouter();
   
@@ -32,102 +28,6 @@ export default function ForgotPasswordScreen() {
   const inputBackgroundColor = useThemeColor('inputBackground');
   const inputBorderColor = useThemeColor('inputBorder');
   const white = useThemeColor('white');
-
-  // Check if email belongs to a Google user and verify account exists
-  const checkIfGoogleUser = async (emailToCheck: string) => {
-    if (!emailToCheck) return;
-    
-    setIsLoading(true);
-    try {
-      const response = await authAPI.checkGoogleUser(emailToCheck);
-      setIsGoogleUser(response.data.isGoogleUser);
-      setAccountExists(true);
-      setEmailChecked(true);
-    } catch (error: any) {
-      // No account found with this email
-      setIsGoogleUser(false);
-      setAccountExists(false);
-      setEmailChecked(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    // First check if email is provided and verify account exists
-    if (!email) {
-      Alert.alert('Error', 'Please enter your email address first');
-      return;
-    }
-
-    // Check if email exists in our system
-    await checkIfGoogleUser(email);
-    
-    if (!accountExists) {
-      Alert.alert(
-        'No Account Found',
-        'No account was found with this email. Would you like to sign up instead?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Up', onPress: () => router.push('/signup') }
-        ]
-      );
-      return;
-    }
-
-    // If account exists but is not a Google account, show error
-    if (!isGoogleUser) {
-      Alert.alert(
-        'Email/Password Account',
-        'This account uses email and password. Please use the reset link option below instead.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
-    // Now proceed with Google sign-in
-    setGoogleLoading(true);
-    try {
-      const result = await signInWithGoogle();
-      
-      if (result?.error) {
-        Alert.alert('Sign-in Failed', 'An error occurred while signing in with Google.');
-        setGoogleLoading(false);
-        return;
-      }
-
-      if (result?.data?.url) {
-        console.log('Opening OAuth URL:', result.data.url);
-        
-        const { WebBrowser } = require('expo-web-browser');
-        const browserResult = await WebBrowser.openAuthSessionAsync(
-          result.data.url,
-          'youngie://'
-        );
-
-        if (browserResult.type === 'success') {
-          await handleOAuthCallback(browserResult.url);
-        } else if (browserResult.type === 'cancel') {
-          setGoogleLoading(false);
-          return;
-        }
-      }
-      
-      // Get user info after successful sign in
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setIsGoogleUser(true);
-        // Navigate to set password screen
-        router.replace(`/reset-password?google=true&email=${encodeURIComponent(user.email || '')}`);
-      }
-      
-      setGoogleLoading(false);
-    } catch (error: any) {
-      console.error('Google sign in error:', error);
-      Alert.alert('Sign-in Failed', 'An error occurred while signing in with Google.');
-      setGoogleLoading(false);
-    }
-  };
 
   const handleSendResetLink = async () => {
     if (!email) {
@@ -144,42 +44,48 @@ export default function ForgotPasswordScreen() {
 
     setIsLoading(true);
     try {
-      const response = await authAPI.forgotPassword(email);
+      // Use Supabase to send password reset email
+      const { error } = await resetPassword(email);
       
-      // Check if there's a reset token in the response (development mode)
-      if (response.data.resetToken) {
-        setResetToken(response.data.resetToken);
-        setIsEmailSent(true);
-        Alert.alert(
-          'Reset Link Sent (Development Mode)',
-          `A reset link would be sent to your email. For development, use this token: ${response.data.resetToken}`
-        );
-      } else {
-        setIsEmailSent(true);
-        Alert.alert(
-          'Reset Link Sent',
-          'If an account exists with this email, a password reset link has been sent. Please check your inbox.'
-        );
+      if (error) {
+        // Check if user doesn't exist in Supabase
+        if (error.message?.includes('User not found') || error.message?.includes('No user')) {
+          // Don't reveal if email exists or not for security
+          setIsEmailSent(true);
+          Alert.alert(
+            'Reset Link Sent',
+            'If an account exists with this email, a password reset link has been sent to your inbox.'
+          );
+          return;
+        }
+        throw error;
       }
+      
+      setIsEmailSent(true);
+      Alert.alert(
+        'Reset Link Sent',
+        'A password reset link has been sent to your email. Please check your inbox and follow the instructions to reset your password.'
+      );
     } catch (error: any) {
       console.error('Forgot password error:', error);
+      
+      // Check for rate limiting error
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('rate limit') || errorMessage.includes('too many requests')) {
+        Alert.alert(
+          'Too Many Requests',
+          'You have requested too many password reset emails. Please wait a few minutes before trying again.'
+        );
+        return;
+      }
+      
       Alert.alert(
         'Error',
-        error.response?.data?.msg || 'Failed to send reset link. Please try again.'
+        error.message || 'Failed to send reset link. Please try again.'
       );
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Development mode: Allow entering token directly
-  const handleDevReset = async () => {
-    if (!resetToken) {
-      Alert.alert('Error', 'Please enter a reset token');
-      return;
-    }
-    
-    router.replace(`/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`);
   };
 
   return (
@@ -191,9 +97,9 @@ export default function ForgotPasswordScreen() {
             <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
               <IconSymbol name="lock.fill" size={40} color={white} />
             </View>
-            <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Reset Password</ThemedText>
+            <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Forgot Password</ThemedText>
             <ThemedText type="body1" style={{ color: lightTextColor, textAlign: 'center' }}>
-              Sign in with Google to set a password for your account
+              Enter your email address and we'll send you a link to reset your password.
             </ThemedText>
           </View>
 
@@ -209,11 +115,7 @@ export default function ForgotPasswordScreen() {
                   placeholder="your@email.com"
                   placeholderTextColor={lightTextColor}
                   value={email}
-                  onChangeText={(text) => {
-                    setEmail(text);
-                    setEmailChecked(false);
-                    setAccountExists(null);
-                  }}
+                  onChangeText={setEmail}
                   editable={!isLoading}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -221,89 +123,19 @@ export default function ForgotPasswordScreen() {
               </View>
             </View>
 
-            {/* Check Email Status */}
-            {emailChecked && accountExists !== null && (
-              <View style={[
-                styles.statusContainer, 
-                { backgroundColor: isGoogleUser ? '#dbeafe' : '#fef3c7', borderColor: isGoogleUser ? '#3b82f6' : '#f59e0b' }
-              ]}>
-                <IconSymbol 
-                  name={isGoogleUser ? 'check-circle' : 'alert-circle'} 
-                  size={20} 
-                  color={isGoogleUser ? '#3b82f6' : '#f59e0b'} 
-                />
-                <ThemedText style={{ color: textColor, marginLeft: spacing.sm, flex: 1 }}>
-                  {isGoogleUser 
-                    ? 'This account was created with Google. Sign in with Google to set a password.'
-                    : 'This account uses email and password. Use the reset link below.'
-                  }
-                </ThemedText>
-              </View>
-            )}
-
-            {/* Google Sign In Section - Only show if email is a Google user */}
-            {emailChecked && isGoogleUser && (
-              <View style={[styles.googleSection, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <ThemedText type="body2" style={{ color: lightTextColor, marginBottom: spacing.lg }}>
-                  Sign in with Google to create a password for your account.
-                </ThemedText>
-                
-                <GoogleSignInButton 
-                  onPress={handleGoogleSignIn}
-                  disabled={isLoading || googleLoading}
-                  label={googleLoading ? "Signing in..." : "Sign in with Google"}
-                />
-              </View>
-            )}
-
-            {/* Divider - Only show if not showing Google option */}
-            {(!emailChecked || !isGoogleUser) && (
-              <View style={styles.divider}>
-                <View style={[styles.dividerLine, { backgroundColor: inputBorderColor }]} />
-                <ThemedText style={[styles.dividerText, { color: lightTextColor }]}>OR</ThemedText>
-                <View style={[styles.dividerLine, { backgroundColor: inputBorderColor }]} />
-              </View>
-            )}
-
-            {/* Email/Password Reset Section */}
-            {(!emailChecked || !isGoogleUser) && (
-              <>
-                <ThemedText type="body2" style={{ fontWeight: '600', marginBottom: spacing.sm }}>
-                  Reset with Email Link
-                </ThemedText>
-                <TouchableOpacity
-                  style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
-                  onPress={handleSendResetLink}
-                  disabled={isLoading}
-                  activeOpacity={0.8}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color={white} size="small" />
-                  ) : (
-                    <ThemedText style={[styles.buttonText, { color: white }]}>Send Reset Link</ThemedText>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
-
-            {/* Development Mode: Show token and navigate button */}
-            {resetToken ? (
-              <View style={[styles.devContainer, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <ThemedText type="body2" style={{ fontWeight: '600', color: primaryColor }}>
-                  Development Mode
-                </ThemedText>
-                <ThemedText type="caption" style={{ color: lightTextColor, marginBottom: spacing.sm }}>
-                  Token: {resetToken.substring(0, 20)}...
-                </ThemedText>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { borderColor: primaryColor }]}
-                  onPress={handleDevReset}
-                  activeOpacity={0.8}
-                >
-                  <ThemedText style={{ color: primaryColor }}>Continue to Reset Password</ThemedText>
-                </TouchableOpacity>
-              </View>
-            ) : null}
+            {/* Send Reset Link Button */}
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
+              onPress={handleSendResetLink}
+              disabled={isLoading}
+              activeOpacity={0.8}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={white} size="small" />
+              ) : (
+                <ThemedText style={[styles.buttonText, { color: white }]}>Send Reset Link</ThemedText>
+              )}
+            </TouchableOpacity>
 
             {/* Back to Login */}
             <View style={styles.footer}>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, View } from 'react-native';
+import { StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, View, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -98,6 +98,7 @@ export default function SettingsScreen() {
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Support</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
                     <SettingItem icon="help-circle" label="Help Center" onPress={() => router.push('/help-center')} />
+                    <SettingItem icon="shield-check" label="Policies" onPress={() => router.push('/policies')} />
                     <SettingItem icon="info" label="About" onPress={() => router.push('/about')} />
                 </View>
 

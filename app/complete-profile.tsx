@@ -233,6 +233,12 @@ export default function CompleteProfileScreen() {
         updateUser(backendUserData);
       }
 
+      // Mark profile as completed
+      await AsyncStorage.setItem('profileCompleted', 'true');
+      
+      // Clear pending profile flag
+      await AsyncStorage.removeItem('pendingProfileCompletion');
+
       // Success - navigate to main app
       Alert.alert(
         '🎉 Welcome to Youngie!',

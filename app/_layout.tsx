@@ -130,36 +130,20 @@ function RootLayoutNav() {
     };
     
     checkSupabaseSession();
-    
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setHasSupabaseSession(!!session);
-      
-      // If user just logged in to Supabase but not MongoDB
-      if (session) {
-        const mongoToken = await AsyncStorage.getItem('authToken');
-        if (!mongoToken) {
-          // Navigate to complete profile
-          router.replace('/complete-profile');
-        }
-      }
-    });
-    
-    return () => subscription.unsubscribe();
   }, [router]);
 
   useEffect(() => {
     if (isLoading || isCheckingSupabase) return;
 
-    // If user has Supabase session but no MongoDB session, go to complete-profile
-    if (hasSupabaseSession && !isSignedIn) {
-      router.replace('/complete-profile');
-    } else if (isSignedIn) {
+    // If user is signed in with MongoDB, go to main app
+    if (isSignedIn) {
       router.replace('/(tabs)');
     } else {
+      // Not signed in with MongoDB - go to login
+      // The login screen will handle checking if user has Supabase session
       router.replace('/login');
     }
-  }, [isLoading, isCheckingSupabase, hasSupabaseSession, isSignedIn, user, router]);
+  }, [isLoading, isCheckingSupabase, isSignedIn, user, router]);
 
   if (isLoading || isCheckingSupabase) {
     return <AuthLoadingScreen />;
@@ -172,6 +156,7 @@ function RootLayoutNav() {
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />
         <Stack.Screen name="complete-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="reset-password" options={{ headerShown: false }} />
         <Stack.Screen name="verify-email" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="muted-users" options={{ title: 'Muted Users' }} />

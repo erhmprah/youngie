@@ -285,9 +285,9 @@ const generateColorPalette = (primaryColor: string, theme: 'light' | 'dark') => 
 };
 
 // Export a function that returns the correct color palette
-export const getColors = (theme: 'light' | 'dark', colorScheme: string = 'blue') => {
+export const getColors = (theme: 'light' | 'dark', colorScheme: string = 'magenta') => {
   return generateColorPalette(colorScheme, theme);
 };
 
 // Export default colors (light theme) for backward compatibility
-export const colors = lightColors;
+export const colors = lightMagentaColors;

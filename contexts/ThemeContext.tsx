@@ -17,14 +17,14 @@ const ThemeContext = createContext<ThemeContextType>({
   theme: 'dark',
   mode: 'system',
   setMode: () => {},
-  colorScheme: 'blue',
+  colorScheme: 'magenta',
   setColorScheme: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const systemColorScheme = useSystemColorScheme();
   const [mode, setMode] = useState<ThemeMode>('system');
-  const [colorScheme, setColorScheme] = useState<ColorScheme>('blue');
+  const [colorScheme, setColorScheme] = useState<ColorScheme>('magenta');
   const [theme, setTheme] = useState<'light' | 'dark'>(systemColorScheme === 'dark' ? 'dark' : 'light');
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export const useTheme = () => {
       theme: 'dark',
       mode: 'system' as const,
       setMode: () => {},
-      colorScheme: 'blue',
+      colorScheme: 'magenta',
       setColorScheme: () => {},
     };
   }

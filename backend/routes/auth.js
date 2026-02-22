@@ -5,6 +5,150 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const { createClient } = require('@supabase/supabase-js');
+
+// Initialize Supabase client (only if credentials are available)
+const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+console.log('📦 Supabase Config Check:');
+console.log('   SUPABASE_URL:', supabaseUrl ? 'SET' : 'NOT SET');
+console.log('   SUPABASE_ANON_KEY:', supabaseKey ? 'SET' : 'NOT SET');
+console.log('   All env keys:', Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('EXPO')));
+
+let supabase = null;
+if (supabaseUrl && supabaseKey) {
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log('✅ Supabase client initialized successfully');
+} else {
+  console.warn('⚠️ Supabase credentials not configured. Supabase login will be unavailable.');
+}
+
+// Supabase Login - authenticates with Supabase and returns MongoDB JWT token
+router.post('/supabase-login', async (req, res) => {
+  try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return res.status(503).json({ msg: 'Supabase authentication is not configured on the server' });
+    }
+    
+    const { accessToken, deviceName, clientLocation } = req.body;
+    
+    if (!accessToken) {
+      return res.status(400).json({ msg: 'Access token is required' });
+    }
+    
+    // Verify the Supabase token
+    const { data: { user: supabaseUser }, error: supabaseError } = await supabase.auth.getUser(accessToken);
+    
+    if (supabaseError || !supabaseUser) {
+      return res.status(401).json({ msg: 'Invalid Supabase token' });
+    }
+    
+    const email = supabaseUser.email;
+    
+    // Find or create user in MongoDB
+    let user = await User.findOne({ email });
+    
+    if (!user) {
+      // New Supabase user - they need to complete their profile first
+      return res.status(200).json({ 
+        needsProfileCompletion: true,
+        email: email,
+        supabaseUserId: supabaseUser.id,
+        msg: 'Please complete your profile'
+      });
+    }
+    
+    // Check age and suspend if >29
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - user.birthYear;
+    if (age > 29 && !user.suspended) {
+      user.suspended = true;
+      await user.save();
+      const notification = new Notification({
+        recipient: user._id,
+        sender: user._id,
+        type: 'suspension',
+        message: 'Your account has been suspended because you are over 29 years old.',
+      });
+      await notification.save();
+    }
+    
+    // Update last seen
+    user.lastSeen = new Date();
+    
+    // Record login activity
+    const userAgent = req.get('User-Agent') || 'Unknown';
+    const ipAddress = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'Unknown';
+    
+    let device = deviceName || 'Unknown Device';
+    if (!deviceName) {
+      if (userAgent.includes('iPhone')) device = 'iPhone';
+      else if (userAgent.includes('Android')) device = 'Android Device';
+      else if (userAgent.includes('React Native') || userAgent.includes('Expo')) device = 'Mobile App';
+      else device = 'Web Browser';
+    }
+    
+    // Mark all previous sessions as inactive
+    if (user.loginActivity) {
+      user.loginActivity.forEach(session => {
+        session.isActive = false;
+      });
+    } else {
+      user.loginActivity = [];
+    }
+    
+    // Add new login session
+    const newSession = {
+      device,
+      location: clientLocation || 'Unknown Location',
+      ipAddress,
+      userAgent,
+      loginTime: new Date(),
+      isActive: true
+    };
+    
+    user.loginActivity.push(newSession);
+    
+    // Keep only last 20 login sessions
+    if (user.loginActivity.length > 20) {
+      user.loginActivity = user.loginActivity.slice(-20);
+    }
+    
+    user.markModified('loginActivity');
+    await user.save();
+    
+    // Generate JWT token
+    const payload = { userId: user._id };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const currentSession = user.loginActivity[user.loginActivity.length - 1];
+    
+    res.json({
+      token,
+      sessionId: currentSession._id,
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        birthYear: user.birthYear,
+        gender: user.gender,
+        bio: user.bio,
+        location: user.location,
+        profilePhoto: user.profilePhoto,
+        coverPhoto: user.coverPhoto,
+        friends: user.friends,
+        friendRequests: user.friendRequests,
+        createdAt: user.createdAt,
+      },
+      needsProfileCompletion: false
+    });
+    
+  } catch (error) {
+    console.error('Supabase login error:', error);
+    res.status(500).json({ msg: 'Server error during Supabase login' });
+  }
+});
 
 // Register
 router.post('/register', [

@@ -52,20 +52,38 @@ export default function ProfileScreen() {
     const cardBackgroundColor = useThemeColor('surface');
     const borderColor = useThemeColor('border');
     const white = useThemeColor('white');
+    const userId = user?._id;
     const errorColor = useThemeColor('error');
 
     const fetchProfileData = useCallback(async () => {
-        if (!user?._id) return;
+        if (!userId) return;
         setLoading(true);
+        
+        // Create a timeout to prevent infinite loading
+        const timeoutId = setTimeout(() => {
+            console.log('Profile fetch timeout - setting loading to false');
+            setLoading(false);
+        }, 15000); // 15 second timeout
+        
         try {
-            // Use cached API for profile and posts
+            // Use cached API for profile and posts with error handling
             const [statsResponse, postsResponse, albumResponse, sentRequestsResponse, receivedRequestsResponse] = await Promise.all([
-                cachedUserAPI.getProfile(user._id),
-                cachedPostAPI.getUserPosts(user._id),
-                userAPI.getAlbum(user._id).catch(() => ({ data: [] })),
+                cachedUserAPI.getProfile(userId).catch((err) => {
+                    console.error('getProfile error:', err);
+                    return { data: { posts: [], friends: [] } };
+                }),
+                cachedPostAPI.getUserPosts(userId).catch((err) => {
+                    console.error('getUserPosts error:', err);
+                    return { data: [] };
+                }),
+                userAPI.getAlbum(userId).catch(() => ({ data: [] })),
                 userAPI.getSentFriendRequests().catch(() => ({ data: [] })),
                 userAPI.getIncomingFriendRequests().catch(() => ({ data: [] })),
             ]);
+            
+            // Clear timeout since we got a response
+            clearTimeout(timeoutId);
+            
             const userData = statsResponse.data;
             const postsData = Array.isArray(postsResponse.data) ? postsResponse.data : [];
             const totalLikes = postsData.reduce((sum: number, post: any) => sum + (post.likes?.length || 0), 0);
@@ -80,30 +98,35 @@ export default function ProfileScreen() {
             setSentRequests(sentRequestsResponse.data || []);
             setReceivedRequests(receivedRequestsResponse.data || []);
         } catch (error: any) {
+            // Clear timeout on error
+            clearTimeout(timeoutId);
+            console.error('fetchProfileData error:', error);
             if (error.response?.status === 401) {
                 try {
                     await logout();
-
                 } catch (logoutErr) {
-
+                    console.error('Logout error:', logoutErr);
                 }
-
                 Alert.alert('Session Expired', 'Please log in again');
-
             } else {
-
                 Alert.alert('Error', 'Failed to load profile data');
-
             }
-
         } finally {
+            clearTimeout(timeoutId);
             setLoading(false);
         }
-    }, [user?._id]);
+    }, [userId, logout]);
 
+    const isMountedRef = React.useRef(true);
+    
     useFocusEffect(
         useCallback(() => {
+            isMountedRef.current = true;
             fetchProfileData();
+            
+            return () => {
+                isMountedRef.current = false;
+            };
         }, [fetchProfileData])
     );
 

@@ -13,9 +13,9 @@ export default function AuthLoadingScreen() {
   return (
     <ThemedView style={[styles.container, { backgroundColor }]}>
       <View style={styles.content}>
-        <View style={[styles.logoContainer, { backgroundColor: primaryColor }]}>
+        <View>
           <Image
-            source={require('@/assets/images/splash-icon.png')}
+            source={require('@/assets/images/youngie_icon.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -51,8 +51,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   logo: {
-    width: 60,
-    height: 60,
+    width: 100,
+    height: 100,
   },
   title: {
     marginBottom: spacing.xl,

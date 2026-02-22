@@ -7,6 +7,11 @@ const path = require('path');
 require('dotenv').config();
 const os = require('os');
 
+console.log('🔧 Server Environment Check:');
+console.log('   MONGODB_URI:', process.env.MONGODB_URI ? 'SET' : 'NOT SET');
+console.log('   SUPABASE_URL:', process.env.SUPABASE_URL ? 'SET' : 'NOT SET');
+console.log('   SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? 'SET' : 'NOT SET');
+
 const app = express();
 const httpServer = http.createServer(app); // Create http server
 const io = new Server(httpServer, {

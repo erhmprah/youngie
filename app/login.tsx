@@ -1,14 +1,16 @@
 // app/login.tsx
 
-import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { signInWithEmail } from '@/utils/supabase';
+import { signInWithEmail, supabase } from '@/utils/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI } from '@/utils/api';
 
 
 export default function LoginScreen() {
@@ -17,6 +19,49 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+
+  // Check for existing Supabase session on mount
+  useEffect(() => {
+    const checkSupabaseSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          // Check if user has MongoDB token
+          const mongoToken = await AsyncStorage.getItem('authToken');
+          const profileCompleted = await AsyncStorage.getItem('profileCompleted');
+          
+          // If we have a valid MongoDB token, user is logged in - go to tabs
+          if (mongoToken) {
+            router.replace('/(tabs)');
+            return;
+          }
+          
+          // If there's no MongoDB token, check if this is a new user or a failed login
+          if (!mongoToken) {
+            // Check if there's a pending profile completion flag
+            const pendingProfile = await AsyncStorage.getItem('pendingProfileCompletion');
+            
+            if (pendingProfile === 'true') {
+              // User was in the middle of completing profile - continue
+              await AsyncStorage.removeItem('pendingProfileCompletion');
+              router.replace('/complete-profile');
+              return;
+            }
+            
+            // Otherwise, stay on login screen - user needs to log in
+            // Don't automatically redirect to complete-profile on network errors
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('Error checking Supabase session:', error);
+        // On error, stay on login screen - don't redirect to complete-profile
+      }
+    };
+    
+    checkSupabaseSession();
+  }, [router]);
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -38,7 +83,10 @@ export default function LoginScreen() {
       const { data, error } = await signInWithEmail(email, password);
 
       if (error) {
-        if (error.message?.toLowerCase().includes('email')) {
+        const errorMessage = error.message?.toLowerCase() || '';
+        
+        // Check for various credential error patterns
+        if (errorMessage.includes('email') || errorMessage.includes('no user') || errorMessage.includes('not found') || errorMessage.includes('invalid email')) {
           Alert.alert(
             'Login Failed',
             'No account found with this email. Please sign up first.',
@@ -47,18 +95,69 @@ export default function LoginScreen() {
           setIsLoading(false);
           return;
         }
-        if (error.message?.toLowerCase().includes('password')) {
+        
+        if (errorMessage.includes('password') || errorMessage.includes('invalid login') || errorMessage.includes('incorrect') || errorMessage.includes('wrong')) {
           Alert.alert('Login Failed', 'Incorrect password. Please try again.');
           setIsLoading(false);
           return;
         }
+        
+        // Handle invalid credentials generally
+        if (errorMessage.includes('invalid') || errorMessage.includes('credentials') || errorMessage.includes('unauthorized')) {
+          Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
+          setIsLoading(false);
+          return;
+        }
+        
         throw error;
       }
 
       if (data?.session) {
         // Login successful with Supabase
-        setIsLoading(false);
-        router.replace('/(tabs)');
+        // Now get MongoDB JWT token
+        try {
+          const { data: supabaseData } = await supabase.auth.getSession();
+          const accessToken = supabaseData?.session?.access_token;
+          
+          if (accessToken) {
+            const mongoResponse = await authAPI.supabaseLogin(accessToken);
+            
+            // Check if response indicates network/server error
+            if (!mongoResponse || !mongoResponse.data) {
+              // Network error - don't redirect to complete-profile
+              console.error('Invalid MongoDB response:', mongoResponse);
+              Alert.alert('Connection Error', 'Unable to connect to the server. Please check your internet connection and try again.');
+              setIsLoading(false);
+              return;
+            }
+            
+            if (mongoResponse.data.needsProfileCompletion) {
+              // Store Supabase info and redirect to complete profile
+              await AsyncStorage.setItem('supabaseUserId', mongoResponse.data.supabaseUserId);
+              await AsyncStorage.setItem('userEmail', mongoResponse.data.email);
+              await AsyncStorage.setItem('pendingProfileCompletion', 'true');
+              setIsLoading(false);
+              router.replace('/complete-profile');
+              return;
+            }
+            
+            // Store MongoDB token
+            await AsyncStorage.setItem('authToken', mongoResponse.data.token);
+            await AsyncStorage.setItem('sessionId', mongoResponse.data.sessionId);
+            await AsyncStorage.setItem('profileCompleted', 'true');
+            
+            setIsLoading(false);
+            router.replace('/(tabs)');
+          } else {
+            setIsLoading(false);
+            router.replace('/(tabs)');
+          }
+        } catch (mongoError: any) {
+          console.error('MongoDB login error:', mongoError);
+          setIsLoading(false);
+          // Still allow login even if MongoDB fails - they can use the app
+          router.replace('/(tabs)');
+        }
       }
     } catch (error: any) {
       setIsLoading(false);
@@ -72,8 +171,12 @@ export default function LoginScreen() {
         <ThemedView style={styles.container}>
           {/* Header Section */}
           <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
-              <IconSymbol name="heart.fill" size={40} color={white} />
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('@/assets/images/youngie_icon.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Welcome Back</ThemedText>
             <ThemedText type="body1" style={{ color: lightTextColor }}>Sign in to continue</ThemedText>
@@ -145,6 +248,17 @@ export default function LoginScreen() {
                 <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign Up</ThemedText>
               </TouchableOpacity>
             </View>
+
+            {/* Policy Links */}
+            <View style={styles.policyFooter}>
+              <TouchableOpacity onPress={() => router.push('/terms')}>
+                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Terms of Service</ThemedText>
+              </TouchableOpacity>
+              <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}> • </ThemedText>
+              <TouchableOpacity onPress={() => router.push('/privacy')}>
+                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Privacy Policy</ThemedText>
+              </TouchableOpacity>
+            </View>
           </View>
         </ThemedView>
       </ScrollView>
@@ -173,7 +287,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
-    ...shadows.lg,
+  },
+  logoImage: {
+    width: 70,
+    height: 70,
   },
   form: {
     gap: spacing.lg,
@@ -232,5 +349,11 @@ const styles = StyleSheet.create({
   dividerText: {
     paddingHorizontal: spacing.sm,
     fontSize: typography.sizes.caption,
+  },
+  policyFooter: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.lg,
   },
 });
