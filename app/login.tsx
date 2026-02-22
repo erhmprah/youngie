@@ -41,7 +41,6 @@ export default function LoginScreen() {
         try {
           const session = await handleOAuthCallback(url);
           if (session) {
-            console.log('OAuth session established via deep link');
             // Get user data and navigate to signup with pre-filled data
             const { data: { user } } = await supabase.auth.getUser();
             if (user?.email) {
@@ -68,7 +67,6 @@ export default function LoginScreen() {
         try {
           const session = await handleOAuthCallback(url);
           if (session) {
-            console.log('OAuth session established');
             // Get user data and navigate to signup with pre-filled data
             const { data: { user } } = await supabase.auth.getUser();
             if (user?.email) {
@@ -109,7 +107,6 @@ export default function LoginScreen() {
   // Also listen for auth state changes - this is the primary way to handle OAuth
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event);
       if (event === 'SIGNED_IN' && session) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.email) {
@@ -152,7 +149,6 @@ export default function LoginScreen() {
       const result = await signInWithGoogle();
       
       if (result?.error) {
-        console.error('Google Sign-In Error:', result.error);
         Alert.alert('Sign-in Failed', 'An error occurred while signing in with Google.');
         setGoogleLoading(false);
         return;
@@ -168,8 +164,6 @@ export default function LoginScreen() {
           result.data.url,
           'youngie://'
         );
-
-        console.log('Browser auth result:', browserResult);
 
         if (browserResult.type === 'success') {
           // Handle the callback URL
@@ -196,7 +190,6 @@ export default function LoginScreen() {
         setGoogleLoading(false);
       }
     } catch (error: any) {
-      console.error('Google Sign-In Error:', error);
       Alert.alert('Sign-in Failed', 'An error occurred while signing in with Google.');
       setGoogleLoading(false);
     }

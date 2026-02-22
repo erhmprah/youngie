@@ -1064,6 +1064,12 @@ router.delete('/:postId', auth, async (req, res) => {
     user.posts = user.posts.filter(id => id.toString() !== req.params.postId);
     await user.save();
 
+    // Delete related notifications (likes, comments, tags on the deleted post)
+    await Notification.deleteMany({
+      relatedPost: post._id,
+      type: { $in: ['like', 'comment', 'tag'] }
+    });
+
     res.json({ msg: 'Post deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });

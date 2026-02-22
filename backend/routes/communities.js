@@ -558,6 +558,13 @@ router.delete('/:communityId', auth, async (req, res) => {
     // Delete the community
     await Community.findByIdAndDelete(req.params.communityId);
 
+    // Delete related notifications (join requests, invitations for this community)
+    const Notification = require('../models/Notification');
+    await Notification.deleteMany({
+      relatedCommunity: req.params.communityId,
+      type: { $in: ['community_join_request', 'chat_invitation'] }
+    });
+
     res.json({ msg: 'Community deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -36,7 +36,6 @@ export default function PrivacySettingsScreen() {
             const response = await userAPI.getProfile(user._id);
             setIsPrivate(response.data.isPrivate || false);
         } catch (error) {
-            console.error('Failed to fetch privacy settings:', error);
         } finally {
             setIsLoading(false);
         }
@@ -51,7 +50,6 @@ export default function PrivacySettingsScreen() {
             await userAPI.updateProfile(user._id, { isPrivate: value });
             updateUser({ isPrivate: value });
         } catch (error) {
-            console.error('Failed to update privacy settings:', error);
             setIsPrivate(!value); // Revert
             Alert.alert('Error', 'Failed to update settings');
         } finally {

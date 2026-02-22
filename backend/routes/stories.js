@@ -380,6 +380,14 @@ router.delete('/:storyId', auth, async (req, res) => {
     }
 
     await Story.findByIdAndDelete(req.params.storyId);
+
+    // Delete related notifications (likes, reactions, tags on the deleted story)
+    const Notification = require('../models/Notification');
+    await Notification.deleteMany({
+      relatedStory: req.params.storyId,
+      type: { $in: ['like', 'reaction', 'tag'] }
+    });
+
     res.json({ msg: 'Story deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });

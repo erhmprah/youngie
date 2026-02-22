@@ -139,12 +139,10 @@ export default function FeedScreen() {
             setHasMorePosts(postsResponse.data.hasMore || (Array.isArray(postsData) && postsData.length === 20));
             setPostsPage(page);
         } catch (err: any) {
-            console.error('Error fetching feed:', err);
             if (err.response?.status === 401) {
                 try {
                     await logout();
                 } catch (logoutErr) {
-                    console.error('Error during logout:', logoutErr);
                 }
                 setError(null);
             } else {
@@ -247,7 +245,6 @@ export default function FeedScreen() {
             const updatedPost = response?.data?.post ?? response?.data;
             setPosts(posts.map(p => (p._id === postId ? updatedPost : p)));
         } catch (error: any) {
-            console.error('Error liking post:', error);
         }
     };
 
@@ -257,7 +254,6 @@ export default function FeedScreen() {
             await postAPI.deletePost(postId);
             setPosts(posts.filter(p => p._id !== postId));
         } catch (error: any) {
-            console.error('Error deleting post:', error);
             Alert.alert('Error', 'Failed to delete post');
         }
     };

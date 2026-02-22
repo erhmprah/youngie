@@ -182,7 +182,6 @@ export default function SignupScreen() {
           setSuggestions([...new Set(places)] as string[]);
         }
       } catch (error) {
-        console.log('Location search error:', error);
         setSuggestions([]);
       }
     }, 500);
@@ -292,24 +291,83 @@ export default function SignupScreen() {
 
     try {
       await register(username, email, password, birthYearNum, gender, location);
-      // User is automatically logged in after registration
-      router.replace('/(tabs)');
+      // Show success alert before navigating
+      Alert.alert(
+        '🎉 Account Created!',
+        `Welcome to Youngie, ${username}! Your account has been successfully created.`,
+        [{ text: 'Continue', onPress: () => router.replace('/(tabs)') }]
+      );
     } catch (error: any) {
-      // Check if error indicates email already exists
-      const errorStr = error.toString().toLowerCase();
-      if (errorStr.includes('email') && (errorStr.includes('exists') || errorStr.includes('already'))) {
+      // Parse error to get user-friendly message
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      let errorTitle = 'Signup Failed';
+      
+      // Check for axios network error (ECONNREFUSED, Network Error, etc.)
+      const isNetworkError = error.code === 'ECONNREFUSED' || 
+                           error.code === 'ENOTFOUND' || 
+                           error.code === 'ETIMEDOUT' ||
+                           error.message?.includes('Network Error') ||
+                           error.message?.includes('ECONNREFUSED') ||
+                           error.message?.includes('timeout');
+      
+      // Check for different error types
+      if (error.response) {
+        // Server responded with error status
+        const status = error.response.status;
+        const serverMessage = error.response.data?.msg || error.response.data?.message;
+        
+        if (status === 400) {
+          errorTitle = 'Invalid Input';
+          if (serverMessage?.toLowerCase().includes('email')) {
+            errorMessage = 'The email address you entered is already registered. Please login or use a different email.';
+          } else if (serverMessage?.toLowerCase().includes('username')) {
+            errorMessage = 'This username is already taken. Please choose a different username.';
+          } else {
+            errorMessage = serverMessage || 'Please check your information and try again.';
+          }
+        } else if (status === 409) {
+          errorTitle = 'Account Already Exists';
+          errorMessage = 'An account with this information already exists. Please login instead.';
+        } else if (status === 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else if (status >= 500) {
+          errorMessage = 'Service temporarily unavailable. Please try again later.';
+        } else {
+          errorMessage = serverMessage || 'An error occurred. Please try again.';
+        }
+      } else if (error.request || isNetworkError) {
+        // Network error - no response received or connection failed
+        errorTitle = 'Connection Error';
+        errorMessage = 'Unable to connect to the server. Please check your internet connection and make sure the backend is running.';
+      } else {
+        // Check if error indicates email already exists
+        const errorStr = error.toString().toLowerCase();
+        if (errorStr.includes('email') && (errorStr.includes('exists') || errorStr.includes('already'))) {
+          errorTitle = 'Email Already Registered';
+          errorMessage = 'An account with this email already exists. Please login instead or use a different email address.';
+        } else {
+          // Use the error message if it's user-friendly
+          const userMessage = error.message || error.toString();
+          if (userMessage && !userMessage.includes('Error:') && userMessage.length < 100) {
+            errorMessage = userMessage;
+          }
+        }
+      }
+      
+      // Show appropriate alert based on error type
+      if (errorTitle === 'Email Already Registered' || errorTitle === 'Account Already Exists') {
         setEmailError('An account with this email already exists');
         setEmailAvailable(false);
         Alert.alert(
-          'Email Already Registered',
-          'An account with this email already exists. Please login instead.',
+          errorTitle,
+          errorMessage,
           [
             { text: 'Login Instead', onPress: () => router.push('/login') },
             { text: 'OK', style: 'cancel' }
           ]
         );
       } else {
-        Alert.alert('Signup Failed', error.toString());
+        Alert.alert(errorTitle, errorMessage);
       }
     }
   };

@@ -56,7 +56,6 @@ export default function CommunityScreen() {
       setCommunity(commResponse.data);
       setEvents(eventsResponse.data || []);
     } catch (error) {
-      console.error('Failed to load community:', error);
       Alert.alert('Error', 'Could not load community details');
     } finally {
       setIsLoading(false);
@@ -70,7 +69,6 @@ export default function CommunityScreen() {
   // Debugging logs to help identify why the button isn't showing
   useEffect(() => {
     if (community && user) {
-      console.log('Debug isAdmin:', { creator: community.creator, userId: user._id });
     }
   }, [community, user]);
 
@@ -112,7 +110,6 @@ export default function CommunityScreen() {
         setCalendarModalVisible(true);
       }
     } catch (error) {
-      console.error('Error initiating calendar add:', error);
       Alert.alert('Error', 'Failed to access calendar.');
     }
   };
@@ -147,7 +144,6 @@ export default function CommunityScreen() {
 
       Alert.alert('Success', 'Event added to your calendar!');
     } catch (error) {
-      console.error('Error adding to calendar:', error);
       Alert.alert('Error', 'Failed to add event to calendar.');
     }
   };

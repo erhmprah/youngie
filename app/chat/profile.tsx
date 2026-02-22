@@ -63,7 +63,6 @@ export default function ProfileScreen() {
             Alert.alert('Success', 'Profile updated successfully');
             fetchStats();
         } catch (error) {
-            console.error('Update failed:', error);
             throw error;
         }
     };
@@ -92,7 +91,6 @@ export default function ProfileScreen() {
                 fetchStats();
             }
         } catch (error) {
-            console.error('Photo upload failed:', error);
             Alert.alert('Error', 'Failed to upload profile photo');
         } finally {
             setIsUploadingPhoto(false);

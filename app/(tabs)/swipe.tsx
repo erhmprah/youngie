@@ -16,6 +16,7 @@ import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSocket } from '@/utils/socket';
 import * as Haptics from 'expo-haptics';
+import { showErrorAlert, showNetworkErrorAlert } from '@/utils/error-handler';
 
 const { width } = Dimensions.get('window');
 
@@ -65,7 +66,6 @@ export default function SwipeScreen() {
     useEffect(() => {
         const loadFilters = async () => {
             try {
-                console.log('👤 User in swipe component:', user);
                 const savedFilters = await AsyncStorage.getItem('discovery_filters');
                 if (savedFilters) {
                     const parsedFilters = JSON.parse(savedFilters);
@@ -75,7 +75,6 @@ export default function SwipeScreen() {
                     fetchNearbyUsers({ minAge: '', maxAge: '', gender: [], location: '' }, 0, false);
                 }
             } catch (error) {
-                console.error('Error loading filters:', error);
                 fetchNearbyUsers({ minAge: '', maxAge: '', gender: [], location: '' }, 0, false);
             }
         };
@@ -179,7 +178,6 @@ export default function SwipeScreen() {
                         { text: 'Continue' }
                     ]);
                 } catch (error: any) {
-                    console.error('Friend request error:', error);
                     Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
                     setCurrentIndex((prev) => prev + 1);
                 }
@@ -218,9 +216,7 @@ export default function SwipeScreen() {
                 setLoadingMore(true);
             }
             const activeFilters = filterParams || filters;
-            console.log('🔍 Fetching nearby users with filters:', activeFilters, 'page:', page);
             const response = await userAPI.getNearbyUsers({ ...activeFilters, page, limit: 20 });
-            console.log('✅ API response:', response.data);
 
             const { users, hasMore: newHasMore } = response.data;
 
@@ -232,9 +228,7 @@ export default function SwipeScreen() {
             setHasMore(newHasMore);
             setCurrentPage(page);
         } catch (error: any) {
-            console.error('❌ Error fetching nearby users:', error);
-            console.error('Error details:', error.response?.data || error.message);
-            Alert.alert('Error', 'Could not load profiles');
+            showErrorAlert(error, () => fetchNearbyUsers(undefined, page, false));
         } finally {
             setIsLoading(false);
             setLoadingMore(false);
@@ -246,12 +240,10 @@ export default function SwipeScreen() {
             const response = await userAPI.getAlbum(userId);
             setAlbums(prev => ({ ...prev, [userId]: response.data || [] }));
         } catch (error: any) {
-            console.error('Error fetching album:', error);
             if (error.response?.status === 401) {
                 try {
                     await logout();
                 } catch (logoutErr) {
-                    console.error('Error during logout:', logoutErr);
                 }
             }
         }
@@ -289,7 +281,6 @@ export default function SwipeScreen() {
         try {
             await AsyncStorage.setItem('discovery_filters', JSON.stringify(newFilters));
         } catch (error) {
-            console.error('Failed to save filters:', error);
         }
     };
 

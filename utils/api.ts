@@ -207,6 +207,7 @@ export const notificationAPI = {
   markAllAsRead: () => api.put('/notifications/read-all'),
   clearAll: () => api.delete('/notifications'),
   getUnreadCount: () => api.get('/notifications/unread-count'),
+  deleteNotification: (notificationId: string) => api.delete(`/notifications/${notificationId}`),
 };
 
 export const chatAPI = {

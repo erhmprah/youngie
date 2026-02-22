@@ -42,8 +42,6 @@ export default function LoginActivityScreen() {
       const response = await userAPI.getLoginActivity();
       setLoginSessions(response.data);
     } catch (error: any) {
-      console.error('Failed to fetch login activity:', error);
-      console.error('Error details:', error.response?.data || error.message);
       // Show empty state on error
       setLoginSessions([]);
     } finally {
@@ -65,7 +63,6 @@ export default function LoginActivityScreen() {
               await userAPI.clearLoginActivity();
               setLoginSessions([]);
             } catch (error: any) {
-              console.error('Failed to clear login activity:', error);
               Alert.alert('Error', 'Failed to clear login activity. Please try again.');
             }
           },
@@ -91,7 +88,6 @@ export default function LoginActivityScreen() {
               });
               setLoginSessions(prev => prev.filter(s => s._id !== sessionId));
             } catch (error: any) {
-              console.error('Failed to remove session:', error);
               Alert.alert('Error', 'Failed to remove session.');
             }
           },

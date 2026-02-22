@@ -218,7 +218,6 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                     await postAPI.unfavoritePost(post._id);
                 }
             } catch (error) {
-                console.error('Favorite action failed:', error);
                 setIsFavorited(prev => !prev);
             }
         }

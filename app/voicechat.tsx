@@ -47,9 +47,8 @@ const VoiceChatScreen: React.FC = () => {
     // @ts-ignore
     pc.onicecandidate = (event) => {
       if (event.candidate && socket.current) {
-        const peerId = peerConnection.current?.remoteDescription ? socket.current.id : null; // Simplified, adjust as needed
+        const peerId = peerConnection.current?.remoteDescription ? socket.current.id : null;
         if (peerId) {
-          console.log('Sending ICE candidate to peer:', peerId);
           socket.current.emit('ice_candidate', event.candidate, peerId);
         }
       }
@@ -57,14 +56,12 @@ const VoiceChatScreen: React.FC = () => {
 
     // @ts-ignore
     pc.ontrack = (event) => {
-      console.log('Remote track received:', event.streams[0]);
       setRemoteStream(event.streams[0]);
       setIsChatting(true);
     };
 
     // @ts-ignore
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE connection state change:', pc.iceConnectionState);
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         if (isChatting) {
           Alert.alert('Chat Ended', 'Your peer has disconnected.');
@@ -123,13 +120,11 @@ const VoiceChatScreen: React.FC = () => {
     });
 
     socket.current.on('connect', () => {
-      console.log('Socket connected:', socket.current?.id);
       socket.current?.emit('join_room');
     });
 
     socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
       const { peerId, initiator } = data;
-      console.log('Match found with peer:', peerId, 'initiator:', initiator);
       setIsConnecting(false);
       setIsChatting(true);
 
@@ -146,9 +141,7 @@ const VoiceChatScreen: React.FC = () => {
     });
 
     socket.current.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
-      console.log('Received offer from:', peerId);
       if (peerConnection.current?.signalingState !== 'stable') {
-        console.warn('Ignoring offer: signaling state is', peerConnection.current?.signalingState);
         return;
       }
       await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
@@ -158,41 +151,32 @@ const VoiceChatScreen: React.FC = () => {
     });
 
     socket.current.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
-      console.log('Received answer from:', peerId);
       if (peerConnection.current && !peerConnection.current.remoteDescription) {
         if (peerConnection.current.signalingState === 'have-local-offer') {
           try {
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
           } catch (e) {
-            console.error('Error setting remote description:', e);
           }
         } else {
-          console.warn('Ignoring answer: signaling state is', peerConnection.current.signalingState);
         }
       } else if (peerConnection.current?.remoteDescription) {
-        console.warn('Ignoring answer: remote description already set.');
       } else {
-        console.warn('Ignoring answer: no peer connection.');
       }
     });
 
     socket.current.on('ice_candidate', async (candidate: RTCIceCandidate, peerId: string) => {
-      console.log('Received ICE candidate from:', peerId);
       try {
         await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (e) {
-        console.error('Error adding ICE candidate', e);
       }
     });
 
     socket.current.on('peer_disconnected', () => {
-      console.log('Peer disconnected.');
       Alert.alert('Chat Ended', 'Your peer has disconnected.');
       resetChat();
     });
 
     socket.current.on('disconnect', () => {
-      console.log('Socket disconnected.');
       resetChat();
     });
   }, [initLocalStream, resetChat, createPeerConnection]);

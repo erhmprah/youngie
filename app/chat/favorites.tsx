@@ -23,15 +23,9 @@ export default function FavoritesScreen() {
 
     const fetchFavorites = async () => {
         try {
-            console.log('🔍 Fetching favorite posts...');
             const response = await postAPI.getFavoritePosts();
-            console.log('✅ Favorites fetched successfully:', response.data);
             setPosts(response.data);
         } catch (error: any) {
-            console.error('❌ Failed to fetch favorites:', error);
-            console.error('   Error details:', error.response?.data || error.message);
-            console.error('   Status code:', error.response?.status);
-            console.error('   URL attempted:', error.config?.url);
         } finally {
             setIsLoading(false);
             setRefreshing(false);
@@ -53,7 +47,6 @@ export default function FavoritesScreen() {
         try {
             await postAPI.unfavoritePost(postId);
         } catch (error) {
-            console.error('Failed to unfavorite:', error);
             fetchFavorites(); // Revert on error
         }
     };
@@ -74,7 +67,6 @@ export default function FavoritesScreen() {
         try {
             await postAPI.likePost(postId);
         } catch (error) {
-            console.error('Failed to like post:', error);
             fetchFavorites(); // Revert on error
         }
     };

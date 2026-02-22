@@ -34,7 +34,6 @@ export default function MutedUsersScreen() {
             const response = await userAPI.getMutedUsers();
             setMutedUsers(response.data);
         } catch (error) {
-            console.error('Failed to fetch muted users:', error);
             Alert.alert('Error', 'Failed to load muted users');
         } finally {
             setIsLoading(false);
@@ -47,7 +46,6 @@ export default function MutedUsersScreen() {
             setMutedUsers(prev => prev.filter(u => u._id !== userId));
             Alert.alert('Success', `Unmuted ${username}'s posts`);
         } catch (error) {
-            console.error('Failed to unmute user:', error);
             Alert.alert('Error', 'Failed to unmute user');
         }
     };

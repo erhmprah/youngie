@@ -65,7 +65,6 @@ export default function AuthCallback() {
         const newSession = await handleOAuthCallback(initialUrl!);
         
         if (newSession && isMounted) {
-          console.log('OAuth session established successfully');
           setStatus('success');
           
           // Get user data and navigate to signup
@@ -129,7 +128,6 @@ export default function AuthCallback() {
 
     // Listen for auth state changes as a fallback
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth callback - auth state changed:', event);
       if (event === 'SIGNED_IN' && session && isMounted) {
         console.log('Session established via auth state change');
         setStatus('success');

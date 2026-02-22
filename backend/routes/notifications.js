@@ -103,6 +103,27 @@ router.delete('/', auth, async (req, res) => {
   }
 });
 
+// Delete a single notification
+router.delete('/:notificationId', auth, async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.notificationId);
+    
+    if (!notification) {
+      return res.status(404).json({ msg: 'Notification not found' });
+    }
+
+    // Ensure the notification belongs to the user
+    if (notification.recipient.toString() !== req.userId) {
+      return res.status(403).json({ msg: 'Not authorized to delete this notification' });
+    }
+
+    await Notification.findByIdAndDelete(req.params.notificationId);
+    res.json({ msg: 'Notification deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get unread count
 router.get('/unread-count', auth, async (req, res) => {
   try {

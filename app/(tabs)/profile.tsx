@@ -80,14 +80,11 @@ export default function ProfileScreen() {
             setSentRequests(sentRequestsResponse.data || []);
             setReceivedRequests(receivedRequestsResponse.data || []);
         } catch (error: any) {
-            console.error('Error fetching profile data:', error);
             if (error.response?.status === 401) {
                 try {
                     await logout();
 
                 } catch (logoutErr) {
-
-                    console.error('Error during logout:', logoutErr);
 
                 }
 
@@ -120,7 +117,6 @@ export default function ProfileScreen() {
             CustomAlert.success('Success', 'Profile updated successfully');
             fetchProfileData();
         } catch (error: any) {
-            console.error('Error updating profile:', error);
             CustomAlert.error('Error', error.response?.data?.msg || 'Failed to update profile');
         }
     };
@@ -140,21 +136,16 @@ export default function ProfileScreen() {
             const filename = `profile-photo-${Date.now()}.jpg`;
 
             try {
-                console.log('Uploading profile photo...');
                 CustomAlert.loading('Uploading photo...', 'Please wait');
                 const response = await userAPI.uploadProfilePhotoBase64(user._id, {
                     imageData: `data:image/jpeg;base64,${base64}`,
                     filename
                 }) as any;
-                console.log('Upload response:', response);
                 if (response.profilePhoto) {
-                    console.log('Profile photo path:', response.profilePhoto);
-                    console.log('Full image URL:', getImageUrl(response.profilePhoto));
                     updateUser({ profilePhoto: response.profilePhoto });
                     CustomAlert.success('Success', 'Profile photo updated successfully');
                     fetchProfileData();
                 }            } catch (error) {
-                console.error('Profile photo upload error:', error);
                 CustomAlert.error('Error', 'Failed to upload profile photo');
             }
         }
@@ -186,7 +177,6 @@ export default function ProfileScreen() {
                     fetchProfileData();
                 }
             } catch (error) {
-                console.error('Cover photo upload error:', error);
                 CustomAlert.error('Error', 'Failed to upload cover photo');
             }
         }
@@ -214,7 +204,6 @@ export default function ProfileScreen() {
                 CustomAlert.success('Success', 'Photo added to album');
                 fetchProfileData();
             } catch (error) {
-                console.error('Album upload error:', error);
                 CustomAlert.error('Error', 'Failed to upload photo');
             }
         }
@@ -258,7 +247,6 @@ export default function ProfileScreen() {
                 router.push(`/chat/${newChatResponse.data._id}`);
             }
         } catch (error) {
-            console.error('Error handling message:', error);
             Alert.alert('Error', 'Failed to open chat');
         }
     };
@@ -280,7 +268,6 @@ export default function ProfileScreen() {
                             setFriends(prev => prev.filter(f => f._id !== friendId));
                             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(Math.max(0, parseInt(s.value) - 1)) } : s));
                         } catch (error) {
-                            console.error('Error unfriending:', error);
                             Alert.alert('Error', 'Failed to unfriend user');
                         }
                     }
@@ -307,7 +294,6 @@ export default function ProfileScreen() {
                             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(Math.max(0, parseInt(s.value) - 1)) } : s));
                             Alert.alert('Success', `${username} has been blocked`);
                         } catch (error) {
-                            console.error('Error blocking user:', error);
                             Alert.alert('Error', 'Failed to block user');
                         }
                     }
@@ -333,7 +319,6 @@ export default function ProfileScreen() {
                             setSentRequests(prev => prev.filter(r => r._id !== requestId));
                             Alert.alert('Success', 'Friend request cancelled');
                         } catch (error) {
-                            console.error('Error canceling request:', error);
                             Alert.alert('Error', 'Failed to cancel friend request');
                         }
                     }
@@ -352,7 +337,6 @@ export default function ProfileScreen() {
             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(parseInt(s.value) + 1) } : s));
             Alert.alert('Success', `You are now friends with ${username}`);
         } catch (error) {
-            console.error('Error accepting request:', error);
             Alert.alert('Error', 'Failed to accept friend request');
         }
     };
@@ -374,7 +358,6 @@ export default function ProfileScreen() {
                             setReceivedRequests(prev => prev.filter(r => r._id !== requestId));
                             Alert.alert('Success', 'Friend request declined');
                         } catch (error) {
-                            console.error('Error declining request:', error);
                             Alert.alert('Error', 'Failed to decline friend request');
                         }
                     }
@@ -384,8 +367,6 @@ export default function ProfileScreen() {
     };
 
     const renderHeader = () => {
-        console.log('User profilePhoto:', user?.profilePhoto);
-        console.log('Full profile photo URL:', getImageUrl(user?.profilePhoto));
         return (
             <ThemedView style={styles.container}>
                 <View style={styles.coverPhotoContainer}>
@@ -403,7 +384,6 @@ export default function ProfileScreen() {
                         <TouchableOpacity 
                             onPress={() => {
                                 const profilePhotoUrl: string | null = user?.profilePhoto ? getImageUrl(user.profilePhoto) ?? null : null;
-                                console.log('Selected image URL:', profilePhotoUrl);
                                 setSelectedImage(profilePhotoUrl);
                             }}
                             onLongPress={handleProfilePhotoUpload}

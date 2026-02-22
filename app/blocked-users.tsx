@@ -40,7 +40,6 @@ export default function BlockedUsersScreen() {
             });
             setBlockedUsers(response.data);
         } catch (error) {
-            console.error('Failed to fetch blocked users:', error);
         } finally {
             setIsLoading(false);
         }
@@ -56,7 +55,6 @@ export default function BlockedUsersScreen() {
             setBlockedUsers(prev => prev.filter(u => u._id !== userId));
             Alert.alert('Success', `${username} has been unblocked`);
         } catch (error) {
-            console.error('Failed to unblock user:', error);
             Alert.alert('Error', 'Failed to unblock user');
         }
     };

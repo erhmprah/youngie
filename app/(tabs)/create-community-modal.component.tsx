@@ -81,7 +81,6 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
             setImage(null);
             setIsAnonymous(false);
         } catch (error: any) {
-            console.error('Error creating community:', error);
             Alert.alert('Error', error.response?.data?.msg || 'Failed to create community.');
         } finally {
             setIsLoading(false);

@@ -768,6 +768,14 @@ router.post('/:userId/ignore-request/:senderId', auth, async (req, res) => {
     await ignorer.save();
     await sender.save();
 
+    // Delete the notification for the ignored friend request
+    await Notification.deleteMany({
+      recipient: ignorer._id,
+      sender: sender._id,
+      type: 'follow',
+      message: 'sent you a friend request'
+    });
+
     res.json({ msg: 'Friend request ignored' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -796,6 +804,14 @@ router.post('/:userId/cancel-request/:targetUserId', auth, async (req, res) => {
 
     await sender.save();
     await target.save();
+
+    // Delete the notification for the friend request
+    await Notification.deleteMany({
+      recipient: target._id,
+      sender: sender._id,
+      type: 'follow',
+      message: 'sent you a friend request'
+    });
 
     res.json({ msg: 'Friend request cancelled' });
   } catch (error) {

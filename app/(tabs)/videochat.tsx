@@ -58,7 +58,6 @@ const VideoChatScreen: React.FC = () => {
       setWebRTC(WebRTC);
       setWebRTCSupported(true);
     } catch (e) {
-      console.error('WebRTC not available:', e);
       setWebRTCSupported(false);
     }
   }, []);
@@ -91,7 +90,7 @@ const VideoChatScreen: React.FC = () => {
         if (socket.current) {
           socket.current.disconnect();
         }
-        KeepAwake.deactivateKeepAwake().catch(console.error);
+        KeepAwake.deactivateKeepAwake().catch(() => {});
       };
     }, [checkPermissions, resetChat])
   );
@@ -144,7 +143,6 @@ const VideoChatScreen: React.FC = () => {
           audioPermission === PermissionsAndroid.RESULTS.GRANTED
         );
       } catch (err) {
-        console.error('Permission error:', err);
         setHasPermissions(false);
       }
     } else {
@@ -155,7 +153,6 @@ const VideoChatScreen: React.FC = () => {
 
   const createPeerConnection = useCallback(() => {
     if (!RTCPeerConnection) {
-      console.error('RTCPeerConnection not available');
       return null;
     }
 
@@ -169,28 +166,24 @@ const VideoChatScreen: React.FC = () => {
         ],
       });
     } catch (error) {
-      console.error('Failed to create RTCPeerConnection:', error);
       return null;
     }
 
     // @ts-ignore
     pc.onicecandidate = (event) => {
       if (event.candidate && socket.current && peerIdRef.current) {
-        console.log('Sending ICE candidate');
         socket.current.emit('ice_candidate', event.candidate, peerIdRef.current);
       }
     };
 
     // @ts-ignore
     pc.ontrack = (event) => {
-      console.log('Remote track received');
       setRemoteStream(event.streams[0]);
       setIsChatting(true);
     };
 
     // @ts-ignore
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', pc.iceConnectionState);
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         if (isChatting) {
           Alert.alert('Chat Ended', 'Connection lost.');
@@ -201,7 +194,6 @@ const VideoChatScreen: React.FC = () => {
 
     // @ts-ignore
     pc.onconnectionstatechange = () => {
-      console.log('Connection state:', pc.connectionState);
     };
 
     return pc;
@@ -228,11 +220,9 @@ const VideoChatScreen: React.FC = () => {
         },
       });
       
-      console.log('Local stream obtained');
       setLocalStream(stream);
       return stream;
     } catch (error) {
-      console.error('Error accessing media devices:', error);
       if ((error as Error).message.includes('development build')) {
         Alert.alert(
           'Development Build Required',
@@ -253,7 +243,6 @@ const VideoChatScreen: React.FC = () => {
       try {
         peerConnection.current.close();
       } catch (e) {
-        console.error('Error closing peer connection:', e);
       }
       peerConnection.current = null;
     }
@@ -263,7 +252,6 @@ const VideoChatScreen: React.FC = () => {
         try {
           track.stop();
         } catch (e) {
-          console.error('Error stopping track:', e);
         }
       });
       setLocalStream(null);
@@ -285,7 +273,7 @@ const VideoChatScreen: React.FC = () => {
     setInputText('');
     setUnreadCount(0);
     setPeerId(null);
-    KeepAwake.deactivateKeepAwake().catch(console.error);
+    KeepAwake.deactivateKeepAwake().catch(() => {});
   }, []);
 
   const startVideoChat = useCallback(async () => {
@@ -317,19 +305,16 @@ const VideoChatScreen: React.FC = () => {
       });
 
       socket.current.on('connect', () => {
-        console.log('Socket connected:', socket.current?.id);
         socket.current?.emit('join_room');
       });
 
       socket.current.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
         Alert.alert('Connection Error', 'Failed to connect to video chat server.');
         setIsConnecting(false);
       });
 
       socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
         const { peerId, initiator } = data;
-        console.log('Match found with peer:', peerId);
         if (peerConnection.current) {
           return;
         }
@@ -346,7 +331,7 @@ const VideoChatScreen: React.FC = () => {
         setIsConnecting(false);
         setPeerId(peerId);
         setIsChatting(true);
-        KeepAwake.activateKeepAwake().catch(console.error);
+        KeepAwake.activateKeepAwake().catch(() => {});
 
         if (initiator) {
           peerConnection.current = createPeerConnection();
@@ -359,7 +344,6 @@ const VideoChatScreen: React.FC = () => {
             try {
               peerConnection.current?.addTrack(track, stream);
             } catch (e) {
-              console.error('Error adding track:', e);
             }
           });
 
@@ -368,16 +352,13 @@ const VideoChatScreen: React.FC = () => {
             await peerConnection.current.setLocalDescription(offer);
             socket.current?.emit('offer', offer, peerId);
           } catch (e) {
-            console.error('Error creating offer:', e);
           }
         }
       });
 
       socket.current.on('offer', async (offer: any, remotePeerId?: string) => {
-        console.log('Received offer, signaling state:', peerConnection.current?.signalingState);
         if (remotePeerId) setPeerId(remotePeerId);
         if (!peerConnection.current || peerConnection.current.signalingState !== 'stable') {
-          console.warn('Creating new peer connection for offer');
           peerConnection.current = createPeerConnection();
           if (!peerConnection.current) return;
 
@@ -385,14 +366,12 @@ const VideoChatScreen: React.FC = () => {
             try {
               peerConnection.current?.addTrack(track, stream);
             } catch (e) {
-              console.error('Error adding track:', e);
             }
           });
         }
 
         try {
           if (peerConnection.current.signalingState !== 'stable') {
-            console.warn('Ignoring offer: signaling state is', peerConnection.current.signalingState);
             return;
           }
           await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
@@ -400,47 +379,37 @@ const VideoChatScreen: React.FC = () => {
           await peerConnection.current.setLocalDescription(answer);
           socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
         } catch (e) {
-          console.error('Error handling offer:', e);
         }
       });
 
       socket.current.on('answer', async (answer: any) => {
-        console.log('Received answer, signaling state:', peerConnection.current?.signalingState);
         if (peerConnection.current && !peerConnection.current.remoteDescription) {
           try {
             if (peerConnection.current.signalingState === 'have-local-offer' ||
                 (peerConnection.current.signalingState === 'stable' && !peerConnection.current.remoteDescription)) {
               await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
             } else {
-              console.warn('Ignoring answer: signaling state is', peerConnection.current.signalingState);
             }
           } catch (e) {
-            console.error('Error setting remote description:', e);
           }
         } else if (peerConnection.current?.remoteDescription) {
-          console.warn('Ignoring answer: remote description already set.');
         } else {
-          console.warn('Ignoring answer: no peer connection.');
         }
       });
 
       socket.current.on('ice_candidate', async (candidate: any) => {
-        console.log('Received ICE candidate');
         try {
           await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
-          console.error('Error adding ICE candidate:', e);
         }
       });
 
       socket.current.on('peer_disconnected', () => {
-        console.log('Peer disconnected');
         Alert.alert('Chat Ended', 'Your peer has disconnected.');
         resetChat();
       });
 
       socket.current.on('disconnect', () => {
-        console.log('Socket disconnected');
         resetChat();
       });
 
@@ -462,7 +431,6 @@ const VideoChatScreen: React.FC = () => {
       });
 
     } catch (error) {
-      console.error('Error starting video chat:', error);
       Alert.alert('Error', 'Failed to start video chat.');
       setIsConnecting(false);
     }
@@ -492,7 +460,6 @@ const VideoChatScreen: React.FC = () => {
       await userAPI.sendFriendRequest(user._id, peerId);
       Alert.alert('Success', 'Friend request sent!');
     } catch (error: any) {
-      console.error('Friend request error:', error);
       Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
     }
   }, [user, peerId]);

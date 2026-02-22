@@ -186,7 +186,6 @@ export default function ChatScreen() {
         setMessages(response.data.messages || []);
         chatAPI.markAsRead(id as string); // Mark as read when opening
       } catch (error) {
-        console.error('Failed to fetch chat:', error);
       } finally {
         setIsLoading(false);
       }
@@ -197,7 +196,6 @@ export default function ChatScreen() {
         const response = await chatAPI.getUserChats(user?._id || '');
         setUserChats(response.data);
       } catch (error) {
-        console.error('Failed to fetch user chats:', error);
       }
     };
 
@@ -334,7 +332,6 @@ export default function ChatScreen() {
             setFontSize(parsed.fontSize || 'medium');
           }
         } catch (error) {
-          console.error('Failed to load font size:', error);
         }
       }
     };
@@ -370,7 +367,6 @@ export default function ChatScreen() {
         msg._id === message._id ? { ...msg, isSending: false } : msg
       ));
     } catch (error) {
-      console.error('Failed to retry send:', error);
       setMessages(prevMessages => prevMessages.map(msg =>
         msg._id === message._id ? { ...msg, isSending: false, sendError: true } : msg
       ));
@@ -477,7 +473,6 @@ export default function ChatScreen() {
         });
         attachmentData = response.data;
       } catch (error) {
-        console.error('Failed to upload attachment:', error);
         Alert.alert('Error', 'Failed to upload media');
         setUploadProgress(0);
         setIsUploading(false);
@@ -510,7 +505,6 @@ export default function ChatScreen() {
       setUploadProgress(0);
       setIsUploading(false);
     } catch (error) {
-      console.error('Failed to send message:', error);
       // Mark message as having send error instead of removing it
       setMessages(prevMessages => prevMessages.map(msg =>
         msg._id === tempId ? { ...msg, isSending: false, sendError: true } : msg
@@ -538,7 +532,6 @@ export default function ChatScreen() {
                 msg._id === message._id ? { ...msg, content: 'Message deleted', isDeleted: true } : msg
               ));
             } catch (error) {
-              console.error('Failed to delete message:', error);
               // Still mark as deleted locally if API fails
               setMessages(prevMessages => prevMessages.map(msg =>
                 msg._id === message._id ? { ...msg, content: 'Message deleted', isDeleted: true } : msg
@@ -605,7 +598,7 @@ export default function ChatScreen() {
       if (sound) {
         try {
           await sound.stopAsync();
-        } catch (e) { console.log('Error stopping playing audio:', e); }
+        } catch (e) {  }
       }
       setPlayingAudio(null);
     }
@@ -616,7 +609,6 @@ export default function ChatScreen() {
       try {
         await recordingRef.current.stopAndUnloadAsync();
       } catch (error) {
-        console.error('Failed to stop previous recording:', error);
       }
       recordingRef.current = null;
       setRecording(null);
@@ -661,7 +653,6 @@ export default function ChatScreen() {
       setRecording(newRecording);
       setIsRecording(true);
     } catch (error) {
-      console.error('Failed to start recording:', error);
       Alert.alert('Error', 'Failed to start recording');
       isRecordingDesired.current = false;
       setIsRecording(false);
@@ -719,7 +710,6 @@ export default function ChatScreen() {
         setAttachment(audioAttachment);
       }
     } catch (error) {
-      console.error('Failed to stop recording:', error);
       setIsRecording(false);
       recordingRef.current = null;
       setMeteringLevels([]);
@@ -776,7 +766,6 @@ export default function ChatScreen() {
         setPlayingAudio(messageId);
       }
     } catch (error) {
-      console.error('Failed to play audio:', error);
       Alert.alert('Error', 'Failed to play audio');
     }
   };
@@ -836,7 +825,6 @@ export default function ChatScreen() {
         }
       });
     } catch (error) {
-      console.error('Error playing preview:', error);
     }
   };
 
@@ -900,7 +888,6 @@ export default function ChatScreen() {
       try {
         attachment = JSON.parse(attachment);
       } catch (e) {
-        console.error('Failed to parse attachment', e);
         return null;
       }
     }
@@ -933,7 +920,6 @@ export default function ChatScreen() {
             style={styles.attachmentImage}
             resizeMode="cover"
             onError={(e) => {
-              console.log('Image load error:', e.nativeEvent.error, attachmentUrl);
               setImageErrors(prev => new Map(prev).set(normalizedUrl, true));
             }}
           />
@@ -1361,7 +1347,6 @@ export default function ChatScreen() {
                       setMessageToForward(null);
                       setForwardSearchText('');
                     } catch (error) {
-                      console.error('Failed to forward message:', error);
                       Alert.alert('Error', 'Failed to forward message');
                     }
                   }}

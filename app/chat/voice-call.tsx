@@ -57,10 +57,8 @@ export default function VoiceCallScreen() {
                 InCallManager.setForceSpeakerphoneOn(false);
                 inCallManagerStarted.current = true;
             } else {
-                console.warn("InCallManager not available on this platform");
             }
         } catch (error) {
-            console.error("InCallManager error on start:", error);
         }
 
         try {
@@ -131,7 +129,6 @@ export default function VoiceCallScreen() {
                             await chatAPI.sendMessage(chatId as string, { content: 'Missed voice call' });
                             sendMessage(chatId as string, user?._id || '', 'Missed voice call', undefined, false);
                         } catch (error) {
-                            console.error('Failed to send missed call message:', error);
                         }
                     }
                 }, 60000);
@@ -168,7 +165,6 @@ export default function VoiceCallScreen() {
                     await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
                     setCallStatus('In call');
                 } catch (error) {
-                    console.error('Failed to set remote answer:', error);
                 }
             }
         };

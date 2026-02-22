@@ -7,10 +7,11 @@ import { Image } from 'expo-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { notificationAPI, userAPI, communityAPI, chatAPI, getImageUrl } from '@/utils/api';
+import { notificationAPI, userAPI, communityAPI, chatAPI, getImageUrl, postAPI, storyAPI } from '@/utils/api';
 import { getColors, spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Swipeable } from 'react-native-gesture-handler';
+import { showErrorAlert } from '@/utils/error-handler';
 
 interface Notification {
   _id: string;
@@ -60,8 +61,7 @@ export default function NotificationsScreen() {
       const response = await notificationAPI.getNotifications();
       setNotifications(response.data);
     } catch (error) {
-      console.error('Failed to fetch notifications:', error);
-      Alert.alert('Error', 'Failed to load notifications');
+      showErrorAlert(error, () => fetchNotifications());
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +74,6 @@ export default function NotificationsScreen() {
         notif._id === notificationId ? { ...notif, isRead: true } : notif
       ));
     } catch (error) {
-      console.error('Failed to mark as read:', error);
     }
   }, []);
 
@@ -181,7 +180,6 @@ export default function NotificationsScreen() {
               setNotifications([]);
               Alert.alert('Success', 'All notifications cleared');
             } catch (error) {
-              console.error('Failed to clear notifications:', error);
               Alert.alert('Error', 'Failed to clear notifications');
             }
           },
@@ -233,7 +231,7 @@ export default function NotificationsScreen() {
     );
   };
 
-  const handleNotificationPress = (notification: Notification) => {
+  const handleNotificationPress = async (notification: Notification) => {
     // Mark as read when tapped
     if (!notification.isRead) {
       handleMarkAsRead(notification._id);
@@ -241,15 +239,84 @@ export default function NotificationsScreen() {
 
     // Navigate based on notification type
     if ((notification.type === 'tag' || notification.type === 'like' || notification.type === 'comment') && notification.relatedPost) {
-      // Navigate to the feed and scroll to the specific post
-      router.push(`/?postId=${notification.relatedPost}`);
+      // Check if the post still exists before navigating
+      try {
+        const response = await postAPI.getPost(notification.relatedPost);
+        
+        if (response.data) {
+          // Navigate to the feed and scroll to the specific post
+          router.push(`/?postId=${notification.relatedPost}`);
+        } else {
+          // Post no longer exists, remove the notification and show alert
+          Alert.alert('Post Deleted', 'This post has been deleted and the notification has been removed.');
+          setNotifications(prev => prev.filter(n => n._id !== notification._id));
+          
+          // Also delete the notification from the backend
+          try {
+            await notificationAPI.deleteNotification(notification._id);
+          } catch (err) {
+            // Ignore errors, notification already removed from UI
+          }
+        }
+      } catch (error: any) {
+        // Post doesn't exist or error occurred
+        if (error.response?.status === 404) {
+          Alert.alert('Post Deleted', 'This post has been deleted and the notification has been removed.');
+          setNotifications(prev => prev.filter(n => n._id !== notification._id));
+          
+          // Also delete the notification from the backend
+          try {
+            await notificationAPI.deleteNotification(notification._id);
+          } catch (err) {
+            // Ignore errors, notification already removed from UI
+          }
+        } else {
+          // Network error or other issue, navigate anyway (feed will handle invalid postId)
+          router.push(`/?postId=${notification.relatedPost}`);
+        }
+      }
+    } else if (notification.relatedCommunity) {
+      // Check if the community still exists before navigating
+      try {
+        const response = await communityAPI.getCommunity(notification.relatedCommunity);
+        
+        if (response.data) {
+          // Navigate to community
+          router.push(`/community/${notification.relatedCommunity}`);
+        } else {
+          // Community no longer exists, remove the notification and show alert
+          Alert.alert('Community Deleted', 'This community has been deleted and the notification has been removed.');
+          setNotifications(prev => prev.filter(n => n._id !== notification._id));
+          
+          // Also delete the notification from the backend
+          try {
+            await notificationAPI.deleteNotification(notification._id);
+          } catch (err) {
+            // Ignore errors, notification already removed from UI
+          }
+        }
+      } catch (error: any) {
+        // Community doesn't exist or error occurred
+        if (error.response?.status === 404) {
+          Alert.alert('Community Deleted', 'This community has been deleted and the notification has been removed.');
+          setNotifications(prev => prev.filter(n => n._id !== notification._id));
+          
+          // Also delete the notification from the backend
+          try {
+            await notificationAPI.deleteNotification(notification._id);
+          } catch (err) {
+            // Ignore errors, notification already removed from UI
+          }
+        } else {
+          // Network error or other issue, navigate anyway
+          router.push(`/community/${notification.relatedCommunity}`);
+        }
+      }
     } else if (notification.relatedChat) {
       // Navigate to chat
       router.push(`/chat/${notification.relatedChat}`);
-    } else if (notification.relatedCommunity) {
-      // Navigate to community
-      router.push(`/community/${notification.relatedCommunity}`);
     }
+    // Note: Story notifications don't have relatedStory in the interface yet
     // Add more navigation cases as needed
   };
 

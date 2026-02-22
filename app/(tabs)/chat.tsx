@@ -14,6 +14,7 @@ import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { onNewNotification, offNewNotification, getSocket } from '@/utils/socket';
 import { SelectFriendModal } from '@/components/select-friend-modal';
 import * as Haptics from 'expo-haptics';
+import { showErrorAlert } from '@/utils/error-handler';
 
 interface User {
     _id: string;
@@ -82,9 +83,8 @@ export default function ChatScreen() {
                 setChats([]);
             }
         } catch (error: any) {
-            console.error('Error fetching chats:', error);
             if (!isRefresh) {
-                Alert.alert('Error', 'Failed to load chats');
+                showErrorAlert(error, () => fetchChats());
             }
             setChats([]);
         } finally {
@@ -146,7 +146,6 @@ export default function ChatScreen() {
                     params: { id: response.data._id }
                 });
             } catch (error: any) {
-                console.error('Error creating group chat:', error);
                 Alert.alert('Error', 'Failed to create group chat.');
             }
         }

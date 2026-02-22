@@ -16,6 +16,7 @@ import { CreateCommunityModal } from './create-community-modal.component';
 import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import { showErrorAlert } from '@/utils/error-handler';
 
 const { width } = Dimensions.get('window');
 
@@ -104,7 +105,6 @@ export default function ExploreScreen() {
           setFilters(JSON.parse(savedFilters));
         }
       } catch (error) {
-        console.error('Failed to load filters', error);
       }
     };
     loadFilters();
@@ -182,7 +182,7 @@ export default function ExploreScreen() {
         setSentRequestIds(profileResponse.data.friendRequests.map((r: any) => typeof r === 'string' ? r : r._id));
       }
     } catch (error) {
-      console.error('Failed to fetch explore data:', error);
+      showErrorAlert(error, () => fetchExploreData());
     } finally {
       setIsLoading(false);
     }
@@ -212,7 +212,7 @@ export default function ExploreScreen() {
         posts: postResponse.data
       });
     } catch (error) {
-      console.error('Search failed:', error);
+      showErrorAlert(error);
     } finally {
       setIsSearching(false);
     }
@@ -228,7 +228,6 @@ export default function ExploreScreen() {
     try {
       await AsyncStorage.setItem('discovery_filters', JSON.stringify(newFilters));
     } catch (error) {
-      console.error('Failed to save filters:', error);
     }
   };
 
