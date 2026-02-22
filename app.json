@@ -15,7 +15,16 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "This app needs access to camera for video chat functionality.",
         "NSMicrophoneUsageDescription": "This app needs access to microphone for video chat functionality.",
-        "NSLocalNetworkUsageDescription": "This app needs access to local network for peer-to-peer video chat."
+        "NSLocalNetworkUsageDescription": "This app needs access to local network for peer-to-peer video chat.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleTypeRole": "Editor",
+            "CFBundleURLName": "com.erhmprah.youngie",
+            "CFBundleURLSchemes": [
+              "youngie"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -38,6 +47,21 @@
         "android.permission.CALL_PHONE",
         "android.permission.ANSWER_PHONE_CALLS",
         "android.permission.READ_CALL_LOG"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "youngie"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "web": {
@@ -72,15 +96,16 @@
       ],
       "expo-notifications",
       "./withCallKeep",
-      "expo-web-browser",
-      "@react-native-google-signin/google-signin"
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
         "projectId": "02522d86-1963-41a3-b08c-cbd55c5722ab"
       }

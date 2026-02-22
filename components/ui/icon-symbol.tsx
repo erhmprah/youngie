@@ -121,9 +121,10 @@ const MAPPING: IconMapping = {
   'xmark.circle.fill': 'x-circle',
   'person.slash': 'user-x',
   'lock': 'lock',
-  'moon': 'moon',
-  'sun': 'sun',
-  'help-circle': 'help-circle',
+   'moon': 'moon',
+   'sun': 'sun',
+   'help-circle': 'help-circle',
+   'logo-google': 'log-in',
 };
 
 export type IconName = keyof typeof MAPPING;

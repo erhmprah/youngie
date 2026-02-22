@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -8,10 +8,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { authAPI } from '@/utils/api';
 
 export default function SignupScreen() {
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const params = useLocalSearchParams();
+  const [username, setUsername] = useState(typeof params.name === 'string' ? params.name : '');
+  const [email, setEmail] = useState(typeof params.email === 'string' ? params.email : '');
+  const [emailVerified, setEmailVerified] = useState(!!params.email); // Track if email came from OAuth (therefore verified)
   const [password, setPassword] = useState('');
   const [birthYear, setBirthYear] = useState('');
   const [gender, setGender] = useState('');
@@ -19,9 +22,50 @@ export default function SignupScreen() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
+  
+  // Email validation states
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
+  const [hasBlurredEmail, setHasBlurredEmail] = useState(false);
+  
+  // Password strength states
+  const [passwordStrength, setPasswordStrength] = useState<{ level: number; label: string; color: string } | null>(null);
+  
+  // Calculate password strength
+  const calculatePasswordStrength = (pwd: string): { level: number; label: string; color: string } => {
+    if (!pwd) return { level: 0, label: '', color: 'transparent' };
+    
+    let score = 0;
+    
+    // Length checks
+    if (pwd.length >= 6) score += 1;
+    if (pwd.length >= 8) score += 1;
+    if (pwd.length >= 12) score += 1;
+    
+    // Character type checks
+    if (/[a-z]/.test(pwd)) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/[0-9]/.test(pwd)) score += 1;
+    if (/[^a-zA-Z0-9]/.test(pwd)) score += 1;
+    
+    // Determine level and label
+    if (score <= 2) return { level: 1, label: 'Weak', color: '#ef4444' }; // red
+    if (score <= 4) return { level: 2, label: 'Fair', color: '#f59e0b' }; // amber
+    if (score <= 5) return { level: 3, label: 'Good', color: '#22c55e' }; // green
+    return { level: 4, label: 'Strong', color: '#16a34a' }; // green-600
+  };
+  
+  // Handle password change
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    setPasswordStrength(calculatePasswordStrength(text));
+  };
+  
   const router = useRouter();
   const { register, isLoading } = useAuth();
   const skipLocationSearch = useRef(false);
+  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -32,6 +76,70 @@ export default function SignupScreen() {
   const inputBackgroundColor = useThemeColor('inputBackground');
   const inputBorderColor = useThemeColor('inputBorder');
   const white = useThemeColor('white');
+
+  // Email validation function
+  const validateEmail = useCallback(async (emailToValidate: string) => {
+    // Don't validate if email is empty or from OAuth (already verified)
+    if (!emailToValidate || emailVerified) {
+      setEmailError(null);
+      setEmailAvailable(null);
+      return true;
+    }
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailToValidate)) {
+      setEmailError('Please enter a valid email address');
+      setEmailAvailable(null);
+      return false;
+    }
+
+    setEmailLoading(true);
+    setEmailError(null);
+
+    try {
+      const response = await authAPI.checkEmail(emailToValidate);
+      if (response.data.available) {
+        setEmailAvailable(true);
+        setEmailError(null);
+        setEmailLoading(false);
+        return true;
+      } else {
+        setEmailAvailable(false);
+        setEmailError(response.data.msg || 'An account with this email already exists');
+        setEmailLoading(false);
+        return false;
+      }
+    } catch (error: any) {
+      console.error('Email validation error:', error);
+      // Don't block registration on validation error - allow user to try
+      setEmailLoading(false);
+      setEmailAvailable(null);
+      return true;
+    }
+  }, [emailVerified]);
+
+  // Handle email blur for synchronous validation
+  const handleEmailBlur = useCallback(() => {
+    setHasBlurredEmail(true);
+    if (email && !emailVerified) {
+      validateEmail(email);
+    }
+  }, [email, emailVerified, validateEmail]);
+
+  // Handle email change - clear previous errors
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    // Clear validation state when user starts typing
+    if (emailError || emailAvailable !== null) {
+      setEmailError(null);
+      setEmailAvailable(null);
+    }
+    // Clear blur state when user starts typing again
+    if (hasBlurredEmail) {
+      setHasBlurredEmail(false);
+    }
+  };
 
 
   // Search location with debounce
@@ -148,6 +256,23 @@ export default function SignupScreen() {
   };
 
   const handleSignup = async () => {
+    // First, validate email if not already validated (from OAuth)
+    if (!emailVerified && email) {
+      const isEmailValid = await validateEmail(email);
+      if (!isEmailValid) {
+        // Email is already registered - show error and don't proceed
+        Alert.alert(
+          'Email Already Registered',
+          'An account with this email already exists. Please login instead or use a different email address.',
+          [
+            { text: 'Login Instead', onPress: () => router.push('/login') },
+            { text: 'OK', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+    }
+
     if (!username || !email || !birthYear || !gender || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -170,7 +295,22 @@ export default function SignupScreen() {
       // User is automatically logged in after registration
       router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Signup Failed', error.toString());
+      // Check if error indicates email already exists
+      const errorStr = error.toString().toLowerCase();
+      if (errorStr.includes('email') && (errorStr.includes('exists') || errorStr.includes('already'))) {
+        setEmailError('An account with this email already exists');
+        setEmailAvailable(false);
+        Alert.alert(
+          'Email Already Registered',
+          'An account with this email already exists. Please login instead.',
+          [
+            { text: 'Login Instead', onPress: () => router.push('/login') },
+            { text: 'OK', style: 'cancel' }
+          ]
+        );
+      } else {
+        Alert.alert('Signup Failed', error.toString());
+      }
     }
   };
 
@@ -208,19 +348,54 @@ export default function SignupScreen() {
 
             <View style={styles.inputContainer}>
               <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+              <View style={[
+                styles.inputWrapper, 
+                { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor },
+                emailError ? { borderColor: errorColor } : emailAvailable ? { borderColor: successColor } : {}
+              ]}>
                 <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
                   placeholder="your@email.com"
                   placeholderTextColor={lightTextColor}
                   value={email}
-                  onChangeText={setEmail}
-                  editable={!isLoading}
+                  onChangeText={handleEmailChange}
+                  onBlur={handleEmailBlur}
+                  editable={!isLoading && !params.email}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
+                {emailLoading && (
+                  <ActivityIndicator size="small" color={primaryColor} style={{ marginLeft: spacing.sm }} />
+                )}
+                {!emailLoading && emailAvailable === true && (
+                  <View style={[styles.verifiedBadge, { backgroundColor: successColor }]}>
+                    <IconSymbol name="check" size={12} color={white} />
+                  </View>
+                )}
+                {!emailLoading && emailError && (
+                  <IconSymbol name="alert-circle" size={20} color={errorColor} style={{ marginLeft: spacing.sm }} />
+                )}
               </View>
+              {emailVerified && (
+                <ThemedText type="caption" style={{ color: successColor, marginTop: spacing.xs }}>
+                  ✓ Verified via Google
+                </ThemedText>
+              )}
+              {emailError && (
+                <View style={{ marginTop: spacing.xs }}>
+                  <ThemedText type="caption" style={{ color: errorColor }}>
+                    {emailError}
+                  </ThemedText>
+                  {!emailVerified && (
+                    <TouchableOpacity onPress={() => router.push('/login')} style={{ marginTop: spacing.xs }}>
+                      <ThemedText type="caption" style={{ color: primaryColor, fontWeight: '600' }}>
+                        → Login instead
+                      </ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -298,7 +473,7 @@ export default function SignupScreen() {
                   placeholder="•••••••• (6+ chars)"
                   placeholderTextColor={lightTextColor}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   editable={!isLoading}
                   secureTextEntry={!showPassword}
                 />
@@ -306,15 +481,40 @@ export default function SignupScreen() {
                   <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
                 </TouchableOpacity>
               </View>
+              {/* Password Strength Indicator */}
+              {passwordStrength && passwordStrength.level > 0 && (
+                <View style={{ marginTop: spacing.sm }}>
+                  <View style={styles.passwordStrengthContainer}>
+                    {/* Strength bars */}
+                    <View style={styles.strengthBarsContainer}>
+                      {[1, 2, 3, 4].map((level) => (
+                        <View
+                          key={level}
+                          style={[
+                            styles.strengthBar,
+                            {
+                              backgroundColor: level <= passwordStrength.level 
+                                ? passwordStrength.color 
+                                : inputBorderColor,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <ThemedText type="caption" style={{ color: passwordStrength.color, fontWeight: '500' }}>
+                      {passwordStrength.label}
+                    </ThemedText>
+                  </View>
+                  {/* Password requirements hints */}
+                  <View style={styles.passwordHints}>
+                    <ThemedText type="caption" style={{ color: lightTextColor, fontSize: 10 }}>
+                      Use 8+ characters with uppercase, lowercase, numbers & symbols
+                    </ThemedText>
+                  </View>
+                </View>
+              )}
             </View>
 
-
-            {/* Divider */}
-            <View style={styles.divider}>
-              <View style={[styles.dividerLine, { backgroundColor: lightTextColor }]} />
-              <ThemedText style={[styles.dividerText, { color: lightTextColor }]}>or</ThemedText>
-              <View style={[styles.dividerLine, { backgroundColor: lightTextColor }]} />
-            </View>
 
             {/* Create Account Button */}
             <TouchableOpacity
@@ -391,6 +591,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     fontSize: typography.sizes.body1,
   },
+  verifiedBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: spacing.sm,
+  },
   genderContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -464,5 +672,26 @@ const styles = StyleSheet.create({
   dividerText: {
     paddingHorizontal: spacing.sm,
     fontSize: typography.sizes.caption,
+  },
+  // Password Strength Indicator Styles
+  passwordStrengthContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  strengthBarsContainer: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  strengthBar: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+  },
+  passwordHints: {
+    marginTop: spacing.xs,
   },
 });

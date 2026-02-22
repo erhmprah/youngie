@@ -136,6 +136,7 @@ function RootLayoutNav() {
         <Stack.Screen name="community/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="chat/incoming-call" options={{ headerShown: false }} />
         <Stack.Screen name="chat/voice-call" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
