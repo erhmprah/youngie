@@ -69,6 +69,13 @@ export default function ProfileScreen() {
 
     const handlePickImage = async () => {
         try {
+            // Request permission to access media library
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Please grant access to your photo library to upload a profile photo.');
+                return;
+            }
+            
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,

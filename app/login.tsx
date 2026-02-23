@@ -1,7 +1,7 @@
 // app/login.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -10,7 +10,7 @@ import { spacing, borderRadius, typography, shadows } from '@/constants/design-t
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signInWithEmail, supabase } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI } from '@/utils/api';
+import { authAPI, isNetworkErrorResponse } from '@/utils/api';
 
 
 export default function LoginScreen() {
@@ -122,11 +122,11 @@ export default function LoginScreen() {
           if (accessToken) {
             const mongoResponse = await authAPI.supabaseLogin(accessToken);
             
-            // Check if response indicates network/server error
-            if (!mongoResponse || !mongoResponse.data) {
-              // Network error - don't redirect to complete-profile
-              console.error('Invalid MongoDB response:', mongoResponse);
-              Alert.alert('Connection Error', 'Unable to connect to the server. Please check your internet connection and try again.');
+            // Check if response indicates network error using the helper function
+            // The API interceptor catches errors and returns { data: null, status: 0, isNetworkError: true }
+            if (isNetworkErrorResponse(mongoResponse)) {
+              // Network error - the API interceptor already showed an error alert
+              // Just update the UI state and let user try again
               setIsLoading(false);
               return;
             }
@@ -155,8 +155,9 @@ export default function LoginScreen() {
         } catch (mongoError: any) {
           console.error('MongoDB login error:', mongoError);
           setIsLoading(false);
-          // Still allow login even if MongoDB fails - they can use the app
-          router.replace('/(tabs)');
+          // Don't redirect - the API interceptor already showed an error alert
+          // The user needs to fix their connection before they can use the app
+          return;
         }
       }
     } catch (error: any) {
@@ -166,103 +167,105 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor }}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <ThemedView style={styles.container}>
-          {/* Header Section */}
-          <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Image 
-                source={require('@/assets/images/youngie_icon.png')} 
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            </View>
-            <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Welcome Back</ThemedText>
-            <ThemedText type="body1" style={{ color: lightTextColor }}>Sign in to continue</ThemedText>
-          </View>
-
-          {/* Form */}
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  placeholder="your@email.com"
-                  placeholderTextColor={lightTextColor}
-                  value={email}
-                  onChangeText={setEmail}
-                  editable={!isLoading}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
+    <SafeAreaView style={{ flex: 1, backgroundColor }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ThemedView style={styles.container}>
+            {/* Header Section */}
+            <View style={styles.header}>
+              <View style={styles.logoContainer}>
+                <Image 
+                  source={require('@/assets/images/youngie_icon.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
                 />
               </View>
+              <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Welcome Back</ThemedText>
+              <ThemedText type="body1" style={{ color: lightTextColor }}>Sign in to continue</ThemedText>
             </View>
 
-            <View style={styles.inputContainer}>
-              <ThemedText type="body2" style={{ fontWeight: '600' }}>Password</ThemedText>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  placeholder="••••••••"
-                  placeholderTextColor={lightTextColor}
-                  value={password}
-                  onChangeText={setPassword}
-                  editable={!isLoading}
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
-                  <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
+                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                  <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    placeholder="your@email.com"
+                    placeholderTextColor={lightTextColor}
+                    value={email}
+                    onChangeText={setEmail}
+                    editable={!isLoading}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText type="body2" style={{ fontWeight: '600' }}>Password</ThemedText>
+                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                  <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    placeholder="••••••••"
+                    placeholderTextColor={lightTextColor}
+                    value={password}
+                    onChangeText={setPassword}
+                    editable={!isLoading}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
+                    <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity 
+                  onPress={() => router.push('/forgot-password')} 
+                  style={styles.forgotPasswordContainer}
+                >
+                  <ThemedText style={{ color: primaryColor }}>Forgot Password?</ThemedText>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity 
-                onPress={() => router.push('/forgot-password')} 
-                style={styles.forgotPasswordContainer}
+
+              {/* Login Button */}
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
+                onPress={handleLogin}
+                disabled={isLoading}
+                activeOpacity={0.8}
               >
-                <ThemedText style={{ color: primaryColor }}>Forgot Password?</ThemedText>
+                {isLoading ? (
+                  <ActivityIndicator color={white} size="small" />
+                ) : (
+                  <ThemedText style={[styles.buttonText, { color: white }]}>Sign In</ThemedText>
+                )}
               </TouchableOpacity>
+
+
+              {/* Signup Section */}
+              <View style={styles.footer}>
+                <ThemedText style={{ color: lightTextColor }}>Don't have an account? </ThemedText>
+                <TouchableOpacity onPress={() => router.push('/signup')} disabled={isLoading}>
+                  <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign Up</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              {/* Policy Links */}
+              <View style={styles.policyFooter}>
+                <TouchableOpacity onPress={() => router.push('/terms')}>
+                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Terms of Service</ThemedText>
+                </TouchableOpacity>
+                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}> • </ThemedText>
+                <TouchableOpacity onPress={() => router.push('/privacy')}>
+                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Privacy Policy</ThemedText>
+                </TouchableOpacity>
+              </View>
             </View>
-
-            {/* Login Button */}
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
-              onPress={handleLogin}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={white} size="small" />
-              ) : (
-                <ThemedText style={[styles.buttonText, { color: white }]}>Sign In</ThemedText>
-              )}
-            </TouchableOpacity>
-
-
-            {/* Signup Section */}
-            <View style={styles.footer}>
-              <ThemedText style={{ color: lightTextColor }}>Don't have an account? </ThemedText>
-              <TouchableOpacity onPress={() => router.push('/signup')} disabled={isLoading}>
-                <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign Up</ThemedText>
-              </TouchableOpacity>
-            </View>
-
-            {/* Policy Links */}
-            <View style={styles.policyFooter}>
-              <TouchableOpacity onPress={() => router.push('/terms')}>
-                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Terms of Service</ThemedText>
-              </TouchableOpacity>
-              <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}> • </ThemedText>
-              <TouchableOpacity onPress={() => router.push('/privacy')}>
-                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Privacy Policy</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ThemedView>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </ThemedView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

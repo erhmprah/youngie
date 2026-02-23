@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, StyleSheet, Text, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
-import { colors, spacing, borderRadius, typography } from '@/constants/design-tokens';
+import Animated, { ZoomIn } from 'react-native-reanimated';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 // Updated IconProps to include standard Vector Icon properties
 interface IconProps {
@@ -12,6 +12,30 @@ interface IconProps {
   style?: ViewStyle;
 }
 
+// Helper to get the correct icon name (outline vs filled)
+const getIconName = (name: string, focused?: boolean): string => {
+  const baseName = name.replace('-outline', '').replace('-fill', '');
+  
+  // Icons that should show filled version when focused
+  const filledIcons = ['heart', 'bookmark', 'bell', 'star', 'notification'];
+  
+  if (focused && filledIcons.includes(baseName)) {
+    // Return filled version
+    return baseName;
+  }
+  
+  // For other icons, check if original name had a suffix
+  if (name.endsWith('-outline')) {
+    return name;
+  }
+  if (name.endsWith('-fill')) {
+    return name;
+  }
+  
+  // Default to outline version for unfocused state
+  return `${baseName}-outline`;
+};
+
 /**
  * Universal Icon Component
  * Maps your internal names to professional Vector Icons
@@ -19,16 +43,20 @@ interface IconProps {
 const VectorIcon = ({ 
   name, 
   size = 24, 
-  color = colors.text, 
+  color, 
   focused, 
   style 
 }: { name: keyof typeof Ionicons.glyphMap; size?: number; color?: string; focused?: boolean; style?: ViewStyle }) => {
-  // Logic to switch between outline and filled versions based on focus
-  const iconName = focused ? String(name) : `${String(name)}-outline`;
+  // Use theme color if not provided
+  const textColor = useThemeColor('text');
+  const iconColor = color || textColor;
+  
+  // Get the correct icon name based on focus state
+  const iconName = getIconName(String(name), focused);
 
   return (
     <View style={[styles.iconWrapper, { width: size, height: size }, style]}>
-      <Ionicons name={iconName as any} size={size} color={color} />
+      <Ionicons name={iconName as any} size={size} color={iconColor} />
     </View>
   );
 };
@@ -62,16 +90,21 @@ export const IconBadge: React.FC<{
   badge?: number;
   size?: number;
   color?: string;
-}> = ({ iconName, badge, size = 24, color = colors.text }: { iconName: keyof typeof Icons; badge?: number; size?: number; color?: string }) => {
+}> = ({ iconName, badge, size = 24, color }: { iconName: keyof typeof Icons; badge?: number; size?: number; color?: string }) => {
+  // Use theme colors
+  const textColor = useThemeColor('text');
+  const primaryColor = useThemeColor('primary');
+  const iconColor = color || textColor;
+  
   const IconComponent = Icons[iconName as keyof typeof Icons] as any;
 
   return (
     <View style={styles.badgeContainer}>
-      <IconComponent size={size} color={color} />
+      <IconComponent size={size} color={iconColor} />
       {badge && badge > 0 && (
         <Animated.View 
           entering={ZoomIn.duration(300)} 
-          style={[styles.badge, { minWidth: size * 0.7, height: size * 0.7 }]}
+          style={[styles.badge, { minWidth: size * 0.7, height: size * 0.7, backgroundColor: primaryColor }]}
         >
           <Text style={[styles.badgeText, { fontSize: size * 0.35 }]}>
             {badge > 99 ? '99' : badge}
@@ -95,7 +128,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -6,
-    backgroundColor: colors.primary || '#FF3B30',
     borderRadius: 10,
     paddingHorizontal: 4,
     justifyContent: 'center',

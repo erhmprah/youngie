@@ -1,5 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
+import { router } from 'expo-router';
 
 // Use machine IP for iOS simulator or physical devices.
 // For Android emulator, '10.0.2.2' maps to the host machine's localhost.
@@ -13,6 +15,132 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5001/api';
 
 console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
+
+// Track last alert time to prevent alert flooding
+let lastAlertTime = 0;
+const ALERT_COOLDOWN_MS = 3000;
+
+/**
+ * Get user-friendly error message based on status code
+ */
+function getApiErrorMessage(status: number, data?: any): { title: string; message: string; shouldRedirect?: boolean } {
+  const serverMessage = data?.msg || data?.message;
+  
+  switch (status) {
+    case 400:
+      return { title: 'Invalid Request', message: serverMessage || 'Please check your input and try again.' };
+    case 401:
+      return { title: 'Session Expired', message: 'Your session has expired. Please log in again.', shouldRedirect: true };
+    case 403:
+      return { title: 'Access Denied', message: serverMessage || 'You do not have permission to perform this action.' };
+    case 404:
+      return { title: 'Not Found', message: serverMessage || 'The requested item was not found.' };
+    case 409:
+      return { title: 'Conflict', message: serverMessage || 'A conflict occurred. Please try again.' };
+    case 422:
+      return { title: 'Validation Error', message: serverMessage || 'Please check your input.' };
+    case 429:
+      return { title: 'Too Many Requests', message: 'Please wait a moment before trying again.' };
+    case 500:
+      return { title: 'Server Error', message: 'Something went wrong on our end. Please try again later.' };
+    case 502:
+    case 503:
+    case 504:
+      return { title: 'Service Unavailable', message: 'The service is temporarily unavailable. Please try again later.' };
+    default:
+      if (status >= 500) {
+        return { title: 'Server Error', message: 'Something went wrong on our end. Please try again later.' };
+      }
+      return { title: 'Error', message: serverMessage || 'An unexpected error occurred. Please try again.' };
+  }
+}
+
+/**
+ * Get network error message
+ */
+function getNetworkErrorMessage(error: any): { title: string; message: string } {
+  const message = error.message?.toLowerCase() || '';
+  
+  if (message.includes('timeout') || message.includes('timed out')) {
+    return { title: 'Request Timeout', message: 'The request took too long. Please check your connection and try again.' };
+  }
+  
+  if (message.includes('network') || message.includes('fetch') || message.includes('connection') || 
+      message.includes('ECONNREFUSED') || message.includes('ENOTFOUND') || message.includes('unable to resolve')) {
+    return { title: 'Connection Error', message: 'Unable to connect to the server. Please check your internet connection and make sure the backend is running.' };
+  }
+  
+  return { title: 'Network Error', message: 'A network error occurred. Please check your connection and try again.' };
+}
+
+/**
+ * Store retry callback for network errors
+ */
+let retryCallback: (() => void) | null = null;
+
+/**
+ * Check if an API response indicates a network error
+ * Use this to check responses from API calls that use the interceptor
+ * @returns true if the response indicates a network error
+ */
+export function isNetworkErrorResponse(response: any): boolean {
+  return response && (response.isNetworkError === true || response.status === 0);
+}
+
+/**
+ * Show API error alert - always show for critical errors
+ */
+function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?: () => void, showAlert: boolean = true): void {
+  if (!showAlert) {
+    // Alert suppressed - caller will handle showing error to user
+    return;
+  }
+  
+  const now = Date.now();
+  
+  // Store retry callback for network errors
+  if (isNetworkError && onRetry) {
+    retryCallback = onRetry;
+  }
+  
+  // Rate limit alerts - only for non-critical errors (4xx)
+  // Always show for network errors (backend offline)
+  if (!isNetworkError && now - lastAlertTime < ALERT_COOLDOWN_MS) {
+    return;
+  }
+  
+  lastAlertTime = now;
+  
+  let errorInfo: { title: string; message: string; shouldRedirect?: boolean };
+  
+  if (isNetworkError || !error.response) {
+    errorInfo = getNetworkErrorMessage(error);
+  } else {
+    errorInfo = getApiErrorMessage(error.response.status, error.response.data);
+  }
+  
+  // Build alert buttons
+  const buttons = [];
+  
+  // Add retry button for network errors
+  if (isNetworkError && onRetry) {
+    buttons.push({ text: 'Retry', onPress: onRetry });
+  }
+  
+  // Add redirect or OK button
+  if (errorInfo.shouldRedirect) {
+    buttons.push({ text: 'OK', onPress: () => router.replace('/login') });
+  } else {
+    buttons.push({ text: 'OK' });
+  }
+  
+  // Show alert
+  Alert.alert(
+    errorInfo.title,
+    errorInfo.message,
+    buttons
+  );
+}
 
 const api: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -44,18 +172,32 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to debug connection issues
+// Add response interceptor to handle errors with user-friendly alerts
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (!error.response) {
-      console.error('❌ Network Error: Could not reach backend.');
-      console.error(`   Attempted URL: ${error.config?.baseURL}${error.config?.url}`);
-      console.error('   Check your API_URL and ensure the server is running.');
+    const isNetworkError = !error.response;
+    
+    if (isNetworkError) {
+      // Log as warning instead of error to prevent Metro from showing as critical error
+      console.warn('⚠️ Network Error: Could not reach backend.');
+      console.warn(`   Attempted URL: ${error.config?.baseURL}${error.config?.url}`);
+      console.warn('   Check your API_URL and ensure the server is running.');
     } else {
       console.log('⚠️ API Error:', error.response.status, error.response.data);
     }
-    return Promise.reject(error);
+    
+    // Show user-friendly error alert
+    showApiErrorAlert(error, isNetworkError);
+    
+    // Don't re-throw the error after showing the alert - this prevents crashes
+    // The UI has already shown an error message to the user
+    // Returning a dummy response keeps the app running without breaking the flow
+    return Promise.resolve({ 
+      data: null, 
+      status: error.response?.status || 0,
+      isNetworkError: isNetworkError 
+    });
   }
 );
 
@@ -442,5 +584,87 @@ export const getImageUrl = (imagePath?: string): string | undefined => {
 export const SOCKET_URL = BASE_URL; // Or a specific port if your sockets are on a different one
 
 export { BASE_URL };
+
+// ============================================
+// Retry Helper Functions
+// ============================================
+
+/**
+ * Make an API call with automatic retry on network failure
+ * @param apiCall - The API call function that returns a promise
+ * @param options - Options for retry behavior
+ * @returns The result of the API call
+ */
+export async function apiCallWithRetry<T>(
+  apiCall: () => Promise<T>,
+  options: {
+    maxRetries?: number;
+    retryDelay?: number;
+    onRetry?: (attempt: number, maxRetries: number) => void;
+    onSuccess?: () => void;
+    onError?: (error: any, finalError: any) => void;
+  } = {}
+): Promise<T> {
+  const {
+    maxRetries = 3,
+    retryDelay = 2000,
+    onRetry,
+    onSuccess,
+    onError
+  } = options;
+
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await apiCall();
+      if (onSuccess) onSuccess();
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      const isNetworkError = !error.response;
+      
+      // Only retry on network errors
+      if (isNetworkError && attempt < maxRetries) {
+        if (onRetry) onRetry(attempt, maxRetries);
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        // Non-network error or max retries reached
+        break;
+      }
+    }
+  }
+
+  if (onError) onError(lastError, lastError);
+  throw lastError;
+}
+
+/**
+ * Show a network error alert with retry option
+ * This can be used in components to show user-friendly errors
+ */
+export function showNetworkErrorWithRetry(
+  message: string = 'Unable to connect to the server. Please check your internet connection and make sure the backend is running.',
+  onRetry: () => void
+): void {
+  const now = Date.now();
+  
+  // Rate limit alerts
+  if (now - lastAlertTime < ALERT_COOLDOWN_MS) {
+    return;
+  }
+  
+  lastAlertTime = now;
+  
+  Alert.alert(
+    'Connection Error',
+    message,
+    [
+      { text: 'Retry', onPress: onRetry },
+      { text: 'OK', style: 'cancel' }
+    ]
+  );
+}
 
 export default api;

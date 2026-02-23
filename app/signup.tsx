@@ -1,7 +1,7 @@
 // app/signup.tsx
 
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -104,126 +104,128 @@ export default function SignupScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor }}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <ThemedView style={styles.container}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
-              <IconSymbol name="person.fill" size={40} color={white} />
-            </View>
-            <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Create Account</ThemedText>
-            <ThemedText type="body1" style={{ color: lightTextColor }}>Join the community</ThemedText>
-          </View>
-
-          {/* Form - Email and Password only */}
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  placeholder="your@email.com"
-                  placeholderTextColor={lightTextColor}
-                  value={email}
-                  onChangeText={setEmail}
-                  editable={!isLoading}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
+    <SafeAreaView style={{ flex: 1, backgroundColor }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ThemedView style={styles.container}>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
+                <IconSymbol name="person.fill" size={40} color={white} />
               </View>
+              <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Create Account</ThemedText>
+              <ThemedText type="body1" style={{ color: lightTextColor }}>Join the community</ThemedText>
             </View>
 
-            <View style={styles.inputContainer}>
-              <ThemedText type="body2" style={{ fontWeight: '600' }}>Password</ThemedText>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  placeholder="•••••••• (6+ chars)"
-                  placeholderTextColor={lightTextColor}
-                  value={password}
-                  onChangeText={setPassword}
-                  editable={!isLoading}
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
-                  <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
-                </TouchableOpacity>
+            {/* Form - Email and Password only */}
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
+                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                  <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    placeholder="your@email.com"
+                    placeholderTextColor={lightTextColor}
+                    value={email}
+                    onChangeText={setEmail}
+                    editable={!isLoading}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
               </View>
-            </View>
 
-            <View style={styles.inputContainer}>
-              <ThemedText type="body2" style={{ fontWeight: '600' }}>Confirm Password</ThemedText>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  placeholder="••••••••"
-                  placeholderTextColor={lightTextColor}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  editable={!isLoading}
-                  secureTextEntry={!showConfirmPassword}
-                />
-                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} disabled={isLoading}>
-                  <IconSymbol name={showConfirmPassword ? "eye" : "eye-off"} size={20} color={textColor} />
-                </TouchableOpacity>
+              <View style={styles.inputContainer}>
+                <ThemedText type="body2" style={{ fontWeight: '600' }}>Password</ThemedText>
+                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                  <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    placeholder="•••••••• (6+ chars)"
+                    placeholderTextColor={lightTextColor}
+                    value={password}
+                    onChangeText={setPassword}
+                    editable={!isLoading}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
+                    <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
 
-            {/* Policy Acceptance */}
-            <TouchableOpacity 
-              style={styles.termsContainer} 
-              onPress={() => setAcceptTerms(!acceptTerms)}
-              activeOpacity={0.7}
-            >
-              <View style={[
-                styles.checkbox, 
-                { borderColor: inputBorderColor, backgroundColor: acceptTerms ? primaryColor : 'transparent' }
-              ]}>
-                {acceptTerms && <IconSymbol name="check" size={14} color={white} />}
+              <View style={styles.inputContainer}>
+                <ThemedText type="body2" style={{ fontWeight: '600' }}>Confirm Password</ThemedText>
+                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                  <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    placeholder="••••••••"
+                    placeholderTextColor={lightTextColor}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    editable={!isLoading}
+                    secureTextEntry={!showConfirmPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} disabled={isLoading}>
+                    <IconSymbol name={showConfirmPassword ? "eye" : "eye-off"} size={20} color={textColor} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.termsTextContainer}>
-                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>
-                  I agree to the{' '}
-                </ThemedText>
-                <TouchableOpacity onPress={() => router.push('/terms')}>
-                  <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Terms of Service</ThemedText>
-                </TouchableOpacity>
-                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}> and </ThemedText>
-                <TouchableOpacity onPress={() => router.push('/privacy')}>
-                  <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Privacy Policy</ThemedText>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
 
-            {/* Create Account Button */}
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
-              onPress={handleSignup}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={white} size="small" />
-              ) : (
-                <ThemedText style={[styles.buttonText, { color: white }]}>Create Account</ThemedText>
-              )}
-            </TouchableOpacity>
-
-            {/* Login Link */}
-            <View style={styles.footer}>
-              <ThemedText style={{ color: lightTextColor }}>Already have an account? </ThemedText>
-              <TouchableOpacity onPress={() => router.push('/login')} disabled={isLoading}>
-                <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign In</ThemedText>
+              {/* Policy Acceptance */}
+              <TouchableOpacity 
+                style={styles.termsContainer} 
+                onPress={() => setAcceptTerms(!acceptTerms)}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.checkbox, 
+                  { borderColor: inputBorderColor, backgroundColor: acceptTerms ? primaryColor : 'transparent' }
+                ]}>
+                  {acceptTerms && <IconSymbol name="check" size={14} color={white} />}
+                </View>
+                <View style={styles.termsTextContainer}>
+                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>
+                    I agree to the{' '}
+                  </ThemedText>
+                  <TouchableOpacity onPress={() => router.push('/terms')}>
+                    <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Terms of Service</ThemedText>
+                  </TouchableOpacity>
+                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}> and </ThemedText>
+                  <TouchableOpacity onPress={() => router.push('/privacy')}>
+                    <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Privacy Policy</ThemedText>
+                  </TouchableOpacity>
+                </View>
               </TouchableOpacity>
+
+              {/* Create Account Button */}
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
+                onPress={handleSignup}
+                disabled={isLoading}
+                activeOpacity={0.8}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={white} size="small" />
+                ) : (
+                  <ThemedText style={[styles.buttonText, { color: white }]}>Create Account</ThemedText>
+                )}
+              </TouchableOpacity>
+
+              {/* Login Link */}
+              <View style={styles.footer}>
+                <ThemedText style={{ color: lightTextColor }}>Already have an account? </ThemedText>
+                <TouchableOpacity onPress={() => router.push('/login')} disabled={isLoading}>
+                  <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign In</ThemedText>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </ThemedView>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </ThemedView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

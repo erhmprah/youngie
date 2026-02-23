@@ -1,8 +1,7 @@
 import React, { createContext, useState, useCallback, useEffect } from 'react';
-import { Platform } from 'react-native';
-import axios from 'axios';
+import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '@/utils/api';
+import api, { BASE_URL } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
 
@@ -54,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const token = await AsyncStorage.getItem('authToken');
             if (token) {
                // Verify token with backend and get user data
-               const response = await axios.get(`${BASE_URL}/api/auth/me`, {
+               const response = await api.get('/auth/me', {
                   headers: { 'x-auth-token': token }
                });
                setUser(response.data);
@@ -62,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                const storedSessionId = await AsyncStorage.getItem('sessionId');
                if (storedSessionId) setSessionId(storedSessionId);
             }
-         } catch (error) {
+         } catch (error: any) {
             console.warn('Failed to restore auth:', error);
             // Clear invalid token
             await AsyncStorage.removeItem('authToken');
@@ -79,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       async (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => {
          setIsLoading(true);
          try {
-            const response = await axios.post(`${BASE_URL}/api/auth/register`, {
+            const response = await api.post('/auth/register', {
                username,
                email,
                password,
@@ -122,7 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
          const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
          const clientLocation = timeZone ? timeZone.split('/').pop()?.replace(/_/g, ' ') : undefined;
 
-         const response = await axios.post(`${BASE_URL}/api/auth/login`, {
+         const response = await api.post('/auth/login', {
             email,
             password,
             deviceName,
@@ -177,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!sessionId) return;
       try {
          const token = await AsyncStorage.getItem('authToken');
-         await axios.post(`${BASE_URL}/api/users/login-activity/logout-others`, 
+         await api.post('/users/login-activity/logout-others', 
             { currentSessionId: sessionId },
             { headers: { 'x-auth-token': token } }
          );

@@ -41,6 +41,7 @@ const MAPPING: IconMapping = {
   'person.add': 'user-plus',
   'person.remove': 'user-minus',
   'person': 'user',
+  'at-sign': 'at-sign',
   
   // Actions
   'edit': 'edit-2',
@@ -121,10 +122,25 @@ const MAPPING: IconMapping = {
   'xmark.circle.fill': 'x-circle',
   'person.slash': 'user-x',
   'lock': 'lock',
-   'moon': 'moon',
-   'sun': 'sun',
-   'help-circle': 'help-circle',
-   'logo-google': 'log-in',
+  'moon': 'moon',
+  'sun': 'sun',
+  'help-circle': 'help-circle',
+  'logo-google': 'log-in',
+  // Additional missing icons
+  'envelope.badge': 'mail',
+  'envelope': 'mail',
+  'questionmark.circle': 'help-circle',
+  'mic.slash.fill': 'mic-off',
+  'mic.fill': 'mic',
+  'speaker.wave.2.fill': 'volume-2',
+  'speaker.fill': 'volume-2',
+  'phone.down.fill': 'phone-off',
+  'app': 'info',
+  'arrow.uturn.backward': 'rotate-ccw',
+  'rectangle.stack': 'layers',
+  'pause.fill': 'pause',
+  'pause.circle.fill': 'pause-circle',
+  'square.grid.2x2': 'grid',
 };
 
 export type IconName = keyof typeof MAPPING;

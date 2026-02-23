@@ -146,6 +146,14 @@ export default function ProfileScreen() {
 
     const handleProfilePhotoUpload = async () => {
         if (!user?._id) return;
+        
+        // Request permission to access media library
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            CustomAlert.error('Permission Required', 'Please grant access to your photo library to upload a profile photo.');
+            return;
+        }
+        
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
@@ -176,6 +184,14 @@ export default function ProfileScreen() {
 
     const handleCoverPhotoUpload = async () => {
         if (!user?._id) return;
+        
+        // Request permission to access media library
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            CustomAlert.error('Permission Required', 'Please grant access to your photo library to upload a cover photo.');
+            return;
+        }
+        
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
@@ -207,6 +223,14 @@ export default function ProfileScreen() {
 
     const handleAddPhotoToAlbum = async () => {
         if (!user?._id) return;
+        
+        // Request permission to access media library
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            CustomAlert.error('Permission Required', 'Please grant access to your photo library to upload photos.');
+            return;
+        }
+        
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
@@ -413,9 +437,12 @@ export default function ProfileScreen() {
                             delayLongPress={500}
                         >
                             <Image source={{ uri: getImageUrl(user?.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
-                            <View style={[styles.editBadge, { backgroundColor: primaryColor, borderColor: white }]}>
-                                <IconSymbol name="camera" size={18} color={white} />
-                            </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.editBadge, { backgroundColor: primaryColor, borderColor: white }]}
+                            onPress={handleProfilePhotoUpload}
+                        >
+                            <IconSymbol name="camera" size={18} color={white} />
                         </TouchableOpacity>
                     </View>
                 </View>
