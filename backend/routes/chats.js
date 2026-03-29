@@ -207,6 +207,53 @@ router.get('/user/:userId', auth, async (req, res) => {
   }
 });
 
+// Get TURN credentials for WebRTC (must be before /:chatId route)
+router.get('/turn-credentials', auth, async (req, res) => {
+  try {
+    // Always include STUN servers for basic connectivity
+    let iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+    ];
+
+    // Fetch TURN credentials from Metered API if configured
+    if (process.env.METERED_API_KEY) {
+      try {
+        const response = await fetch(
+          `https://youngie.metered.live/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`
+        );
+        if (response.ok) {
+          const turnCredentials = await response.json();
+          iceServers = [...iceServers, ...turnCredentials];
+          console.log('✅ TURN credentials fetched from Metered');
+        } else {
+          console.warn('⚠️ Failed to fetch TURN credentials from Metered, using STUN only');
+        }
+      } catch (turnError) {
+        console.warn('⚠️ Error fetching TURN credentials:', turnError.message);
+      }
+    } else if (process.env.TURN_SERVER_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+      // Fallback to static TURN credentials if configured
+      iceServers.push({
+        urls: process.env.TURN_SERVER_URL,
+        username: process.env.TURN_USERNAME,
+        credential: process.env.TURN_CREDENTIAL,
+      });
+      console.log('Using static TURN server credentials');
+    } else {
+      console.log('Using STUN servers only (TURN not configured)');
+    }
+
+    res.json(iceServers);
+  } catch (error) {
+    console.error('Error fetching TURN credentials:', error);
+    res.status(500).json({ error: 'Failed to fetch TURN credentials' });
+  }
+});
+
 // Get single chat
 router.get('/:chatId', auth, async (req, res) => {
     try {
@@ -718,37 +765,6 @@ router.delete('/:chatId', auth, async (req, res) => {
     res.json({ msg: 'Chat deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
-  }
-});
-
-// Get TURN credentials for WebRTC
-router.get('/turn-credentials', auth, async (req, res) => {
-  try {
-    // Always include STUN servers for basic connectivity
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-    ];
-
-    // Add TURN server credentials if configured
-    if (process.env.TURN_SERVER_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
-      iceServers.push({
-        urls: process.env.TURN_SERVER_URL,
-        username: process.env.TURN_USERNAME,
-        credential: process.env.TURN_CREDENTIAL,
-      });
-      console.log('TURN server credentials added to ICE servers');
-    } else {
-      console.log('Using STUN servers only (TURN not configured)');
-    }
-
-    res.json(iceServers);
-  } catch (error) {
-    console.error('Error fetching TURN credentials:', error);
-    res.status(500).json({ error: 'Failed to fetch TURN credentials' });
   }
 });
 

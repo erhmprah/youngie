@@ -114,7 +114,7 @@ export default function AuthCallback() {
           setStatus('error');
           Alert.alert(
             'Authentication Error',
-            error.message || 'Failed to complete authentication. Please try again.',
+            'Something went wrong. Please try again.',
             [
               {
                 text: 'OK',

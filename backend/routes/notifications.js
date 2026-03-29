@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
+const pushService = require('../services/push-notification');
 
 // Get user's notifications
 router.get('/', auth, async (req, res) => {
@@ -156,6 +157,75 @@ router.post('/', auth, async (req, res) => {
     await notification.populate('sender', 'username avatar profilePhoto');
 
     res.json(notification);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Register device push token
+router.post('/register-token', auth, async (req, res) => {
+  try {
+    const { token, device, platform } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'Push token is required' });
+    }
+
+    // Validate device type
+    const validDevices = ['ios', 'android', 'web', 'unknown'];
+    const validPlatforms = ['expo', 'fcm'];
+
+    const deviceType = validDevices.includes(device) ? device : 'unknown';
+    const platformType = validPlatforms.includes(platform) ? platform : 'expo';
+
+    const result = await pushService.registerPushToken(
+      req.userId,
+      token,
+      deviceType,
+      platformType
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unregister device push token
+router.delete('/unregister-token', auth, async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'Push token is required' });
+    }
+
+    const result = await pushService.unregisterPushToken(req.userId, token);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's registered device tokens
+router.get('/device-tokens', auth, async (req, res) => {
+  try {
+    const result = await pushService.getUserPushTokens(req.userId);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -239,6 +239,11 @@ const VideoChatScreen: React.FC = () => {
   }, [hasPermissions, mediaDevices, navigation]);
 
   const resetChat = useCallback((keepLocalStream = false) => {
+    // Notify peer before cleaning up
+    if (peerId && socket.current?.connected) {
+      socket.current.emit('peer_disconnected', peerId);
+    }
+    
     if (peerConnection.current) {
       try {
         peerConnection.current.close();
@@ -302,15 +307,73 @@ const VideoChatScreen: React.FC = () => {
       socket.current = io(SOCKET_URL, {
         transports: ['websocket'],
         timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
       });
 
       socket.current.on('connect', () => {
+        console.log('Video chat socket connected:', socket.current?.id);
         socket.current?.emit('join_room');
       });
 
-      socket.current.on('connect_error', (error) => {
-        Alert.alert('Connection Error', 'Failed to connect to video chat server.');
+      socket.current.on('error', (error) => {
+        console.error('Video chat socket error:', error.message || error);
+        Alert.alert('Connection Error', 'A socket error occurred. Please try again.');
         setIsConnecting(false);
+        resetChat();
+      });
+
+      socket.current.on('connect_error', (error) => {
+        console.error('Video chat socket connection error:', error.message);
+        // Don't show alert immediately - let reconnection attempts happen first
+        if (socket.current && !socket.current.connected) {
+          setTimeout(() => {
+            if (!socket.current?.connected) {
+              Alert.alert('Connection Error', 'Failed to connect to video chat server. Please check your internet connection and try again.');
+              setIsConnecting(false);
+            }
+          }, 15000); // Wait 15 seconds before showing error to allow reconnection attempts
+        }
+      });
+
+      socket.current.on('timeout', () => {
+        console.log('Video chat socket connection timed out');
+        Alert.alert('Connection Timeout', 'The connection timed out. Please try again.');
+        setIsConnecting(false);
+      });
+
+      socket.current.on('close', () => {
+        console.log('Video chat socket closed');
+        if (isChatting || isConnecting) {
+          Alert.alert('Connection Closed', 'The connection was closed unexpectedly.');
+          resetChat();
+        }
+      });
+
+      socket.current.on('disconnect', (reason) => {
+        console.log('Video chat socket disconnected:', reason);
+        if (isChatting || isConnecting) {
+          Alert.alert('Disconnected', 'Connection lost. Please try connecting again.');
+        }
+        resetChat();
+      });
+
+      socket.current.on('reconnect', (attemptNumber) => {
+        console.log('Video chat socket reconnected after', attemptNumber, 'attempts');
+        if (!isChatting) {
+          socket.current?.emit('join_room');
+        }
+      });
+
+      socket.current.on('reconnect_attempt', (attemptNumber) => {
+        console.log('Video chat socket reconnection attempt:', attemptNumber);
+      });
+
+      socket.current.on('reconnect_failed', () => {
+        console.error('Video chat socket reconnection failed');
+        Alert.alert('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
       });
 
       socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
@@ -357,43 +420,57 @@ const VideoChatScreen: React.FC = () => {
       });
 
       socket.current.on('offer', async (offer: any, remotePeerId?: string) => {
-        if (remotePeerId) setPeerId(remotePeerId);
-        if (!peerConnection.current || peerConnection.current.signalingState !== 'stable') {
-          peerConnection.current = createPeerConnection();
-          if (!peerConnection.current) return;
-
-          stream.getTracks().forEach((track: MediaStreamTrack) => {
-            try {
-              peerConnection.current?.addTrack(track, stream);
-            } catch (e) {
-            }
-          });
-        }
-
         try {
-          if (peerConnection.current.signalingState !== 'stable') {
-            return;
+          if (remotePeerId) setPeerId(remotePeerId);
+          
+          // Update UI state when offer is received - peer is found but still connecting
+          setIsConnecting(false);
+          setIsChatting(true);
+          KeepAwake.activateKeepAwake().catch(() => {});
+          
+          if (!peerConnection.current || peerConnection.current.signalingState !== 'stable') {
+            peerConnection.current = createPeerConnection();
+            if (!peerConnection.current) return;
+
+            stream.getTracks().forEach((track: MediaStreamTrack) => {
+              try {
+                peerConnection.current?.addTrack(track, stream);
+              } catch (e) {
+                console.error('Error adding track in offer:', e);
+              }
+            });
           }
-          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
-          const answer = await peerConnection.current.createAnswer();
-          await peerConnection.current.setLocalDescription(answer);
-          socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
-        } catch (e) {
+
+          try {
+            if (peerConnection.current.signalingState !== 'stable') {
+              return;
+            }
+            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.current.createAnswer();
+            await peerConnection.current.setLocalDescription(answer);
+            socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
+          } catch (e) {
+            console.error('Error handling offer:', e);
+          }
+        } catch (error) {
+          console.error('Error in offer handler:', error);
         }
       });
 
       socket.current.on('answer', async (answer: any) => {
-        if (peerConnection.current && !peerConnection.current.remoteDescription) {
-          try {
-            if (peerConnection.current.signalingState === 'have-local-offer' ||
-                (peerConnection.current.signalingState === 'stable' && !peerConnection.current.remoteDescription)) {
-              await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
-            } else {
+        try {
+          if (peerConnection.current && !peerConnection.current.remoteDescription) {
+            try {
+              if (peerConnection.current.signalingState === 'have-local-offer' ||
+                  (peerConnection.current.signalingState === 'stable' && !peerConnection.current.remoteDescription)) {
+                await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+              }
+            } catch (e) {
+              console.error('Error setting remote description:', e);
             }
-          } catch (e) {
           }
-        } else if (peerConnection.current?.remoteDescription) {
-        } else {
+        } catch (error) {
+          console.error('Error in answer handler:', error);
         }
       });
 
@@ -401,6 +478,7 @@ const VideoChatScreen: React.FC = () => {
         try {
           await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
+          console.error('Error adding ICE candidate:', e);
         }
       });
 
@@ -409,8 +487,9 @@ const VideoChatScreen: React.FC = () => {
         resetChat();
       });
 
-      socket.current.on('disconnect', () => {
-        resetChat();
+      socket.current.on('socket_error', (error: { message: string }) => {
+        console.error('Video chat socket error:', error.message);
+        Alert.alert('Socket Error', error.message);
       });
 
       socket.current.on('video_status_change', (data: { isPaused: boolean }) => {
@@ -460,7 +539,7 @@ const VideoChatScreen: React.FC = () => {
       await userAPI.sendFriendRequest(user._id, peerId);
       Alert.alert('Success', 'Friend request sent!');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   }, [user, peerId]);
 

@@ -87,7 +87,7 @@ export default function NotificationsScreen() {
       ));
       Alert.alert('Success', 'Friend request accepted!');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to accept request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -101,7 +101,7 @@ export default function NotificationsScreen() {
       ));
       Alert.alert('Ignored', 'Friend request ignored');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to ignore request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -114,7 +114,7 @@ export default function NotificationsScreen() {
       ));
       Alert.alert('Success', 'Member approved!');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to approve member');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -126,7 +126,7 @@ export default function NotificationsScreen() {
       ));
       Alert.alert('Rejected', 'Join request rejected');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to reject request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -139,7 +139,7 @@ export default function NotificationsScreen() {
       ));
       Alert.alert('Success', 'You have joined the chat!');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to accept invitation');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -152,7 +152,7 @@ export default function NotificationsScreen() {
       ));
       Alert.alert('Rejected', 'Chat invitation rejected');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to reject invitation');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 

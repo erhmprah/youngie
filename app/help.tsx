@@ -18,7 +18,7 @@ export default function HelpScreen() {
     };
 
     return (
-        <ThemedView style={[styles.container, { backgroundColor }]}>
+        <ThemedView style={[styles.container, { backgroundColor }]} safe>
             <Stack.Screen options={{ title: 'Help & Support' }} />
 
             <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>

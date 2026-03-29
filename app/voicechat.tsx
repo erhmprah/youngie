@@ -85,9 +85,9 @@ const VoiceChatScreen: React.FC = () => {
       setLocalStream(stream);
       return stream;
     } catch (error) {
-      console.error('Error accessing media devices:', error);
-      Alert.alert('Error', (error as Error).message || 'Microphone access is required for voice chat.');
-      navigation.goBack(); // Navigate back if permissions are denied
+      console.log('Issue with microphone access, handling gracefully');
+      Alert.alert('Error', 'Microphone access is required. Please check your permissions.');
+      navigation.goBack();
       return null;
     }
   }, [navigation]);
@@ -117,50 +117,87 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current = io(SOCKET_SERVER_URL, {
       transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
     });
 
     socket.current.on('connect', () => {
+      console.log('Socket connected:', socket.current?.id);
       socket.current?.emit('join_room');
     });
 
-    socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
-      const { peerId, initiator } = data;
+    socket.current.on('connect_error', (error) => {
+      console.error('Socket connection error:', error.message);
+      Alert.alert('Connection Error', 'Failed to connect to the chat server. Please try again.');
       setIsConnecting(false);
-      setIsChatting(true);
+    });
 
-      peerConnection.current = createPeerConnection();
-      stream.getTracks().forEach((track: MediaStreamTrack) => {
-        peerConnection.current?.addTrack(track, stream);
-      });
+    socket.current.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      if (isChatting) {
+        Alert.alert('Disconnected', 'Connection lost. Please try connecting again.');
+      }
+      resetChat();
+    });
 
-      if (initiator) {
-        const offer = await peerConnection.current.createOffer();
-        await peerConnection.current.setLocalDescription(offer);
-        socket.current?.emit('offer', offer, peerId);
+    socket.current.on('socket_error', (error: { message: string }) => {
+      console.error('Socket error:', error.message);
+      Alert.alert('Socket Error', error.message);
+    });
+
+    socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+      try {
+        const { peerId, initiator } = data;
+        setIsConnecting(false);
+        setIsChatting(true);
+
+        peerConnection.current = createPeerConnection();
+        stream.getTracks().forEach((track: MediaStreamTrack) => {
+          peerConnection.current?.addTrack(track, stream);
+        });
+
+        if (initiator) {
+          const offer = await peerConnection.current.createOffer();
+          await peerConnection.current.setLocalDescription(offer);
+          socket.current?.emit('offer', offer, peerId);
+        }
+      } catch (error) {
+        console.error('Error in match_found:', error);
+        Alert.alert('Connection Error', 'Failed to establish connection. Please try again.');
+        resetChat();
       }
     });
 
     socket.current.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
-      if (peerConnection.current?.signalingState !== 'stable') {
-        return;
+      try {
+        if (peerConnection.current?.signalingState !== 'stable') {
+          return;
+        }
+        await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.current.createAnswer();
+        await peerConnection.current.setLocalDescription(answer);
+        socket.current?.emit('answer', answer, peerId);
+      } catch (error) {
+        console.error('Error handling offer:', error);
       }
-      await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.current.createAnswer();
-      await peerConnection.current.setLocalDescription(answer);
-      socket.current?.emit('answer', answer, peerId);
     });
 
     socket.current.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
-      if (peerConnection.current && !peerConnection.current.remoteDescription) {
-        if (peerConnection.current.signalingState === 'have-local-offer') {
-          try {
-            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
-          } catch (e) {
+      try {
+        if (peerConnection.current && !peerConnection.current.remoteDescription) {
+          if (peerConnection.current.signalingState === 'have-local-offer') {
+            try {
+              await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+            } catch (e) {
+              console.error('Error setting remote description:', e);
+            }
           }
-        } else {
         }
-      } else if (peerConnection.current?.remoteDescription) {
-      } else {
+      } catch (error) {
+        console.error('Error handling answer:', error);
       }
     });
 
@@ -168,6 +205,7 @@ const VoiceChatScreen: React.FC = () => {
       try {
         await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (e) {
+        console.error('Error adding ICE candidate:', e);
       }
     });
 
@@ -176,10 +214,26 @@ const VoiceChatScreen: React.FC = () => {
       resetChat();
     });
 
-    socket.current.on('disconnect', () => {
-      resetChat();
+    socket.current.on('reconnect', (attemptNumber: number) => {
+      console.log('Socket reconnected after', attemptNumber, 'attempts');
+      if (!isChatting) {
+        socket.current?.emit('join_room');
+      }
     });
-  }, [initLocalStream, resetChat, createPeerConnection]);
+
+    socket.current.on('reconnect_attempt', (attemptNumber: number) => {
+      console.log('Socket reconnection attempt:', attemptNumber);
+    });
+
+    socket.current.on('reconnect_error', (error: Error) => {
+      console.error('Socket reconnection error:', error.message);
+    });
+
+    socket.current.on('reconnect_failed', () => {
+      console.error('Socket reconnection failed');
+      Alert.alert('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
+    });
+  }, [initLocalStream, resetChat, createPeerConnection, isChatting]);
 
   const findNextPeer = useCallback(() => {
     resetChat();

@@ -247,7 +247,7 @@ export default function CompleteProfileScreen() {
       );
 
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to complete profile. Please try again.');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }

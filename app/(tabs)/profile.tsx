@@ -39,7 +39,7 @@ export default function ProfileScreen() {
     const [sentRequests, setSentRequests] = useState<any[]>([]);
     const [receivedRequests, setReceivedRequests] = useState<any[]>([]);
     const [album, setAlbum] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
     const { user, logout, updateUser } = useAuth();
@@ -56,7 +56,10 @@ export default function ProfileScreen() {
     const errorColor = useThemeColor('error');
 
     const fetchProfileData = useCallback(async () => {
-        if (!userId) return;
+        if (!userId) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         
         // Create a timeout to prevent infinite loading
@@ -118,16 +121,29 @@ export default function ProfileScreen() {
     }, [userId, logout]);
 
     const isMountedRef = React.useRef(true);
+    const hasFetchedRef = React.useRef(false);
     
     useFocusEffect(
         useCallback(() => {
             isMountedRef.current = true;
-            fetchProfileData();
+            
+            // Only fetch if we have a userId and haven't fetched yet
+            if (userId && !hasFetchedRef.current) {
+                hasFetchedRef.current = true;
+                fetchProfileData();
+            } else if (!userId) {
+                // If no userId, allow re-fetch when it becomes available
+                hasFetchedRef.current = false;
+                setLoading(false);
+            } else {
+                // UserId is available but already fetched, refresh data
+                fetchProfileData();
+            }
             
             return () => {
                 isMountedRef.current = false;
             };
-        }, [fetchProfileData])
+        }, [fetchProfileData, userId])
     );
 
     const handleEditProfile = async (profileData: any) => {
@@ -436,7 +452,13 @@ export default function ProfileScreen() {
                             onLongPress={handleProfilePhotoUpload}
                             delayLongPress={500}
                         >
-                            <Image source={{ uri: getImageUrl(user?.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
+                            {user?.profilePhoto ? (
+                                <Image source={{ uri: getImageUrl(user?.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
+                            ) : (
+                                <View style={[styles.avatarPlaceholder, { borderColor: primaryColor, backgroundColor: cardBackgroundColor }]}>
+                                    <IconSymbol name="person.fill" size={50} color={lightTextColor} />
+                                </View>
+                            )}
                         </TouchableOpacity>
                         <TouchableOpacity 
                             style={[styles.editBadge, { backgroundColor: primaryColor, borderColor: white }]}
@@ -793,6 +815,7 @@ const styles = StyleSheet.create({
     headerContent: { alignItems: 'center', paddingTop: 60, paddingHorizontal: spacing.xl },
     avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
     avatarImage: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
+    avatarPlaceholder: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, justifyContent: 'center', alignItems: 'center', backgroundColor: '#E0E0E0' },
     editBadge: { position: 'absolute', bottom: 5, right: 5, width: 32, height: 32, borderRadius: 16, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
     profileDetails: { gap: spacing.xs, marginBottom: spacing.md },
     detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },

@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppState } from 'react-native';
 
@@ -20,6 +20,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import AuthLoadingScreen from '@/components/auth-loading-screen';
 import { supabase } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 // Conditionally import expo-notifications
 let Notifications: any = null;
@@ -36,6 +37,18 @@ function RootLayoutNav() {
   const primaryColor = useThemeColor('primary');
   const [hasSupabaseSession, setHasSupabaseSession] = useState(false);
   const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
+  
+  // Initialize push notifications
+  const { 
+    hasPermission, 
+    token: pushToken, 
+    error: pushError, 
+    registerPushToken, 
+    reRegisterOnLogin 
+  } = usePushNotifications();
+  
+  // Track previous sign-in state for detecting login
+  const prevSignedInRef = useRef<boolean | null>(null);
 
   const navigationTheme = useMemo(() => {
     const baseTheme = theme === 'dark' ? DarkTheme : DefaultTheme;
@@ -54,17 +67,95 @@ function RootLayoutNav() {
       // Set up notification response listener
       notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
         const data = response.notification.request.content.data as any;
-        if (data.type === 'incoming-call') {
-          // Handle incoming call notification tap
-          router.push({
-            pathname: '/chat/voice-call',
-            params: {
-              chatId: data.chatId,
-              name: data.caller?.username || 'User',
-              image: data.caller?.profilePhoto,
-              offer: data.offer ? JSON.stringify(data.offer) : undefined,
+        
+        // Handle different notification types
+        switch (data.type) {
+          case 'incoming-call':
+            // Handle incoming call notification tap
+            router.push({
+              pathname: '/chat/voice-call',
+              params: {
+                chatId: data.chatId,
+                name: data.caller?.username || 'User',
+                image: data.caller?.profilePhoto,
+                offer: data.offer ? JSON.stringify(data.offer) : undefined,
+              }
+            });
+            break;
+            
+          case 'message':
+          case 'new-message':
+            // Navigate to chat
+            if (data.chatId) {
+              router.push({
+                pathname: '/chat/[id]',
+                params: { id: data.chatId }
+              });
             }
-          });
+            break;
+            
+          case 'friend-request':
+            // Navigate to profile of requester
+            if (data.userId) {
+              router.push({
+                pathname: '/user/[id]',
+                params: { id: data.userId }
+              });
+            }
+            break;
+            
+          case 'like':
+          case 'post-like':
+            // Navigate to post
+            if (data.postId) {
+              router.push({
+                pathname: '/post/[id]',
+                params: { id: data.postId }
+              });
+            }
+            break;
+            
+          case 'comment':
+          case 'post-comment':
+            // Navigate to post with focus on comments
+            if (data.postId) {
+              router.push({
+                pathname: '/post/[id]',
+                params: { id: data.postId }
+              });
+            }
+            break;
+            
+          case 'mention':
+            // Navigate to post or chat depending on context
+            if (data.postId) {
+              router.push({
+                pathname: '/post/[id]',
+                params: { id: data.postId }
+              });
+            } else if (data.chatId) {
+              router.push({
+                pathname: '/chat/[id]',
+                params: { id: data.chatId }
+              });
+            }
+            break;
+            
+          case 'match':
+            // Navigate to user profile who matched
+            if (data.userId) {
+              router.push({
+                pathname: '/user/[id]',
+                params: { id: data.userId }
+              });
+            }
+            break;
+            
+          case 'notification':
+          default:
+            // Navigate to notifications screen
+            router.push('/notifications');
+            break;
         }
       });
     }
@@ -145,13 +236,42 @@ function RootLayoutNav() {
     }
   }, [isLoading, isCheckingSupabase, isSignedIn, user, router]);
 
+  // Handle push notification registration on login
+  useEffect(() => {
+    // Detect when user logs in (transition from not signed in to signed in)
+    if (prevSignedInRef.current === false && isSignedIn) {
+      // User just logged in - register push notifications
+      console.log('🔔 User logged in, registering push notifications...');
+      reRegisterOnLogin();
+    }
+    
+    // Update the ref for next comparison
+    prevSignedInRef.current = isSignedIn;
+    
+    // Initial registration if already signed in
+    if (isSignedIn && !prevSignedInRef.current) {
+      console.log('🔔 Initial push notification registration...');
+      registerPushToken();
+    }
+  }, [isSignedIn, registerPushToken, reRegisterOnLogin]);
+
+  // Log push notification errors for debugging
+  useEffect(() => {
+    if (pushError) {
+      console.warn('⚠️ Push notification error:', pushError);
+    }
+    if (pushToken) {
+      console.log('✅ Push token registered:', pushToken.substring(0, 20) + '...');
+    }
+  }, [pushError, pushToken]);
+
   if (isLoading || isCheckingSupabase) {
     return <AuthLoadingScreen />;
   }
 
   return (
     <ThemeProvider value={navigationTheme}>
-      <Stack>
+      <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />

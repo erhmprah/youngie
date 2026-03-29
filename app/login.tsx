@@ -11,6 +11,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signInWithEmail, supabase } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI, isNetworkErrorResponse } from '@/utils/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 
 export default function LoginScreen() {
@@ -19,6 +20,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { updateUser } = useAuth();
 
   // Check for existing Supabase session on mount
   useEffect(() => {
@@ -84,6 +86,7 @@ export default function LoginScreen() {
 
       if (error) {
         const errorMessage = error.message?.toLowerCase() || '';
+        const errorCode = (error as any).code || '';
         
         // Check for various credential error patterns
         if (errorMessage.includes('email') || errorMessage.includes('no user') || errorMessage.includes('not found') || errorMessage.includes('invalid email')) {
@@ -102,8 +105,15 @@ export default function LoginScreen() {
           return;
         }
         
-        // Handle invalid credentials generally
-        if (errorMessage.includes('invalid') || errorMessage.includes('credentials') || errorMessage.includes('unauthorized')) {
+        // Handle invalid credentials generally - this specifically catches "Invalid login credentials"
+        if (errorMessage.includes('invalid') || errorMessage.includes('credentials') || errorMessage.includes('unauthorized') || errorCode === 'invalid_credentials') {
+          Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Handle AuthApiError specifically
+        if (error.name === 'AuthApiError' || errorMessage.includes('auth') || errorCode) {
           Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
           setIsLoading(false);
           return;
@@ -146,6 +156,11 @@ export default function LoginScreen() {
             await AsyncStorage.setItem('sessionId', mongoResponse.data.sessionId);
             await AsyncStorage.setItem('profileCompleted', 'true');
             
+            // Update AuthContext with user data
+            if (mongoResponse.data.user) {
+              updateUser(mongoResponse.data.user);
+            }
+            
             setIsLoading(false);
             router.replace('/(tabs)');
           } else {
@@ -162,7 +177,34 @@ export default function LoginScreen() {
       }
     } catch (error: any) {
       setIsLoading(false);
-      Alert.alert('Login Failed', error.message || 'An unexpected error occurred. Please try again.');
+      
+      // Handle Supabase AuthApiError specifically
+      const errorMessage = error?.message?.toLowerCase() || '';
+      const errorCode = error?.code || '';
+      const errorName = error?.name || '';
+      
+      // Check for AuthApiError - this is the specific error from Supabase
+      // that can crash the app if not caught
+      if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
+        Alert.alert(
+          'Login Failed',
+          'Invalid email or password. Please check your credentials and try again.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Check for credential-related errors in catch block too
+      if (errorMessage.includes('invalid') || errorMessage.includes('credentials') || 
+          errorMessage.includes('password') || errorMessage.includes('login') ||
+          errorCode === 'invalid_credentials' || errorName === 'AuthApiError') {
+        Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
+        return;
+      }
+      
+      // Handle any other errors gracefully - don't crash the app
+      console.log('Login issue, handling gracefully');
+      Alert.alert('Login Failed', 'Something went wrong. Please try again later.');
     }
   };
 

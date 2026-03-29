@@ -1,7 +1,7 @@
 // app/signup.tsx
 
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking, SafeAreaView } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking, SafeAreaView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -67,7 +67,9 @@ export default function SignupScreen() {
 
       if (error) {
         // Check for specific error types
-        if (error.message?.toLowerCase().includes('email')) {
+        const errorMessage = error.message?.toLowerCase() || '';
+        
+        if (errorMessage.includes('email')) {
           Alert.alert(
             'Email Already Registered',
             'An account with this email already exists. Please login or use a different email address.',
@@ -99,7 +101,41 @@ export default function SignupScreen() {
 
     } catch (error: any) {
       setIsLoading(false);
-      Alert.alert('Signup Failed', error.message || 'An unexpected error occurred. Please try again.');
+      
+      // Handle Supabase AuthApiError specifically to prevent app crashes
+      const errorMessage = error?.message?.toLowerCase() || '';
+      const errorName = error?.name || '';
+      
+      // Check for AuthApiError - this is the specific error from Supabase
+      // that can crash the app if not caught
+      if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
+        Alert.alert(
+          'Signup Failed',
+          'An account with this email already exists or the credentials are invalid. Please try a different email or log in.',
+          [
+            { text: 'Login Instead', onPress: () => router.push('/login') },
+            { text: 'OK', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+      
+      // Check for email already registered errors
+      if (errorMessage?.toLowerCase().includes('email')) {
+        Alert.alert(
+          'Email Already Registered',
+          'An account with this email already exists. Please login or use a different email address.',
+          [
+            { text: 'Login Instead', onPress: () => router.push('/login') },
+            { text: 'OK', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+      
+      // Handle any other errors gracefully - don't crash the app
+      console.log('Signup issue, handling gracefully');
+      Alert.alert('Signup Failed', 'Something went wrong. Please try again later.');
     }
   };
 
@@ -110,8 +146,12 @@ export default function SignupScreen() {
           <ThemedView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-              <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
-                <IconSymbol name="person.fill" size={40} color={white} />
+              <View style={styles.logoContainer}>
+                <Image 
+                  source={require('@/assets/images/youngie_icon.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
               <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Create Account</ThemedText>
               <ThemedText type="body1" style={{ color: lightTextColor }}>Join the community</ThemedText>
@@ -244,13 +284,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.round,
+    width: 100,
+    height: 100,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
-    ...shadows.lg,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   form: {
     gap: spacing.lg,

@@ -1,20 +1,37 @@
 // utils/socket.ts
 
 import { io, Socket } from 'socket.io-client';
+import { AppState, AppStateStatus } from 'react-native';
 import { SOCKET_URL } from './api';
 
 let socket: Socket | null = null;
+let currentUserId: string | null = null;
+
+// Track if we've already set up the AppState listener
+let appStateListenerSetup = false;
+
+// Handle app coming to foreground - refresh online status
+const handleAppStateChange = (nextAppState: AppStateStatus) => {
+  if (nextAppState === 'active' && socket && currentUserId && socket.connected) {
+    // Re-emit user-online when app comes to foreground
+    socket.emit('user-online', { userId: currentUserId });
+    console.log('✓ Refreshed online status on app foreground');
+  }
+};
 
 export const initSocket = (userId: string): Socket => {
+  currentUserId = userId;
+  
   if (socket) {
     return socket;
   }
 
   socket = io(SOCKET_URL, {
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionAttempts: 5,
+    forceNew: true,
   });
 
   socket.on('connect', () => {
@@ -30,6 +47,12 @@ export const initSocket = (userId: string): Socket => {
     console.error('Socket connection error:', error.message);
   });
 
+  // Set up AppState listener only once
+  if (!appStateListenerSetup) {
+    AppState.addEventListener('change', handleAppStateChange);
+    appStateListenerSetup = true;
+  }
+
   return socket;
 };
 
@@ -41,6 +64,7 @@ export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();
     socket = null;
+    currentUserId = null;
   }
 };
 
@@ -57,8 +81,10 @@ export const sendMessage = (chatId: string, senderId: string, content: string, r
   socket?.emit('new-message', { chatId, senderId, content, replyTo, isAnonymous, attachment, tempId });
 };
 
+export const getCurrentUserId = (): string | null => currentUserId;
+
 export const sendTypingStart = (chatId: string, username: string) => {
-    socket?.emit('typing', { chatId, username });
+    socket?.emit('typing', { chatId, username, userId: currentUserId });
 }
 
 export const sendTypingStop = (chatId: string) => {

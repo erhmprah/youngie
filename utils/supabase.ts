@@ -7,6 +7,30 @@ import Constants from 'expo-constants';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://srcpkwkdvslsdjegqjff.supabase.co';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyY3Brd2tkdnNsc2RqZWdxamZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwODU1MjksImV4cCI6MjA4NjY2MTUyOX0.HVHjRkpb59IVdI8aIxxi8fvGrYJ_oOlJu9WauJb5Sok';
 
+// Custom fetch function with retry logic for network errors
+const fetchWithRetry = async (input: RequestInfo | URL, init?: RequestInit, retries = 3, backoff = 1000): Promise<Response> => {
+  const url = typeof input === 'string' ? input : input.toString();
+  const options = init || {};
+  
+  try {
+    const response = await fetch(url, options);
+    return response;
+  } catch (error: any) {
+    // Check if it's a network error
+    const isNetworkError = 
+      error.message === 'Network request failed' ||
+      error.message.includes('Network') ||
+      error.name === 'TypeError';
+    
+    if (retries > 0 && isNetworkError) {
+      console.log(`Network error, retrying... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return fetchWithRetry(url, options, retries - 1, backoff * 2);
+    }
+    throw error;
+  }
+};
+
 // Create Supabase client using createClient for Expo/React Native
 // Note: For Expo/React Native, we use @supabase/supabase-js (not @supabase/ssr)
 // @supabase/ssr is designed for server-side rendering with Next.js
@@ -16,6 +40,10 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false, // Important for mobile apps
+  },
+  // Global fetch options with retry logic
+  global: {
+    fetch: (input, init) => fetchWithRetry(input, init),
   },
 });
 
@@ -271,16 +299,69 @@ export const signInWithEmail = async (
   password: string
 ): Promise<{ data: { session: Session | null; user: any }; error: Error | null }> => {
   try {
+    // First, try a simple connectivity check to Supabase
+    try {
+      const healthCheck = await fetch('https://srcpkwkdvslsdjegqjff.supabase.co/rest/v1/', {
+        method: 'HEAD',
+        headers: {
+          'apikey': supabaseAnonKey
+        }
+      });
+      console.log('Supabase connectivity check:', healthCheck.status);
+    } catch (connectivityError) {
+      console.warn('Supabase connectivity issue:', connectivityError);
+      // Continue anyway - the actual request will fail with a better error
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) throw error;
+    if (error) {
+      // Check if it's a network error
+      const errorMessage = error.message?.toLowerCase() || '';
+      const isNetworkError = 
+        errorMessage.includes('network') || 
+        errorMessage.includes('fetch') ||
+        error.name === 'AuthRetryableFetchError' ||
+        (error as any).constructor?.name === 'AuthRetryableFetchError';
+      
+      if (isNetworkError) {
+        // Return a more helpful error
+        const networkError = new Error('Unable to connect to authentication server. Please check your internet connection and try again.');
+        (networkError as any).isNetworkError = true;
+        (networkError as any).originalError = error;
+        return { data: { session: null, user: null }, error: networkError };
+      }
+      
+      throw error;
+    }
     
     return { data: { session: data.session, user: data.user }, error: null };
   } catch (error: any) {
     console.error('Sign In Error:', error);
+    
+    // Check if it's already a processed network error
+    if (error.isNetworkError) {
+      return { data: { session: null, user: null }, error };
+    }
+    
+    // Check if it's a network error that wasn't caught above
+    const errorMessage = error.message?.toLowerCase() || '';
+    const isNetworkError = 
+      errorMessage === 'network request failed' ||
+      errorMessage.includes('network') ||
+      errorMessage.includes('fetch') ||
+      error.name === 'TypeError';
+    
+    if (isNetworkError) {
+      const networkError = new Error('Unable to connect to authentication server. Please check your internet connection and try again.');
+      (networkError as any).isNetworkError = true;
+      (networkError as any).originalError = error;
+      return { data: { session: null, user: null }, error: networkError };
+    }
+    
     return { data: { session: null, user: null }, error };
   }
 };
@@ -288,18 +369,33 @@ export const signInWithEmail = async (
 // Reset password (send reset email)
 export const resetPassword = async (email: string): Promise<{ error: Error | null }> => {
   try {
+    // Use direct reset-password path (file is at app/reset-password.tsx)
     const redirectTo = 'youngie://reset-password';
     
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
     });
 
-    if (error) throw error;
+    if (error) {
+      // Create a safe Error object - do NOT use error.name to avoid React Native crash
+      const safeError = new Error(error.message || 'Password reset failed');
+      // Store original properties but don't use them as the error name
+      (safeError as any).status = error.status;
+      (safeError as any).code = error.code;
+      (safeError as any).rateLimit = error.message?.toLowerCase().includes('rate limit') || 
+                                   error.code?.toLowerCase().includes('rate limit');
+      // Only log a brief message, not the full Supabase error object
+      console.log('Password reset failed with Supabase error');
+      return { error: safeError };
+    }
     
     return { error: null };
   } catch (error: any) {
-    console.error('Reset Password Error:', error);
-    return { error };
+    // Return a safe error without throwing
+    const safeError = new Error(error?.message || 'Password reset failed');
+    (safeError as any).isError = true;
+    console.log('Password reset failed');
+    return { error: safeError };
   }
 };
 

@@ -518,9 +518,9 @@ router.post('/forgot-password', [
       return res.json({ msg: 'If an account exists with this email, a password reset link has been sent.' });
     }
 
-    // Generate reset token
+    // Generate reset token - valid for 24 hours
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = Date.now() + 3600000; // 1 hour from now
+    const resetTokenExpiry = Date.now() + 86400000; // 24 hours from now
 
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = resetTokenExpiry;
@@ -564,14 +564,26 @@ router.post('/reset-password', [
     const { token, newPassword } = req.body;
 
     // Find user with valid reset token that hasn't expired
+    console.log('🔍 Checking reset token:', token ? 'Token present' : 'No token');
+    console.log('🔍 Current time:', new Date().toISOString());
+    
     const user = await User.findOne({
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
-      return res.status(400).json({ msg: 'Invalid or expired reset token' });
+      // Check if token exists but expired - provide more helpful message
+      const expiredUser = await User.findOne({ resetPasswordToken: token });
+      if (expiredUser) {
+        console.log('⚠️ Token found but expired');
+        return res.status(400).json({ msg: 'Reset link has expired. Please request a new password reset link.' });
+      }
+      console.log('🔴 Token not found in database');
+      return res.status(400).json({ msg: 'Invalid reset link. Please request a new password reset link.' });
     }
+    
+    console.log('✅ User found for password reset:', user.email);
 
     // Update password
     user.password = newPassword;

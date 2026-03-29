@@ -71,7 +71,7 @@ export default function MutedUsersScreen() {
     );
 
     return (
-        <ThemedView style={[styles.container, { backgroundColor }]}>
+        <ThemedView style={[styles.container, { backgroundColor }]} safe>
             <Stack.Screen options={{ title: 'Muted Users', headerBackTitle: 'Settings' }} />
             
             {isLoading ? (

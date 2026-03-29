@@ -160,10 +160,16 @@ export default function CommunityScreen() {
         </ThemedText>
         <ThemedText type="body2" style={{ color: textColor }}>{item.description}</ThemedText>
         <View style={styles.organizerRow}>
-          <Image 
-            source={{ uri: getImageUrl(item.creator.profilePhoto) }} 
-            style={styles.organizerAvatar} 
-          />
+          {item.creator.profilePhoto ? (
+            <Image 
+              source={{ uri: getImageUrl(item.creator.profilePhoto) }} 
+              style={styles.organizerAvatar} 
+            />
+          ) : (
+            <View style={[styles.organizerAvatarPlaceholder, { backgroundColor: surfaceColor }]}>
+              <IconSymbol name="person.fill" size={12} color={lightTextColor} />
+            </View>
+          )}
           <ThemedText type="caption" style={{ color: lightTextColor }}>
             Hosted by {item.creator.username}
           </ThemedText>
@@ -335,6 +341,7 @@ const styles = StyleSheet.create({
   eventInfo: { flex: 1 },
   organizerRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
   organizerAvatar: { width: 20, height: 20, borderRadius: 10, marginRight: spacing.xs },
+  organizerAvatarPlaceholder: { width: 20, height: 20, borderRadius: 10, marginRight: spacing.xs, justifyContent: 'center', alignItems: 'center' },
   joinButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.md, borderWidth: 1, marginLeft: spacing.sm },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },

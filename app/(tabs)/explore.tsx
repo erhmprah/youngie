@@ -238,7 +238,7 @@ export default function ExploreScreen() {
       setSentRequestIds(prev => [...prev, targetUserId]);
       Alert.alert('Success', `Friend request sent to ${userName}`);
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -249,7 +249,7 @@ export default function ExploreScreen() {
       // Refetch to update the list
       fetchExploreData();
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to join community');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 

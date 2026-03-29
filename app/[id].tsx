@@ -78,7 +78,7 @@ export default function CommunityScreen() {
         fetchCommunity();
       }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to join');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsActionLoading(false);
     }
@@ -185,10 +185,13 @@ export default function CommunityScreen() {
               {community.pendingMembers.map(member => (
                 <View key={member._id} style={[styles.memberRow, { borderBottomColor: borderColor }]}>
                   <View style={styles.memberInfo}>
-                    <Image 
-                        source={{ uri: getImageUrl(member.profilePhoto) }} 
-                        style={styles.memberAvatar} 
-                    />
+                    <View style={[styles.memberAvatar, { backgroundColor: surfaceColor, overflow: 'hidden' }]}>
+                        {member.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(member.profilePhoto) }} style={{ width: '100%', height: '100%' }} />
+                        ) : (
+                            <IconSymbol name="person.fill" size={20} color={lightTextColor} />
+                        )}
+                    </View>
                     <ThemedText style={styles.memberName}>{member.username}</ThemedText>
                   </View>
                   <View style={styles.adminActions}>

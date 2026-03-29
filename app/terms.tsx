@@ -24,7 +24,7 @@ export default function TermsOfServiceView() {
   );
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} safe>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

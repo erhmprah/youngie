@@ -60,7 +60,8 @@
             "DEFAULT"
           ]
         }
-      ]
+      ],
+      "googleServicesFile": "./android/app/google-services.json"
     },
     "web": {
       "output": "static",
@@ -92,7 +93,10 @@
           }
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {}
+      ],
       "./withCallKeep",
       "expo-web-browser"
     ],
@@ -105,8 +109,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "02522d86-1963-41a3-b08c-cbd55c5722ab"
+        "projectId": "721a225e-d748-4c8c-bc60-79da0e1db590"
       }
-    }
+    },
+    "owner": "erhmprah"
   }
 }

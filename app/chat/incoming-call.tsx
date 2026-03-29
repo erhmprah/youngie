@@ -71,7 +71,13 @@ export default function IncomingCallScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: primaryColor }]}>
       <View style={styles.callInfoContainer}>
-        <Image source={{ uri: getImageUrl(parsedCaller.profilePhoto) }} style={styles.avatar} />
+        {parsedCaller.profilePhoto ? (
+          <Image source={{ uri: getImageUrl(parsedCaller.profilePhoto) }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarPlaceholder}>
+            <IconSymbol name="person.fill" size={50} color="white" />
+          </View>
+        )}
         <Text style={styles.name}>{parsedCaller.username} is calling</Text>
         <Text style={styles.status}>Voice Call</Text>
       </View>
@@ -111,6 +117,15 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     marginBottom: spacing.lg,
+  },
+  avatarPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: spacing.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   name: {
     fontSize: typography.sizes.heading2,

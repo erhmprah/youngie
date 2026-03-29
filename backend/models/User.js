@@ -159,6 +159,15 @@ const UserSchema = new mongoose.Schema(
         },
       },
     ],
+    // Push notification tokens
+    pushTokens: [
+      {
+        token: { type: String, required: true },
+        device: { type: String, default: 'unknown' }, // 'ios', 'android', 'web'
+        platform: { type: String }, // 'expo', 'fcm'
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
     // Password reset fields
     resetPasswordToken: String,
     resetPasswordExpires: Date,

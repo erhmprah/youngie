@@ -25,13 +25,24 @@ export function ChatTabIcon({ color }: ChatTabIconProps) {
 
             try {
                 const response = await chatAPI.getUserChats(user._id);
+                
+                // Handle null/undefined response data gracefully
+                if (!response?.data) {
+                    console.warn('No chat data received, could be offline');
+                    setUnreadCount(0);
+                    return;
+                }
+                
                 const chats = response.data;
-                const unread = chats.reduce((count: number, chat: any) => {
+                const unread = Array.isArray(chats) ? chats.reduce((count: number, chat: any) => {
                     return count + (chat.unreadCount || 0);
-                }, 0);
+                }, 0) : 0;
                 setUnreadCount(unread);
             } catch (error) {
                 console.error('Error fetching unread chat count:', error);
+                // Silently handle error - keep previous unread count or set to 0
+                // This prevents crashes when backend is unreachable
+                setUnreadCount(0);
             }
         };
 

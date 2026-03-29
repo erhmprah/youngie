@@ -80,7 +80,7 @@ export default function BlockedUsersScreen() {
     );
 
     return (
-        <ThemedView style={[styles.container, { backgroundColor }]}>
+        <ThemedView style={[styles.container, { backgroundColor }]} safe>
             <Stack.Screen options={{ title: 'Blocked Users', headerBackTitle: 'Settings' }} />
             
             {isLoading ? (

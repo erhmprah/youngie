@@ -7,8 +7,15 @@ ERROR ❌ Network Error: Could not reach backend.
 ERROR Attempted URL: http://10.0.2.2:5001/api/chats/user/...
 ```
 
+## WebSocket Connection Error (Metro HMR)
+If you're seeing:
+```
+Socket connection error: websocket error
+```
+This is a different issue related to Metro bundler Hot Module Replacement (HMR) WebSocket connections. The fix below addresses both issues.
+
 ## Root Cause
-Android 9 (API level 28) and above block cleartext (HTTP) traffic by default. Even though the app has `android:usesCleartextTraffic="true"`, a more granular network security configuration is needed.
+Android 9 (API level 28) and above block cleartext (HTTP) traffic by default. Even though the app has `android:usesCleartextTraffic="true"`, a more granular network security configuration is needed for WebSocket (ws://) connections used by Metro.
 
 ## Solution Applied
 
@@ -25,14 +32,21 @@ File: `android/app/src/main/res/xml/network_security_config.xml`
         <!-- Local machine IP addresses for physical device testing -->
         <domain includeSubdomains="true">192.168.0.0</domain>
         <domain includeSubdomains="true">192.168.1.0</domain>
+        <domain includeSubdomains="true">192.168.2.0</domain>
         <domain includeSubdomains="true">172.20.10.0</domain>
         <domain includeSubdomains="true">10.0.0.0</domain>
+        <!-- Metro bundler default ports -->
+        <domain includeSubdomains="true">localhost:8081</domain>
+        <domain includeSubdomains="true">10.0.2.2:8081</domain>
     </domain-config>
 </network-security-config>
 ```
 
 ### 2. Updated AndroidManifest.xml
 Added `android:networkSecurityConfig="@xml/network_security_config"` to the `<application>` tag.
+
+### 3. Created Metro Config (metro.config.js)
+Created to ensure Metro binds to `0.0.0.0` making it accessible from the Android Emulator.
 
 ## Required Steps to Fix
 

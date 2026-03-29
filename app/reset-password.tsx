@@ -1,7 +1,7 @@
 // app/reset-password.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -93,15 +93,24 @@ export default function ResetPasswordScreen() {
         console.log('Reset password initial URL:', initialUrl);
         
         if (initialUrl) {
-          // Parse the URL to extract parameters
-          const urlObj = new URL(initialUrl);
-          const urlAccessToken = urlObj.searchParams.get('access_token');
-          const urlRefreshToken = urlObj.searchParams.get('refresh_token');
+          // Parse the URL to extract parameters - handle both query params and hash
+          let urlToParse = initialUrl;
+          
+          // Check if tokens are in the hash (Supabase sometimes uses hash)
+          if (initialUrl.includes('#')) {
+            const hashPart = initialUrl.split('#')[1];
+            urlToParse = '?' + hashPart.replace(/&/g, '&');
+          }
+          
+          const urlObj = new URL(urlToParse);
+          const urlAccessToken = urlObj.searchParams.get('access_token') || urlObj.searchParams.get('accessToken');
+          const urlRefreshToken = urlObj.searchParams.get('refresh_token') || urlObj.searchParams.get('refreshToken');
           const urlToken = urlObj.searchParams.get('token');
           const urlEmail = urlObj.searchParams.get('email');
           const urlGoogle = urlObj.searchParams.get('google');
+          const urlType = urlObj.searchParams.get('type');
           
-          console.log('URL params - access_token:', !!urlAccessToken, 'refresh_token:', !!urlRefreshToken, 'token:', !!urlToken);
+          console.log('URL params - access_token:', !!urlAccessToken, 'refresh_token:', !!urlRefreshToken, 'token:', !!urlToken, 'type:', urlType);
           
           // If we have an access_token from the URL, this is a Supabase password reset
           if (urlAccessToken) {
@@ -112,8 +121,6 @@ export default function ResetPasswordScreen() {
             }).then(({ error }) => {
               if (error) {
                 console.error('Error setting Supabase session from URL:', error);
-                // Don't show alert here - let the user try to reset password anyway
-                // If the session is invalid, the updateUser call will fail
               }
             });
             return;
@@ -215,10 +222,10 @@ export default function ResetPasswordScreen() {
         );
       }
     } catch (error: any) {
-      console.error('Reset password error:', error);
+      console.log('Password reset issue, handling gracefully');
       Alert.alert(
         'Error',
-        error.message || error.response?.data?.msg || 'Failed to reset password. The link may have expired.'
+        'Something went wrong. Please try again later.'
       );
     } finally {
       setIsLoading(false);
@@ -251,8 +258,12 @@ export default function ResetPasswordScreen() {
         <ThemedView style={styles.container}>
           {/* Header Section */}
           <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
-              <IconSymbol name="lock.fill" size={40} color={white} />
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('@/assets/images/youngie_icon.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>
               {isGoogleUser ? 'Set Password' : 'New Password'}
@@ -382,13 +393,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.round,
+    width: 100,
+    height: 100,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
-    ...shadows.lg,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   form: {
     gap: spacing.lg,

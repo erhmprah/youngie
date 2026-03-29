@@ -192,7 +192,7 @@ export default function UserProfileScreen() {
       await fetchProfile();
       Alert.alert('Success', 'Friend request sent');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to send request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -203,7 +203,7 @@ export default function UserProfileScreen() {
       await fetchProfile();
       Alert.alert('Success', 'Friend request accepted');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to accept request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -214,7 +214,7 @@ export default function UserProfileScreen() {
       await fetchProfile();
       Alert.alert('Success', 'Friend request cancelled');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.msg || 'Failed to cancel request');
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -235,7 +235,7 @@ export default function UserProfileScreen() {
               await fetchProfile();
               Alert.alert('Success', `${profile.username} has been unfriended`);
             } catch (error: any) {
-              Alert.alert('Error', error.response?.data?.msg || 'Failed to unfriend user');
+              Alert.alert('Error', 'Something went wrong. Please try again.');
             }
           }
         }
@@ -388,7 +388,13 @@ export default function UserProfileScreen() {
                         onPress={() => setSelectedImage(getImageUrl(profile.profilePhoto) || null)}
                         activeOpacity={0.8}
                     >
-                        <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                        {profile.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                        ) : (
+                            <View style={[styles.avatarPlaceholder, { borderColor: primaryColor, backgroundColor: cardBackgroundColor }]}>
+                                <IconSymbol name="person.fill" size={50} color={lightTextColor} />
+                            </View>
+                        )}
                     </TouchableOpacity>
                   </View>
                   <View style={styles.nameRow}>
@@ -567,6 +573,7 @@ const styles = StyleSheet.create({
   profileHeader: { alignItems: 'center', marginTop: -60, paddingBottom: spacing.lg },
   avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
   avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
+  avatarPlaceholder: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, justifyContent: 'center', alignItems: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
   username: { fontWeight: 'bold', textAlign: 'center' },
   bio: { textAlign: 'center', color: '#666', marginBottom: spacing.sm, paddingHorizontal: spacing.sm },

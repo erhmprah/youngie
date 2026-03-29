@@ -42,7 +42,7 @@ export default function AppearanceScreen() {
   ];
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor }]}>
+    <ThemedView style={[styles.container, { backgroundColor }]} safe>
       <Stack.Screen options={{ title: 'Appearance', headerBackTitle: 'Settings' }} />
 
       <ScrollView contentContainerStyle={styles.content}>

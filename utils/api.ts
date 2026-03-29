@@ -11,10 +11,177 @@ import { router } from 'expo-router';
 // If you encounter a 'Network Error', verify this URL is correct for your device/emulator and network.
 // Default to 10.0.2.2 for Android emulator (backend runs on port 5001)
 // For physical devices, use machine's IP (e.g., '192.168.1.61:5001')
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5001/api';
+
+// Load Balancing Configuration
+// Support multiple server endpoints for failover and load distribution
+const SERVER_ENDPOINTS = process.env.EXPO_PUBLIC_SERVER_ENDPOINTS 
+  ? process.env.EXPO_PUBLIC_SERVER_ENDPOINTS.split(',').map(s => s.trim())
+  : ['http://10.0.2.2:5001'];
+
+// Primary API URL (main server)
+const PRIMARY_API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5001/api';
+
+// For backwards compatibility, use single URL
+const API_URL = PRIMARY_API_URL;
 
 console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
+
+// ============== LOAD BALANCING & FAILOVER ==============
+
+/**
+ * Load balancer configuration for multiple server endpoints
+ */
+export interface ServerEndpoint {
+  url: string;
+  healthy: boolean;
+  lastChecked: number;
+  failureCount: number;
+}
+
+/**
+ * Initialize server endpoints with health tracking
+ */
+export function initializeLoadBalancer(): ServerEndpoint[] {
+  return SERVER_ENDPOINTS.map(url => ({
+    url: `${url}/api`,
+    healthy: true,
+    lastChecked: Date.now(),
+    failureCount: 0,
+  }));
+}
+
+// Global load balancer state
+let serverEndpoints: ServerEndpoint[] = initializeLoadBalancer();
+let currentEndpointIndex = 0;
+const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+const MAX_FAILURES_BEFORE_MARK_UNHEALTHY = 3;
+
+/**
+ * Get the next healthy server endpoint (round-robin with health check)
+ */
+export function getNextEndpoint(): string {
+  const now = Date.now();
+  
+  // Filter healthy endpoints
+  const healthyEndpoints = serverEndpoints.filter(ep => ep.healthy);
+  
+  if (healthyEndpoints.length === 0) {
+    // All servers unhealthy, reset all and use first one
+    console.warn('⚠️ All servers unhealthy, resetting...');
+    serverEndpoints.forEach(ep => {
+      ep.healthy = true;
+      ep.failureCount = 0;
+    });
+    return serverEndpoints[0].url;
+  }
+  
+  // Round-robin through healthy servers
+  const endpoint = healthyEndpoints[currentEndpointIndex % healthyEndpoints.length];
+  currentEndpointIndex++;
+  
+  console.log(`🔄 Using server: ${endpoint.url}`);
+  return endpoint.url;
+}
+
+/**
+ * Mark endpoint as failed
+ */
+export function markEndpointFailed(url: string): void {
+  const endpoint = serverEndpoints.find(ep => ep.url === url);
+  if (endpoint) {
+    endpoint.failureCount++;
+    endpoint.lastChecked = Date.now();
+    
+    if (endpoint.failureCount >= MAX_FAILURES_BEFORE_MARK_UNHEALTHY) {
+      endpoint.healthy = false;
+      console.warn(`🔴 Server marked unhealthy: ${url} (${endpoint.failureCount} failures)`);
+    }
+  }
+}
+
+/**
+ * Mark endpoint as successful
+ */
+export function markEndpointHealthy(url: string): void {
+  const endpoint = serverEndpoints.find(ep => ep.url === url);
+  if (endpoint) {
+    endpoint.healthy = true;
+    endpoint.failureCount = 0;
+    endpoint.lastChecked = Date.now();
+    console.log(`✅ Server marked healthy: ${url}`);
+  }
+}
+
+/**
+ * Execute request with automatic failover
+ * Tries each server in sequence until one succeeds
+ */
+export async function executeWithFailover<T>(
+  requestFn: (baseURL: string) => Promise<T>,
+  maxRetries: number = SERVER_ENDPOINTS.length
+): Promise<T> {
+  const errors: Error[] = [];
+  
+  for (let i = 0; i < maxRetries; i++) {
+    const endpoint = getNextEndpoint();
+    
+    try {
+      const result = await requestFn(endpoint);
+      markEndpointHealthy(endpoint);
+      return result;
+    } catch (error) {
+      errors.push(error as Error);
+      markEndpointFailed(endpoint);
+      console.warn(`⚠️ Request failed for ${endpoint}, trying next...`);
+    }
+  }
+  
+  // All endpoints failed
+  throw new Error(`All ${maxRetries} servers failed. Last error: ${errors[errors.length - 1]?.message}`);
+}
+
+/**
+ * Get load balancer status
+ */
+export function getLoadBalancerStatus(): { servers: ServerEndpoint[]; currentIndex: number } {
+  return {
+    servers: serverEndpoints,
+    currentIndex: currentEndpointIndex,
+  };
+}
+
+// Periodic health check (every 30 seconds)
+setInterval(() => {
+  const now = Date.now();
+  
+  serverEndpoints.forEach(async (endpoint) => {
+    // Skip if recently checked
+    if (now - endpoint.lastChecked < HEALTH_CHECK_INTERVAL) return;
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`${endpoint.url.replace('/api', '')}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        markEndpointHealthy(endpoint.url);
+      } else {
+        markEndpointFailed(endpoint.url);
+      }
+    } catch (error) {
+      markEndpointFailed(endpoint.url);
+    }
+  });
+}, HEALTH_CHECK_INTERVAL);
+
+console.log('⚖️ Load Balancer initialized with', SERVER_ENDPOINTS.length, 'endpoints');
 
 // Track last alert time to prevent alert flooding
 let lastAlertTime = 0;
@@ -117,6 +284,12 @@ function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?
     errorInfo = getNetworkErrorMessage(error);
   } else {
     errorInfo = getApiErrorMessage(error.response.status, error.response.data);
+    
+    // Clear tokens on 401 (unauthorized) errors before redirecting
+    if (error.response.status === 401) {
+      AsyncStorage.removeItem('authToken');
+      AsyncStorage.removeItem('sessionId');
+    }
   }
   
   // Build alert buttons
@@ -149,6 +322,48 @@ const api: AxiosInstance = axios.create({
   },
   timeout: 10000, // 10 seconds timeout
 });
+
+// Retry configuration constants
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
+// Retry logic for failed requests
+api.interceptors.response.use(
+  null,
+  async (error) => {
+    const config = error.config;
+    
+    // Only retry on network errors or 5xx errors
+    const shouldRetry = 
+      !error.response || 
+      (error.response.status >= 500 && error.response.status <= 599) ||
+      error.code === 'ECONNABORTED' ||
+      error.message.includes('Network Error');
+    
+    if (shouldRetry && config && !config.__retryCount) {
+      config.__retryCount = config.__retryCount || 0;
+      
+      if (config.__retryCount < MAX_RETRIES) {
+        config.__retryCount += 1;
+        
+        console.warn(`🔄 Retrying request (attempt ${config.__retryCount})...`);
+        
+        // Add delay before retry
+        const delay = config.__retryCount * RETRY_DELAY_MS;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        return api(config);
+      }
+    }
+    
+    // Mark endpoint as failed for load balancing
+    if (!error.response) {
+      markEndpointFailed(config?.baseURL || API_URL);
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 // Create a separate instance for file uploads with longer timeout
 const uploadAPI: AxiosInstance = axios.create({
@@ -362,6 +577,12 @@ export const notificationAPI = {
   clearAll: () => api.delete('/notifications'),
   getUnreadCount: () => api.get('/notifications/unread-count'),
   deleteNotification: (notificationId: string) => api.delete(`/notifications/${notificationId}`),
+  // Push token registration
+  registerPushToken: (token: string, device: string, platform: string) => 
+    api.post('/notifications/register-token', { token, device, platform }),
+  unregisterPushToken: (token: string) => 
+    api.post('/notifications/unregister-token', { token }),
+  getPushTokens: () => api.get('/notifications/device-tokens'),
 };
 
 export const chatAPI = {
@@ -581,7 +802,10 @@ export const getImageUrl = (imagePath?: string): string | undefined => {
   return `${BASE_URL}${imagePath}`;
 };
 
-export const SOCKET_URL = BASE_URL; // Or a specific port if your sockets are on a different one
+// Get base URL (without /api) for Socket.IO
+export const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL 
+  ? process.env.EXPO_PUBLIC_API_URL.replace('/api', '') 
+  : 'http://10.0.2.2:5001'; // Uses load balancer for WebSocket connections
 
 export { BASE_URL };
 

@@ -1,35 +1,31 @@
 // get-turn-credentials.js
-// Script to help obtain TURN credentials for testing
+// Script to get TURN credentials from Metered.ca for WebRTC
 
 const https = require('https');
 
-console.log('🔄 Getting temporary TURN credentials from Twilio...\n');
+console.log('🔄 Getting TURN credentials from Metered.ca...\n');
 
-// Twilio's temporary TURN endpoint (requires Account SID and Auth Token)
-// For production, sign up at https://www.twilio.com/ and get permanent credentials
+// Metered API key from environment
+const METERED_API_KEY = process.env.METERED_API_KEY;
 
-const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || 'your-account-sid';
-const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || 'your-auth-token';
-
-if (ACCOUNT_SID === 'your-account-sid' || AUTH_TOKEN === 'your-auth-token') {
-  console.log('❌ Please set your Twilio credentials:');
-  console.log('   export TWILIO_ACCOUNT_SID=your_account_sid');
-  console.log('   export TWILIO_AUTH_TOKEN=your_auth_token');
-  console.log('\n📝 Get credentials from: https://www.twilio.com/console');
-  console.log('   1. Sign up for Twilio');
-  console.log('   2. Go to Dashboard → Account Info');
-  console.log('   3. Copy Account SID and Auth Token');
+if (!METERED_API_KEY) {
+  console.log('❌ Please set your Metered API key:');
+  console.log('   export METERED_API_KEY=your_api_key');
+  console.log('\n📝 Get free API key from: https://www.metered.ca/');
+  console.log('   1. Sign up for free at Metered.ca');
+  console.log('   2. Create a new project in dashboard');
+  console.log('   3. Go to Project Settings → API Keys');
+  console.log('   4. Copy your API key');
   process.exit(1);
 }
 
 const options = {
-  hostname: 'api.twilio.com',
+  hostname: 'api.metered.ca',
   port: 443,
-  path: '/2010-04-01/Accounts/' + ACCOUNT_SID + '/Tokens.json',
-  method: 'POST',
-  auth: ACCOUNT_SID + ':' + AUTH_TOKEN,
+  path: `/api/v1/turn/credentials?apiKey=${METERED_API_KEY}`,
+  method: 'GET',
   headers: {
-    'Content-Type': 'application/x-www-form-urlencoded',
+    'Content-Type': 'application/json',
   }
 };
 
@@ -44,21 +40,21 @@ const req = https.request(options, (res) => {
     try {
       const response = JSON.parse(data);
 
-      if (response.ice_servers) {
-        console.log('✅ TURN credentials obtained!');
-        console.log('\n📋 Add these to your backend/.env file:\n');
+      if (Array.isArray(response) && response.length > 0) {
+        console.log('✅ TURN credentials obtained from Metered!\n');
+        console.log('📋 Add these to your backend/.env file:\n');
 
-        response.ice_servers.forEach(server => {
-          if (server.url.startsWith('turn:')) {
-            console.log(`TURN_SERVER_URL=${server.url}`);
-            console.log(`TURN_USERNAME=${server.username}`);
-            console.log(`TURN_CREDENTIAL=${server.credential}`);
+        response.forEach(server => {
+          if (server.urls && server.urls.startsWith('turn:')) {
+            console.log(`TURN_SERVER_URL=${server.urls}`);
+            if (server.username) console.log(`TURN_USERNAME=${server.username}`);
+            if (server.credential) console.log(`TURN_CREDENTIAL=${server.credential}`);
             console.log('');
           }
         });
 
-        console.log('⚠️  Note: These credentials expire in 24 hours.');
-        console.log('   For production, get permanent credentials from Twilio.');
+        console.log('💡 Alternative: You can also set METERED_API_KEY in .env');
+        console.log('   and the server will fetch credentials automatically.\n');
 
       } else {
         console.log('❌ Failed to get TURN credentials');
@@ -72,9 +68,8 @@ const req = https.request(options, (res) => {
 
 req.on('error', (error) => {
   console.log('❌ Request failed:', error.message);
-  console.log('\n💡 Alternative: Use free TURN servers from:');
-  console.log('   - Metered.ca: https://www.metered.ca/');
-  console.log('   - Xirsys: https://xirsys.com/');
+  console.log('\n💡 Make sure your METERED_API_KEY is correct');
+  console.log('   Get one free at: https://www.metered.ca/');
 });
 
 req.end();

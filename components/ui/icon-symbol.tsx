@@ -123,7 +123,10 @@ const MAPPING: IconMapping = {
   'person.slash': 'user-x',
   'lock': 'lock',
   'moon': 'moon',
-  'sun': 'sun',
+  'sun.max': 'sun',
+  'sun.max.fill': 'sun',
+  'device-phone-portrait': 'smartphone',
+  'shield-check': 'award',
   'help-circle': 'help-circle',
   'logo-google': 'log-in',
   // Additional missing icons

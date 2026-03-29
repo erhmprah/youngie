@@ -279,7 +279,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                             await userAPI.muteUser(post.author._id);
                             Alert.alert("Muted", `You have muted ${post.author.username}.`);
                         } catch (error: any) {
-                            Alert.alert("Error", error.message || "Failed to mute user");
+                            Alert.alert("Error", "Something went wrong. Please try again.");
                         }
                     }
                 }
@@ -304,7 +304,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             onUpdate?.(response.data);
             Alert.alert("Success", "Post updated successfully");
         } catch (error: any) {
-            Alert.alert("Error", error.message || "Failed to update post");
+            Alert.alert("Error", "Something went wrong. Please try again.");
         }
     };
 

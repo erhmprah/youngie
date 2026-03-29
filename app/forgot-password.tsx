@@ -1,7 +1,7 @@
 // app/forgot-password.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -67,22 +67,46 @@ export default function ForgotPasswordScreen() {
         'A password reset link has been sent to your email. Please check your inbox and follow the instructions to reset your password.'
       );
     } catch (error: any) {
-      console.error('Forgot password error:', error);
+      // Only log a brief message, not the full error object
+      console.log('Password reset failed, handling gracefully...');
       
-      // Check for rate limiting error
+      // Handle error properties from multiple sources
       const errorMessage = error?.message || '';
-      if (errorMessage.includes('rate limit') || errorMessage.includes('too many requests')) {
+      const errorCode = (error as any)?.code || '';
+      const errorRateLimit = (error as any)?.rateLimit || false;
+      
+      // Check for rate limiting error FIRST - use the rateLimit flag from supabase.ts
+      if (errorRateLimit || 
+          errorMessage.toLowerCase().includes('rate limit') || 
+          errorCode.toLowerCase().includes('rate limit') ||
+          errorMessage.toLowerCase().includes('too many requests')) {
         Alert.alert(
-          'Too Many Requests',
-          'You have requested too many password reset emails. Please wait a few minutes before trying again.'
+          'Please Wait',
+          'You have made too many requests. Please wait a moment before trying again.'
         );
+        setIsLoading(false);
+        return;
+      }
+      
+      // Check for other known Supabase errors that might crash the app
+      const errorName = error?.name || '';
+      if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
+        // Don't reveal if email exists for security reasons
+        setIsEmailSent(true);
+        Alert.alert(
+          'Reset Link Sent',
+          'If an account exists with this email, a password reset link has been sent to your inbox.'
+        );
+        setIsLoading(false);
         return;
       }
       
       Alert.alert(
         'Error',
-        error.message || 'Failed to send reset link. Please try again.'
+        'Something went wrong. Please try again later.'
       );
+      setIsLoading(false);
+      return;
     } finally {
       setIsLoading(false);
     }
@@ -94,8 +118,12 @@ export default function ForgotPasswordScreen() {
         <ThemedView style={styles.container}>
           {/* Header Section */}
           <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
-              <IconSymbol name="lock.fill" size={40} color={white} />
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('@/assets/images/youngie_icon.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Forgot Password</ThemedText>
             <ThemedText type="body1" style={{ color: lightTextColor, textAlign: 'center' }}>
@@ -168,13 +196,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.round,
+    width: 100,
+    height: 100,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
-    ...shadows.lg,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   form: {
     gap: spacing.lg,

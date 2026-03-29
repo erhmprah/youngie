@@ -178,7 +178,7 @@ export default function SwipeScreen() {
                         { text: 'Continue' }
                     ]);
                 } catch (error: any) {
-                    Alert.alert('Error', error.response?.data?.msg || 'Failed to send friend request');
+                    Alert.alert('Error', 'Something went wrong. Please try again.');
                     setCurrentIndex((prev) => prev + 1);
                 }
             } else {
