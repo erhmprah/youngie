@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
 
 const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -314,6 +315,21 @@ router.post('/:userId/upload-profile-photo', auth, upload.single('profilePhoto')
       return res.status(400).json({ msg: 'No file uploaded' });
     }
 
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      const fs = require('fs');
+      const buffer = fs.readFileSync(req.file.path);
+      const imageUrl = await uploadFile(buffer, req.file.originalname, req.file.mimetype, 'profiles');
+      
+      // Clean up local file
+      fs.unlinkSync(req.file.path);
+      
+      user.profilePhoto = imageUrl;
+      await user.save();
+      
+      return res.json({ msg: 'Profile photo uploaded successfully', profilePhoto: user.profilePhoto });
+    }
+
     user.profilePhoto = `/uploads/profile-photos/${req.file.filename}`;
     await user.save();
 
@@ -339,6 +355,24 @@ router.post('/:userId/upload-profile-photo-base64', auth, async (req, res) => {
     // Authorization check
     if (user._id.toString() !== req.userId) {
       return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      try {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = imageData.match(/^data:image\/(\w+);base64,/)?.[1] || 'jpeg';
+        const imageUrl = await uploadFile(buffer, filename, mimeType, 'profiles');
+        
+        user.profilePhoto = imageUrl;
+        await user.save();
+        
+        console.log('✅ Profile photo uploaded (Supabase):', user.profilePhoto);
+        return res.json({ msg: 'Profile photo uploaded successfully', profilePhoto: user.profilePhoto });
+      } catch (supabaseError) {
+        console.error('❌ Supabase profile photo upload failed:', supabaseError.message);
+      }
     }
 
     // Create uploads directory if it doesn't exist
@@ -383,6 +417,21 @@ router.post('/:userId/upload-cover-photo', auth, upload.single('coverPhoto'), as
       return res.status(400).json({ msg: 'No file uploaded' });
     }
 
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      const fs = require('fs');
+      const buffer = fs.readFileSync(req.file.path);
+      const imageUrl = await uploadFile(buffer, req.file.originalname, req.file.mimetype, 'covers');
+      
+      // Clean up local file
+      fs.unlinkSync(req.file.path);
+      
+      user.coverPhoto = imageUrl;
+      await user.save();
+      
+      return res.json({ msg: 'Cover photo uploaded successfully', coverPhoto: user.coverPhoto });
+    }
+
     user.coverPhoto = `/uploads/cover-photos/${req.file.filename}`;
     await user.save();
 
@@ -408,6 +457,24 @@ router.post('/:userId/upload-cover-photo-base64', auth, async (req, res) => {
     // Authorization check
     if (user._id.toString() !== req.userId) {
       return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      try {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = imageData.match(/^data:image\/(\w+);base64,/)?.[1] || 'jpeg';
+        const imageUrl = await uploadFile(buffer, filename, mimeType, 'covers');
+        
+        user.coverPhoto = imageUrl;
+        await user.save();
+        
+        console.log('✅ Cover photo uploaded (Supabase):', user.coverPhoto);
+        return res.json({ msg: 'Cover photo uploaded successfully', coverPhoto: user.coverPhoto });
+      } catch (supabaseError) {
+        console.error('❌ Supabase cover photo upload failed:', supabaseError.message);
+      }
     }
 
     // Create uploads directory if it doesn't exist

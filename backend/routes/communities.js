@@ -7,6 +7,7 @@ const Chat = require('../models/Chat');
 const CommunityInvite = require('../models/CommunityInvite');
 const auth = require('../middleware/auth');
 const crypto = require('crypto');
+const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
 
 // Upload community image base64
 router.post('/upload-image-base64', auth, async (req, res) => {
@@ -14,6 +15,19 @@ router.post('/upload-image-base64', auth, async (req, res) => {
     const { imageData, filename } = req.body;
     if (!imageData || !filename) {
       return res.status(400).json({ msg: 'Image data and filename required' });
+    }
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      try {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = imageData.match(/^data:image\/(\w+);base64,/)?.[1] || 'jpeg';
+        const imageUrl = await uploadFile(buffer, filename, mimeType, 'communities');
+        return res.json({ imageUrl });
+      } catch (supabaseError) {
+        console.error('❌ Supabase community image upload failed:', supabaseError.message);
+      }
     }
 
     // Ensure uploads/communities directory exists

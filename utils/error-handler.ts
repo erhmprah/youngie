@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
+import { CustomAlert } from './alert';
 
 /**
  * Parses an error and returns user-friendly title and message
@@ -55,7 +56,7 @@ export function parseError(error: any): { title: string; message: string } {
   } else if (error.request || isNetworkError) {
     // Network error - no response received or connection failed
     errorTitle = 'Connection Error';
-    errorMessage = 'Unable to connect to the server. Please check your internet connection and make sure the backend is running.';
+    errorMessage = 'Unable to connect. Please check your internet connection and try again.';
   } else {
     // Check for specific error messages
     const errorStr = error.toString().toLowerCase();
@@ -83,18 +84,20 @@ export function parseError(error: any): { title: string; message: string } {
  */
 export function showErrorAlert(error: any, onRetry?: () => void) {
   const { title, message } = parseError(error);
-  
+
   if (onRetry) {
-    Alert.alert(
+    CustomAlert.show({
+      type: 'error',
       title,
       message,
-      [
-        { text: 'Retry', onPress: onRetry },
+      buttons: [
+        { text: 'Retry', onPress: onRetry, style: 'default' },
         { text: 'OK', style: 'cancel' }
-      ]
-    );
+      ],
+      dismissable: true
+    });
   } else {
-    Alert.alert(title, message);
+    CustomAlert.error(title, message);
   }
 }
 
@@ -102,20 +105,21 @@ export function showErrorAlert(error: any, onRetry?: () => void) {
  * Shows a network error alert with retry option
  */
 export function showNetworkErrorAlert(onRetry?: () => void) {
+  const message = 'Unable to connect. Please check your internet connection and try again.';
+
   if (onRetry) {
-    Alert.alert(
-      'Connection Error',
-      'Unable to connect to the server. Please check your internet connection and make sure the backend is running.',
-      [
-        { text: 'Retry', onPress: onRetry },
+    CustomAlert.show({
+      type: 'error',
+      title: 'Connection Error',
+      message,
+      buttons: [
+        { text: 'Retry', onPress: onRetry, style: 'default' },
         { text: 'OK', style: 'cancel' }
-      ]
-    );
+      ],
+      dismissable: true
+    });
   } else {
-    Alert.alert(
-      'Connection Error',
-      'Unable to connect to the server. Please check your internet connection and make sure the backend is running.'
-    );
+    CustomAlert.error('Connection Error', message);
   }
 }
 
@@ -123,14 +127,9 @@ export function showNetworkErrorAlert(onRetry?: () => void) {
  * Shows a session expired alert and redirects to login
  */
 export function showSessionExpiredAlert() {
-  Alert.alert(
+  CustomAlert.confirm(
     'Session Expired',
-    'Your session has expired. Please login again.',
-    [
-      { 
-        text: 'Login', 
-        onPress: () => router.replace('/login')
-      }
-    ]
+    'Your session has expired. Please log in again.',
+    () => router.replace('/login')
   );
 }

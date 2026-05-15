@@ -37,6 +37,7 @@ function RootLayoutNav() {
   const primaryColor = useThemeColor('primary');
   const [hasSupabaseSession, setHasSupabaseSession] = useState(false);
   const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
+  const isAppReadyRef = useRef(false);
   
   // Initialize push notifications
   const { 
@@ -63,103 +64,101 @@ function RootLayoutNav() {
 
   useEffect(() => {
     let notificationResponseSubscription: any = null;
-    if (Notifications) {
-      // Set up notification response listener
-      notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
-        const data = response.notification.request.content.data as any;
-        
-        // Handle different notification types
-        switch (data.type) {
-          case 'incoming-call':
-            // Handle incoming call notification tap
-            router.push({
-              pathname: '/chat/voice-call',
-              params: {
-                chatId: data.chatId,
-                name: data.caller?.username || 'User',
-                image: data.caller?.profilePhoto,
-                offer: data.offer ? JSON.stringify(data.offer) : undefined,
+    let timer: NodeJS.Timeout;
+    
+    // Delay setting up notification listener until app is ready
+    timer = setTimeout(() => {
+      if (Notifications) {
+        // Set up notification response listener
+notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
+          // Always check isSignedIn first - signed-in users go to tabs
+          if (isSignedIn) {
+            router.replace('/(tabs)');
+            return;
+          }
+          
+          if (!isAppReadyRef.current) return;
+          
+          const data = response.notification.request.content.data as any;
+          
+          switch (data.type) {
+            case 'incoming-call':
+              router.push({
+                pathname: '/chat/voice-call',
+                params: {
+                  chatId: data.chatId,
+                  name: data.caller?.username || 'User',
+                  image: data.caller?.profilePhoto,
+                  offer: data.offer ? JSON.stringify(data.offer) : undefined,
+                }
+              });
+              break;
+            case 'message':
+            case 'new-message':
+              if (data.chatId) {
+                router.push({
+                  pathname: '/chat/[id]',
+                  params: { id: data.chatId }
+                });
               }
-            });
-            break;
-            
-          case 'message':
-          case 'new-message':
-            // Navigate to chat
-            if (data.chatId) {
-              router.push({
-                pathname: '/chat/[id]',
-                params: { id: data.chatId }
-              });
-            }
-            break;
-            
-          case 'friend-request':
-            // Navigate to profile of requester
-            if (data.userId) {
-              router.push({
-                pathname: '/user/[id]',
-                params: { id: data.userId }
-              });
-            }
-            break;
-            
-          case 'like':
-          case 'post-like':
-            // Navigate to post
-            if (data.postId) {
-              router.push({
-                pathname: '/post/[id]',
-                params: { id: data.postId }
-              });
-            }
-            break;
-            
-          case 'comment':
-          case 'post-comment':
-            // Navigate to post with focus on comments
-            if (data.postId) {
-              router.push({
-                pathname: '/post/[id]',
-                params: { id: data.postId }
-              });
-            }
-            break;
-            
-          case 'mention':
-            // Navigate to post or chat depending on context
-            if (data.postId) {
-              router.push({
-                pathname: '/post/[id]',
-                params: { id: data.postId }
-              });
-            } else if (data.chatId) {
-              router.push({
-                pathname: '/chat/[id]',
-                params: { id: data.chatId }
-              });
-            }
-            break;
-            
-          case 'match':
-            // Navigate to user profile who matched
-            if (data.userId) {
-              router.push({
-                pathname: '/user/[id]',
-                params: { id: data.userId }
-              });
-            }
-            break;
-            
-          case 'notification':
-          default:
-            // Navigate to notifications screen
-            router.push('/notifications');
-            break;
-        }
-      });
-    }
+              break;
+            case 'friend-request':
+              if (data.userId) {
+                router.push({
+                  pathname: '/user/[id]',
+                  params: { id: data.userId }
+                });
+              }
+              break;
+            case 'like':
+            case 'post-like':
+              if (data.postId) {
+                router.push({
+                  pathname: '/post/[id]',
+                  params: { id: data.postId }
+                });
+              }
+              break;
+            case 'comment':
+            case 'post-comment':
+              if (data.postId) {
+                router.push({
+                  pathname: '/post/[id]',
+                  params: { id: data.postId }
+                });
+              }
+              break;
+            case 'mention':
+              if (data.postId) {
+                router.push({
+                  pathname: '/post/[id]',
+                  params: { id: data.postId }
+                });
+              } else if (data.chatId) {
+                router.push({
+                  pathname: '/chat/[id]',
+                  params: { id: data.chatId }
+                });
+              }
+              break;
+            case 'match':
+              if (data.userId) {
+                router.push({
+                  pathname: '/user/[id]',
+                  params: { id: data.userId }
+                });
+              }
+              break;
+            case 'notification':
+            default:
+              router.push('/notifications');
+              break;
+          }
+        });
+      }
+    }, 1000);
 
+    // Socket initialization for voice calls
     if (isSignedIn && user?._id) {
       const socket = initSocket(user._id);
 
@@ -192,6 +191,7 @@ function RootLayoutNav() {
       if (notificationResponseSubscription) {
         notificationResponseSubscription.remove();
       }
+      if (timer) clearTimeout(timer);
       offVoiceCallOffer();
       disconnectSocket();
     };
@@ -226,15 +226,19 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading || isCheckingSupabase) return;
 
-    // If user is signed in with MongoDB, go to main app
+    // Force signed-in users to tabs regardless of notification state
     if (isSignedIn) {
       router.replace('/(tabs)');
-    } else {
-      // Not signed in with MongoDB - go to login
-      // The login screen will handle checking if user has Supabase session
-      router.replace('/login');
+      return;
     }
-  }, [isLoading, isCheckingSupabase, isSignedIn, user, router]);
+    
+    // Mark app as ready after initial navigation
+    isAppReadyRef.current = true;
+    console.log('App navigation ready, not signed in');
+    
+    // Not signed in - go to login
+    router.replace('/login');
+  }, [isLoading, isCheckingSupabase, isSignedIn, router]);
 
   // Handle push notification registration on login
   useEffect(() => {

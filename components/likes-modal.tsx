@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ReactionType } from './reaction-picker';
 import { getImageUrl } from '@/utils/api';
 import { useRouter } from 'expo-router';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Like {
     _id: string;
@@ -43,6 +44,7 @@ const REACTION_ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; col
 };
 
 export function LikesModal({ visible, onClose, likes, reactions = [] }: LikesModalProps) {
+    const { user } = useAuth();
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
     const lightTextColor = useThemeColor('lightText');
@@ -98,6 +100,7 @@ export function LikesModal({ visible, onClose, likes, reactions = [] }: LikesMod
                                     key={item._id} 
                                     style={styles.userRow}
                                     onPress={() => {
+                                        if (item.user._id === user?._id) return;
                                         onClose();
                                         router.push(`/user/${item.user._id}`);
                                     }}

@@ -88,7 +88,9 @@ export default function ProfileScreen() {
             clearTimeout(timeoutId);
             
             const userData = statsResponse.data;
-            const postsData = Array.isArray(postsResponse.data) ? postsResponse.data : [];
+            // Handle both array and object response formats for posts
+            const postsResponseData = postsResponse.data?.posts || postsResponse.data || [];
+            const postsData = Array.isArray(postsResponseData) ? postsResponseData : [];
             const totalLikes = postsData.reduce((sum: number, post: any) => sum + (post.likes?.length || 0), 0);
             setStats([
                 { label: 'Posts', value: String(userData.posts?.length || 0) },
@@ -104,16 +106,16 @@ export default function ProfileScreen() {
             // Clear timeout on error
             clearTimeout(timeoutId);
             console.error('fetchProfileData error:', error);
-            if (error.response?.status === 401) {
-                try {
-                    await logout();
-                } catch (logoutErr) {
-                    console.error('Logout error:', logoutErr);
-                }
-                Alert.alert('Session Expired', 'Please log in again');
-            } else {
-                Alert.alert('Error', 'Failed to load profile data');
-            }
+             if (error.response?.status === 401) {
+                 try {
+                     await logout();
+                 } catch (logoutErr) {
+                     console.error('Logout error:', logoutErr);
+                 }
+                 CustomAlert.error('Session Expired', 'Please log in again');
+             } else {
+                 CustomAlert.error('Error', 'Failed to load profile data');
+             }
         } finally {
             clearTimeout(timeoutId);
             setLoading(false);
@@ -309,18 +311,19 @@ export default function ProfileScreen() {
                 });
                 router.push(`/chat/${newChatResponse.data._id}`);
             }
-        } catch (error) {
-            Alert.alert('Error', 'Failed to open chat');
-        }
+         } catch (error) {
+             CustomAlert.error('Error', 'Failed to open chat');
+         }
     };
 
     const handleUnfriend = async (friendId: string, username: string) => {
         if (!user?._id) return;
 
-        Alert.alert(
-            'Unfriend',
-            `Are you sure you want to remove ${username} as a friend?`,
-            [
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Unfriend',
+            message: `Are you sure you want to remove ${username} as a friend?`,
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Unfriend',
@@ -331,21 +334,23 @@ export default function ProfileScreen() {
                             setFriends(prev => prev.filter(f => f._id !== friendId));
                             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(Math.max(0, parseInt(s.value) - 1)) } : s));
                         } catch (error) {
-                            Alert.alert('Error', 'Failed to unfriend user');
+                            CustomAlert.error('Error', 'Failed to unfriend user');
                         }
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleBlock = async (friendId: string, username: string) => {
         if (!user?._id) return;
 
-        Alert.alert(
-            'Block User',
-            `Are you sure you want to block ${username}? This will remove them from your friends and prevent them from contacting you.`,
-            [
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Block User',
+            message: `Are you sure you want to block ${username}? This will remove them from your friends and prevent them from contacting you.`,
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Block',
@@ -355,23 +360,25 @@ export default function ProfileScreen() {
                             await userAPI.blockUser(user._id, friendId);
                             setFriends(prev => prev.filter(f => f._id !== friendId));
                             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(Math.max(0, parseInt(s.value) - 1)) } : s));
-                            Alert.alert('Success', `${username} has been blocked`);
+                            CustomAlert.success('Success', `${username} has been blocked`);
                         } catch (error) {
-                            Alert.alert('Error', 'Failed to block user');
+                            CustomAlert.error('Error', 'Failed to block user');
                         }
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleCancelRequest = async (requestId: string, username: string) => {
         if (!user?._id) return;
 
-        Alert.alert(
-            'Cancel Request',
-            `Are you sure you want to cancel your friend request to ${username}?`,
-            [
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Cancel Request',
+            message: `Are you sure you want to cancel your friend request to ${username}?`,
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Cancel Request',
@@ -380,14 +387,15 @@ export default function ProfileScreen() {
                         try {
                             await userAPI.cancelFriendRequest(user._id, requestId);
                             setSentRequests(prev => prev.filter(r => r._id !== requestId));
-                            Alert.alert('Success', 'Friend request cancelled');
+                            CustomAlert.success('Success', 'Friend request cancelled');
                         } catch (error) {
-                            Alert.alert('Error', 'Failed to cancel friend request');
+                            CustomAlert.error('Error', 'Failed to cancel friend request');
                         }
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleAcceptRequest = async (requestId: string, username: string) => {
@@ -398,19 +406,20 @@ export default function ProfileScreen() {
             setReceivedRequests(prev => prev.filter(r => r._id !== requestId));
             setFriends(prev => [...prev, { _id: requestId, username, profilePhoto: null }]);
             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(parseInt(s.value) + 1) } : s));
-            Alert.alert('Success', `You are now friends with ${username}`);
+            CustomAlert.success('Success', `You are now friends with ${username}`);
         } catch (error) {
-            Alert.alert('Error', 'Failed to accept friend request');
+            CustomAlert.error('Error', 'Failed to accept friend request');
         }
     };
 
     const handleDeclineRequest = async (requestId: string, username: string) => {
         if (!user?._id) return;
 
-        Alert.alert(
-            'Decline Request',
-            `Are you sure you want to decline the friend request from ${username}?`,
-            [
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Decline Request',
+            message: `Are you sure you want to decline the friend request from ${username}?`,
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Decline',
@@ -419,14 +428,15 @@ export default function ProfileScreen() {
                         try {
                             await userAPI.ignoreFriendRequest(user._id, requestId);
                             setReceivedRequests(prev => prev.filter(r => r._id !== requestId));
-                            Alert.alert('Success', 'Friend request declined');
+                            CustomAlert.success('Success', 'Friend request declined');
                         } catch (error) {
-                            Alert.alert('Error', 'Failed to decline friend request');
+                            CustomAlert.error('Error', 'Failed to decline friend request');
                         }
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const renderHeader = () => {
@@ -453,7 +463,11 @@ export default function ProfileScreen() {
                             delayLongPress={500}
                         >
                             {user?.profilePhoto ? (
-                                <Image source={{ uri: getImageUrl(user?.profilePhoto) }} style={[styles.avatarImage, { borderColor: primaryColor }]} />
+                                <Image 
+                                    source={{ uri: getImageUrl(user?.profilePhoto) }} 
+                                    style={[styles.avatarImage, { borderColor: primaryColor }]} 
+                                    resizeMode="cover"
+                                />
                             ) : (
                                 <View style={[styles.avatarPlaceholder, { borderColor: primaryColor, backgroundColor: cardBackgroundColor }]}>
                                     <IconSymbol name="person.fill" size={50} color={lightTextColor} />

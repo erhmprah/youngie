@@ -20,9 +20,7 @@ export default function AuthLoadingScreen() {
             resizeMode="contain"
           />
         </View>
-        <ThemedText type="heading2" style={[styles.title, { color: textColor }]}>
-          Youngie
-        </ThemedText>
+<View style={styles.titleSpacer} />
         <ActivityIndicator size="large" color={primaryColor} style={styles.spinner} />
         <ThemedText type="body1" style={[styles.subtitle, { color: textColor }]}>
           Signing you in...
@@ -32,7 +30,7 @@ export default function AuthLoadingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+  const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
@@ -41,6 +39,9 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     padding: spacing.xl,
+  },
+  titleSpacer: {
+    height: 40,  // Match title height + margin
   },
   logoContainer: {
     width: 120,

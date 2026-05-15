@@ -21,7 +21,8 @@
             "CFBundleTypeRole": "Editor",
             "CFBundleURLName": "com.erhmprah.youngie",
             "CFBundleURLSchemes": [
-              "youngie"
+              "youngie",
+              "exp+youngie"
             ]
           }
         ]
@@ -53,6 +54,9 @@
           "data": [
             {
               "scheme": "youngie"
+            },
+            {
+              "scheme": "exp+youngie"
             }
           ],
           "category": [
@@ -61,7 +65,7 @@
           ]
         }
       ],
-      "googleServicesFile": "./android/app/google-services.json"
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -95,7 +99,9 @@
       ],
       [
         "expo-notifications",
-        {}
+        {
+          "googleServicesFile": "./google-services.json"
+        }
       ],
       "./withCallKeep",
       "expo-web-browser"

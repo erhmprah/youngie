@@ -1,24 +1,26 @@
 // app/login.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image, SafeAreaView } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { signInWithEmail, supabase } from '@/utils/supabase';
+import { signInWithMagicLink, signInWithGoogle, supabase, handleOAuthCallback } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI, isNetworkErrorResponse } from '@/utils/api';
+import { authAPI } from '@/utils/api';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '@/contexts/AuthContext';
 
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const router = useRouter();
   const { updateUser } = useAuth();
 
@@ -27,46 +29,68 @@ export default function LoginScreen() {
     const checkSupabaseSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (session) {
-          // Check if user has MongoDB token
           const mongoToken = await AsyncStorage.getItem('authToken');
           const profileCompleted = await AsyncStorage.getItem('profileCompleted');
-          
-          // If we have a valid MongoDB token, user is logged in - go to tabs
-          if (mongoToken) {
+
+          if (mongoToken && profileCompleted === 'true') {
             router.replace('/(tabs)');
             return;
           }
-          
-          // If there's no MongoDB token, check if this is a new user or a failed login
+
           if (!mongoToken) {
-            // Check if there's a pending profile completion flag
-            const pendingProfile = await AsyncStorage.getItem('pendingProfileCompletion');
-            
-            if (pendingProfile === 'true') {
-              // User was in the middle of completing profile - continue
-              await AsyncStorage.removeItem('pendingProfileCompletion');
-              router.replace('/complete-profile');
-              return;
+            try {
+              const supabaseToken = session.access_token;
+              const response = await authAPI.supabaseLogin(supabaseToken);
+
+              if (response.data?.needsProfileCompletion === false && response.data?.token) {
+                await AsyncStorage.setItem('authToken', response.data.token);
+                await AsyncStorage.setItem('sessionId', response.data.sessionId);
+                await AsyncStorage.setItem('profileCompleted', 'true');
+                router.replace('/(tabs)');
+                return;
+              } else if (response.data?.needsProfileCompletion === true) {
+                await AsyncStorage.setItem('supabaseUserId', response.data.supabaseUserId);
+                await AsyncStorage.setItem('userEmail', response.data.email);
+                await AsyncStorage.setItem('pendingProfileCompletion', 'true');
+                router.replace('/complete-profile');
+                return;
+              }
+            } catch (apiError) {
+              console.log('API check failed, checking local state');
             }
-            
-            // Otherwise, stay on login screen - user needs to log in
-            // Don't automatically redirect to complete-profile on network errors
+          }
+
+          const pendingProfile = await AsyncStorage.getItem('pendingProfileCompletion');
+
+          if (pendingProfile === 'true') {
+            await AsyncStorage.removeItem('pendingProfileCompletion');
+            router.replace('/complete-profile');
             return;
           }
+
+          if (profileCompleted === 'true') {
+            router.replace('/complete-profile');
+            return;
+          }
+
+          return;
         }
       } catch (error) {
         console.warn('Error checking Supabase session:', error);
-        // On error, stay on login screen - don't redirect to complete-profile
       }
     };
-    
-    checkSupabaseSession();
+
+    const timer = setTimeout(() => {
+      checkSupabaseSession();
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [router]);
 
-  const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
+  const primaryDark = useThemeColor('primaryDark');
   const textColor = useThemeColor('text');
   const lightTextColor = useThemeColor('lightText');
   const inputBackgroundColor = useThemeColor('inputBackground');
@@ -74,22 +98,25 @@ export default function LoginScreen() {
   const white = useThemeColor('white');
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
     setIsLoading(true);
     try {
-      // Sign in with Supabase
-      const { data, error } = await signInWithEmail(email, password);
+      const { data, error } = await signInWithMagicLink(email);
 
       if (error) {
         const errorMessage = error.message?.toLowerCase() || '';
-        const errorCode = (error as any).code || '';
-        
-        // Check for various credential error patterns
-        if (errorMessage.includes('email') || errorMessage.includes('no user') || errorMessage.includes('not found') || errorMessage.includes('invalid email')) {
+
+        if (errorMessage.includes('email') || errorMessage.includes('not found') || errorMessage.includes('invalid email')) {
           Alert.alert(
             'Login Failed',
             'No account found with this email. Please sign up first.',
@@ -98,216 +125,242 @@ export default function LoginScreen() {
           setIsLoading(false);
           return;
         }
-        
-        if (errorMessage.includes('password') || errorMessage.includes('invalid login') || errorMessage.includes('incorrect') || errorMessage.includes('wrong')) {
-          Alert.alert('Login Failed', 'Incorrect password. Please try again.');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Handle invalid credentials generally - this specifically catches "Invalid login credentials"
-        if (errorMessage.includes('invalid') || errorMessage.includes('credentials') || errorMessage.includes('unauthorized') || errorCode === 'invalid_credentials') {
-          Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Handle AuthApiError specifically
-        if (error.name === 'AuthApiError' || errorMessage.includes('auth') || errorCode) {
-          Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
-          setIsLoading(false);
-          return;
-        }
-        
+
         throw error;
       }
 
-      if (data?.session) {
-        // Login successful with Supabase
-        // Now get MongoDB JWT token
-        try {
-          const { data: supabaseData } = await supabase.auth.getSession();
-          const accessToken = supabaseData?.session?.access_token;
-          
-          if (accessToken) {
-            const mongoResponse = await authAPI.supabaseLogin(accessToken);
-            
-            // Check if response indicates network error using the helper function
-            // The API interceptor catches errors and returns { data: null, status: 0, isNetworkError: true }
-            if (isNetworkErrorResponse(mongoResponse)) {
-              // Network error - the API interceptor already showed an error alert
-              // Just update the UI state and let user try again
-              setIsLoading(false);
-              return;
-            }
-            
-            if (mongoResponse.data.needsProfileCompletion) {
-              // Store Supabase info and redirect to complete profile
-              await AsyncStorage.setItem('supabaseUserId', mongoResponse.data.supabaseUserId);
-              await AsyncStorage.setItem('userEmail', mongoResponse.data.email);
-              await AsyncStorage.setItem('pendingProfileCompletion', 'true');
-              setIsLoading(false);
-              router.replace('/complete-profile');
-              return;
-            }
-            
-            // Store MongoDB token
-            await AsyncStorage.setItem('authToken', mongoResponse.data.token);
-            await AsyncStorage.setItem('sessionId', mongoResponse.data.sessionId);
-            await AsyncStorage.setItem('profileCompleted', 'true');
-            
-            // Update AuthContext with user data
-            if (mongoResponse.data.user) {
-              updateUser(mongoResponse.data.user);
-            }
-            
-            setIsLoading(false);
-            router.replace('/(tabs)');
-          } else {
-            setIsLoading(false);
-            router.replace('/(tabs)');
-          }
-        } catch (mongoError: any) {
-          console.error('MongoDB login error:', mongoError);
-          setIsLoading(false);
-          // Don't redirect - the API interceptor already showed an error alert
-          // The user needs to fix their connection before they can use the app
-          return;
-        }
-      }
+      setIsLoading(false);
+      setMagicLinkSent(true);
+
     } catch (error: any) {
       setIsLoading(false);
-      
-      // Handle Supabase AuthApiError specifically
-      const errorMessage = error?.message?.toLowerCase() || '';
-      const errorCode = error?.code || '';
+
       const errorName = error?.name || '';
-      
-      // Check for AuthApiError - this is the specific error from Supabase
-      // that can crash the app if not caught
+
       if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
         Alert.alert(
           'Login Failed',
-          'Invalid email or password. Please check your credentials and try again.',
+          'Unable to send magic link. Please try again later.',
           [{ text: 'OK' }]
         );
         return;
       }
-      
-      // Check for credential-related errors in catch block too
-      if (errorMessage.includes('invalid') || errorMessage.includes('credentials') || 
-          errorMessage.includes('password') || errorMessage.includes('login') ||
-          errorCode === 'invalid_credentials' || errorName === 'AuthApiError') {
-        Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
-        return;
-      }
-      
-      // Handle any other errors gracefully - don't crash the app
+
       console.log('Login issue, handling gracefully');
       Alert.alert('Login Failed', 'Something went wrong. Please try again later.');
     }
   };
 
+  const handleMagicLinkLogin = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session) {
+        const mongoToken = await AsyncStorage.getItem('authToken');
+
+        if (mongoToken) {
+          router.replace('/(tabs)');
+          return;
+        }
+
+        const pendingProfile = await AsyncStorage.getItem('pendingProfileCompletion');
+
+        if (pendingProfile === 'true') {
+          await AsyncStorage.removeItem('pendingProfileCompletion');
+          router.replace('/complete-profile');
+          return;
+        }
+
+        return;
+      }
+    } catch (error) {
+      console.warn('Error checking Supabase session:', error);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await signInWithGoogle();
+
+      if (error) {
+        Alert.alert('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, 'youngie://auth/callback');
+
+        if (result.type === 'success') {
+          const session = await handleOAuthCallback(result.url);
+          if (session) {
+            router.replace('/auth/callback');
+            return;
+          }
+        } else if (result.type === 'cancel') {
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace('/auth/callback');
+        return;
+      }
+
+      setIsLoading(false);
+    } catch (error: any) {
+      console.error('Google login error:', error);
+      setIsLoading(false);
+      Alert.alert('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+    }
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <ThemedView style={styles.container}>
-            {/* Header Section */}
-            <View style={styles.header}>
-              <View style={styles.logoContainer}>
-                <Image 
-                  source={require('@/assets/images/youngie_icon.png')} 
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
-              </View>
-              <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Welcome Back</ThemedText>
-              <ThemedText type="body1" style={{ color: lightTextColor }}>Sign in to continue</ThemedText>
-            </View>
-
-            {/* Form */}
-            <View style={styles.form}>
-              <View style={styles.inputContainer}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
-                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                  <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    placeholder="your@email.com"
-                    placeholderTextColor={lightTextColor}
-                    value={email}
-                    onChangeText={setEmail}
-                    editable={!isLoading}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
+    <LinearGradient colors={[primaryColor + '08', 'transparent']} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.container}>
+              {/* Header */}
+              <View style={styles.header}>
+                <View style={styles.logoContainer}>
+                  <LinearGradient
+                    colors={[primaryColor + '18', primaryColor + '08']}
+                    style={styles.logoBg}
                   />
+                  <Image source={require('@/assets/images/youngie_icon.png')} style={{ width: 52, height: 52 }} resizeMode="contain" />
                 </View>
+                <ThemedText type="heading1" style={styles.titleText}>Welcome Back</ThemedText>
+                <ThemedText type="body1" style={styles.subtitleText}>Sign in to continue connecting with people</ThemedText>
               </View>
 
-              <View style={styles.inputContainer}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Password</ThemedText>
-                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                  <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    placeholder="••••••••"
-                    placeholderTextColor={lightTextColor}
-                    value={password}
-                    onChangeText={setPassword}
-                    editable={!isLoading}
-                    secureTextEntry={!showPassword}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
-                    <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
+              {/* Form Card */}
+              <ThemedView style={styles.formCard}>
+                {magicLinkSent ? (
+                  <View style={styles.magicLinkContainer}>
+                    <LinearGradient
+                      colors={[primaryColor + '18', primaryColor + '08']}
+                      style={styles.magicLinkIconBg}
+                    >
+                      <IconSymbol name="mail.fill" size={36} color={primaryColor} />
+                    </LinearGradient>
+                    <ThemedText type="heading1" style={styles.successTitle}>Check Your Email</ThemedText>
+                    <ThemedText type="body1" style={styles.successText}>
+                      We've sent a magic link to{'\n'}
+                      <ThemedText style={styles.emailBold}>{email}</ThemedText>
+                    </ThemedText>
+                    <ThemedText type="body2" style={styles.successHint}>Click the link in the email to sign in</ThemedText>
+                    <TouchableOpacity
+                      style={styles.primaryButtonWrapper}
+                      onPress={() => {
+                        setMagicLinkSent(false);
+                        setEmail('');
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient colors={[primaryColor, primaryDark]} style={styles.primaryButton}>
+                        <ThemedText style={[styles.primaryButtonText, { color: white }]}>Use Different Email</ThemedText>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.textButton}
+                      onPress={handleMagicLinkLogin}
+                      disabled={isLoading}
+                    >
+                      <ThemedText style={[styles.textButtonText, { color: primaryColor }]}>Resend Link</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.form}>
+                    {/* Email Input */}
+                    <View style={styles.inputGroup}>
+                      <ThemedText type="body2" style={styles.inputLabel}>Email</ThemedText>
+                      <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                        <View style={[styles.inputIconContainer, { backgroundColor: primaryColor + '15' }]}>
+                          <IconSymbol name="at-sign" size={18} color={primaryColor} />
+                        </View>
+                        <TextInput
+                          style={[styles.input, { color: textColor }]}
+                          placeholder="your@email.com"
+                          placeholderTextColor={lightTextColor}
+                          value={email}
+                          onChangeText={setEmail}
+                          editable={!isLoading}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Send Magic Link */}
+                    <TouchableOpacity
+                      style={styles.primaryButtonWrapper}
+                      onPress={handleLogin}
+                      disabled={isLoading}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient colors={[primaryColor, primaryDark]} style={styles.primaryButton}>
+                        {isLoading ? (
+                          <ActivityIndicator color={white} size="small" />
+                        ) : (
+                          <ThemedText type="body1" style={[styles.primaryButtonText, { color: white }]}>Send Magic Link</ThemedText>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Divider */}
+                    <View style={styles.divider}>
+                      <View style={[styles.dividerLine, { backgroundColor: inputBorderColor }]} />
+                      <ThemedText type="body2" style={[styles.dividerText, { color: lightTextColor }]}>or</ThemedText>
+                      <View style={[styles.dividerLine, { backgroundColor: inputBorderColor }]} />
+                    </View>
+
+                    {/* Continue with Google */}
+                    <TouchableOpacity
+                      style={[styles.googleButton, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}
+                      onPress={handleGoogleLogin}
+                      disabled={isLoading}
+                      activeOpacity={0.75}
+                    >
+                      <IconSymbol name="logo-google" size={20} color="#4285F4" />
+                      <ThemedText type="body1" style={styles.googleButtonText}>Continue with Google</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ThemedView>
+
+              {/* Footer */}
+              <View style={styles.footer}>
+                <View style={styles.switchRow}>
+                  <ThemedText type="body2" style={{ color: lightTextColor }}>Don't have an account?</ThemedText>
+                  <TouchableOpacity onPress={() => router.push('/signup')} hitSlop={8} activeOpacity={0.7}>
+                    <ThemedText type="body2" style={[styles.switchLink, { color: primaryColor }]}>Sign Up</ThemedText>
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity 
-                  onPress={() => router.push('/forgot-password')} 
-                  style={styles.forgotPasswordContainer}
-                >
-                  <ThemedText style={{ color: primaryColor }}>Forgot Password?</ThemedText>
-                </TouchableOpacity>
-              </View>
 
-              {/* Login Button */}
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
-                onPress={handleLogin}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color={white} size="small" />
-                ) : (
-                  <ThemedText style={[styles.buttonText, { color: white }]}>Sign In</ThemedText>
-                )}
-              </TouchableOpacity>
-
-
-              {/* Signup Section */}
-              <View style={styles.footer}>
-                <ThemedText style={{ color: lightTextColor }}>Don't have an account? </ThemedText>
-                <TouchableOpacity onPress={() => router.push('/signup')} disabled={isLoading}>
-                  <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign Up</ThemedText>
-                </TouchableOpacity>
-              </View>
-
-              {/* Policy Links */}
-              <View style={styles.policyFooter}>
-                <TouchableOpacity onPress={() => router.push('/terms')}>
-                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Terms of Service</ThemedText>
-                </TouchableOpacity>
-                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}> • </ThemedText>
-                <TouchableOpacity onPress={() => router.push('/privacy')}>
-                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>Privacy Policy</ThemedText>
-                </TouchableOpacity>
+                <View style={styles.policyRow}>
+                  <TouchableOpacity onPress={() => router.push('/terms')} hitSlop={8}>
+                    <ThemedText type="body2" style={[styles.policyLink, { color: lightTextColor }]}>Terms</ThemedText>
+                  </TouchableOpacity>
+                  <ThemedText type="body2" style={[styles.policyDot, { color: inputBorderColor }]}>·</ThemedText>
+                  <TouchableOpacity onPress={() => router.push('/privacy')} hitSlop={8}>
+                    <ThemedText type="body2" style={[styles.policyLink, { color: lightTextColor }]}>Privacy</ThemedText>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </ThemedView>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
@@ -315,90 +368,189 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xxl + spacing.sm,
+    paddingBottom: spacing.xxl + spacing.sm,
+    backgroundColor: 'transparent',
   },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: spacing.xl,
-  },
+  container: {},
   header: {
     alignItems: 'center',
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.xxl + spacing.sm,
+    gap: spacing.sm,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    position: 'relative',
+  },
+  logoBg: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: borderRadius.round,
+  },
+  titleText: {
+    fontFamily: typography.families.bold,
+    fontSize: typography.sizes.heading1,
+    marginBottom: spacing.xs,
+    letterSpacing: -0.6,
+  },
+  subtitleText: {
+    fontSize: typography.sizes.body1,
+    textAlign: 'center',
+    color: '#636366',
+    lineHeight: 24,
+  },
+  formCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    ...shadows.xl,
+  },
+  magicLinkContainer: {
+    alignItems: 'center',
+  },
+  magicLinkIconBg: {
+    width: 72,
+    height: 72,
     borderRadius: borderRadius.round,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
-  logoImage: {
-    width: 70,
-    height: 70,
+  successTitle: {
+    fontFamily: typography.families.bold,
+    fontSize: typography.sizes.heading2,
+    marginBottom: spacing.sm,
+    letterSpacing: -0.5,
+  },
+  successText: {
+    textAlign: 'center',
+    fontSize: typography.sizes.body1,
+    lineHeight: 26,
+    marginBottom: spacing.xs,
+  },
+  emailBold: {
+    fontFamily: typography.families.bold,
+    color: '#636366',
+  },
+  successHint: {
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xl,
+    fontSize: typography.sizes.body2,
   },
   form: {
     gap: spacing.lg,
   },
-  inputContainer: {
+  inputGroup: {
     gap: spacing.sm,
   },
-  forgotPasswordContainer: {
-    alignSelf: 'flex-end',
-    marginTop: spacing.xs,
+  inputLabel: {
+    fontWeight: '600',
+    fontSize: typography.sizes.body2,
+    letterSpacing: -0.2,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
     ...shadows.sm,
+  },
+  inputIconContainer: {
+    padding: spacing.md,
+    marginLeft: spacing.sm,
   },
   input: {
     flex: 1,
     paddingVertical: spacing.md,
+    paddingRight: spacing.md,
+    paddingLeft: spacing.xs,
     fontSize: typography.sizes.body1,
+    fontFamily: typography.families.regular,
+    lineHeight: 22,
   },
-  button: {
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1.5,
     borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.md,
-    ...shadows.md,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    fontSize: typography.sizes.title,
-    fontFamily: typography.families.bold,
-  },
-  footer: {
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.md,
     gap: spacing.sm,
+  },
+  googleButtonText: {
+    fontSize: typography.sizes.body1,
+    fontWeight: '500',
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.md,
+    paddingHorizontal: spacing.xxs,
   },
   dividerLine: {
     flex: 1,
-    height: 1,
+    height: StyleSheet.hairlineWidth,
   },
   dividerText: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.sizes.caption,
+    fontWeight: '500',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#8E8E93',
+  },
+  primaryButtonWrapper: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  primaryButton: {
+    paddingVertical: spacing.md + 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
+    fontSize: typography.sizes.body1,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  textButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  textButtonText: {
+    fontSize: typography.sizes.body2,
+    fontWeight: '600',
+  },
+  footer: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl,
+    gap: spacing.md,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs,
+  },
+  switchLink: {
+    fontWeight: '600',
+    fontSize: typography.sizes.body1,
+  },
+  policyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  policyLink: {
     fontSize: typography.sizes.caption,
   },
-  policyFooter: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.lg,
+  policyDot: {
+    fontSize: typography.sizes.caption,
   },
 });

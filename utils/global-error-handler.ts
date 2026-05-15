@@ -34,8 +34,8 @@ function getErrorType(message: string): { type: string; title: string; userMessa
   const lowerMessage = message.toLowerCase();
   
   // Network/connection errors
-  if (lowerMessage.includes('network') || 
-      lowerMessage.includes('fetch') || 
+  if (lowerMessage.includes('network') ||
+      lowerMessage.includes('fetch') ||
       lowerMessage.includes('connection') ||
       lowerMessage.includes('offline') ||
       lowerMessage.includes('unable to resolve host') ||
@@ -46,7 +46,7 @@ function getErrorType(message: string): { type: string; title: string; userMessa
     return {
       type: 'network',
       title: 'Connection Error',
-      userMessage: 'Unable to connect to the server. Please check your internet connection and try again.'
+      userMessage: 'Unable to connect. Please check your internet connection and try again.'
     };
   }
   
@@ -191,11 +191,7 @@ export function setupGlobalErrorHandlers(): void {
 function showFatalErrorAlert(message: string): void {
   // Only show alert if we haven't shown one recently
   // to prevent multiple alerts
-  Alert.alert(
-    'App Error',
-    'A fatal error occurred. The app will try to continue.',
-    [{ text: 'OK' }]
-  );
+  CustomAlert.error('App Error', 'A fatal error occurred. The app will try to continue.');
 }
 
 /**
@@ -288,15 +284,17 @@ export async function withErrorHandling<T>(
       const message = options?.customMessage || errorInfo.userMessage;
       
       if (options?.onRetry) {
-        // Show alert with retry option
-        Alert.alert(
+        // Show alert with retry option using CustomAlert
+        CustomAlert.show({
+          type: 'error',
           title,
           message,
-          [
-            { text: 'Retry', onPress: options.onRetry },
+          buttons: [
+            { text: 'Retry', onPress: options.onRetry, style: 'default' },
             { text: 'OK', style: 'cancel' }
-          ]
-        );
+          ],
+          dismissable: true
+        });
       } else {
         showErrorAlert(title, message);
       }

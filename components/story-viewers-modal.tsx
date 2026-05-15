@@ -29,6 +29,7 @@ interface StoryViewersModalProps {
     onClose: () => void;
     viewers: Viewer[];
     reactions: Reaction[];
+    currentUserId?: string;
     onUserSelect?: (userId: string) => void;
 }
 
@@ -42,7 +43,7 @@ const REACTION_ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; col
     default: { name: 'heart', color: '#E0245E' }
 };
 
-export function StoryViewersModal({ visible, onClose, viewers = [], reactions = [], onUserSelect }: StoryViewersModalProps) {
+export function StoryViewersModal({ visible, onClose, viewers = [], reactions = [], currentUserId, onUserSelect }: StoryViewersModalProps) {
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
     const lightTextColor = useThemeColor('lightText');
@@ -144,6 +145,7 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
                                 <TouchableOpacity 
                                     style={styles.userRow}
                                     onPress={() => {
+                                        if (item.user._id === currentUserId) return;
                                         if (onUserSelect) {
                                             onUserSelect(item.user._id);
                                         } else {

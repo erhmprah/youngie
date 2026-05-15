@@ -39,7 +39,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false, // Important for mobile apps
+    detectSessionInUrl: true, // Enable for magic link to work
   },
   // Global fetch options with retry logic
   global: {
@@ -70,8 +70,8 @@ export const signInWithGoogle = async (): Promise<{ data: { url: string } | null
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
-      console.log('Already have a session');
-      return { data: null, error: null };
+      console.log('Already have a session, signing out first to allow new sign-in');
+      await supabase.auth.signOut();
     }
 
     // Use the app's custom callback URL scheme for proper mobile handling
@@ -412,5 +412,58 @@ export const updatePassword = async (newPassword: string): Promise<{ error: Erro
   } catch (error: any) {
     console.error('Update Password Error:', error);
     return { error };
+  }
+};
+
+// ============================================
+// MAGIC LINK AUTHENTICATION
+// ============================================
+
+// Sign in with magic link (email link)
+export const signInWithMagicLink = async (
+  email: string
+): Promise<{ data: { user: any }; error: Error | null }> => {
+  try {
+    // Use exp+youngie scheme for development client compatibility
+    const redirectTo = 'youngie://auth/callback';
+    
+    const { data, error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: redirectTo,
+      },
+    });
+
+    if (error) throw error;
+    
+    return { data: { user: data.user }, error: null };
+  } catch (error: any) {
+    console.error('Magic Link Sign In Error:', error);
+    return { data: { user: null }, error };
+  }
+};
+
+// Sign up with magic link (auto-confirm email)
+export const signUpWithMagicLink = async (
+  email: string
+): Promise<{ data: { user: any }; error: Error | null }> => {
+  try {
+    // Use exp+youngie scheme for development client compatibility
+    const redirectTo = 'exp+youngie://auth/callback';
+    
+    const { data, error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: redirectTo,
+        shouldCreateUser: true,
+      },
+    });
+
+    if (error) throw error;
+    
+    return { data: { user: data.user }, error: null };
+  } catch (error: any) {
+    console.error('Magic Link Sign Up Error:', error);
+    return { data: { user: null }, error };
   }
 };

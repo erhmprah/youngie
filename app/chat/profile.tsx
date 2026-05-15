@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { userAPI, getImageUrl, postAPI } from '@/utils/api';
 import { EditProfileModal } from '@/components/edit-profile-modal';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { CustomAlert } from '@/utils/alert';
 
 export default function ProfileScreen() {
     const router = useRouter();
@@ -56,25 +57,25 @@ export default function ProfileScreen() {
         setRefreshing(false);
     };
 
-    const handleUpdateProfile = async (data: any) => {
-        if (!user?._id) return;
-        try {
-            await userAPI.updateProfile(user._id, data);
-            Alert.alert('Success', 'Profile updated successfully');
-            fetchStats();
-        } catch (error) {
-            throw error;
-        }
-    };
+     const handleUpdateProfile = async (data: any) => {
+         if (!user?._id) return;
+         try {
+             await userAPI.updateProfile(user._id, data);
+             CustomAlert.success('Success', 'Profile updated successfully');
+             fetchStats();
+         } catch (error) {
+             throw error;
+         }
+     };
 
     const handlePickImage = async () => {
         try {
             // Request permission to access media library
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Please grant access to your photo library to upload a profile photo.');
-                return;
-            }
+         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+         if (status !== 'granted') {
+             CustomAlert.warning('Permission Required', 'Please grant access to your photo library to upload a profile photo.');
+             return;
+         }
             
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -93,23 +94,29 @@ export default function ProfileScreen() {
 
                 formData.append('image', { uri, name: filename, type } as any);
 
-                await userAPI.uploadProfilePhoto(user._id, formData);
-                Alert.alert('Success', 'Profile photo updated');
-                fetchStats();
+                 await userAPI.uploadProfilePhoto(user._id, formData);
+                 CustomAlert.success('Success', 'Profile photo updated');
+                 fetchStats();
             }
-        } catch (error) {
-            Alert.alert('Error', 'Failed to upload profile photo');
-        } finally {
+         } catch (error) {
+             CustomAlert.error('Error', 'Failed to upload profile photo');
+         } finally {
             setIsUploadingPhoto(false);
         }
     };
 
-    const handleLogout = () => {
-        Alert.alert('Logout', 'Are you sure you want to logout?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Logout', style: 'destructive', onPress: logout }
-        ]);
-    };
+     const handleLogout = () => {
+         CustomAlert.show({
+             type: 'confirm',
+             title: 'Logout',
+             message: 'Are you sure you want to logout?',
+             buttons: [
+                 { text: 'Cancel', style: 'cancel' },
+                 { text: 'Logout', style: 'destructive', onPress: logout }
+             ],
+             dismissable: true
+         });
+     };
 
     if (!user) {
         return (

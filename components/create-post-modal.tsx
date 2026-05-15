@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { MediaPickerButton, MediaPickerResult } from '@/components/media-picker-button';
 import * as Haptics from 'expo-haptics';
+import { CustomAlert } from '@/utils/alert';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -112,11 +113,12 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
     const white = useThemeColor('white');
     const lightTextColor = useThemeColor('lightText');
     const surfaceColor = useThemeColor('surface');
+    const borderColor = useThemeColor('border');
 
     const handlePickImage = async () => {
         const currentImageCount = media.filter(m => m.type === 'image').length;
         if (currentImageCount >= MAX_IMAGES) {
-            Alert.alert('Limit Reached', `You can only upload a maximum of ${MAX_IMAGES} images.`);
+            CustomAlert.warning('Limit Reached', `You can only upload a maximum of ${MAX_IMAGES} images.`);
             return;
         }
 
@@ -136,10 +138,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                 const combined = [...currentImages, ...newMedia];
 
                 if (combined.length > MAX_IMAGES) {
-                    Alert.alert(
-                        'Limit Exceeded',
-                        `You can only select up to ${MAX_IMAGES} images. ${combined.length - MAX_IMAGES} images were not added.`
-                    );
+                    CustomAlert.warning('Limit Exceeded', `You can only select up to ${MAX_IMAGES} images. ${combined.length - MAX_IMAGES} images were not added.`);
                     return combined.slice(0, MAX_IMAGES);
                 }
                 return combined;
@@ -149,9 +148,10 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
 
     const handlePickVideo = async () => {
         if (media.length > 0) {
-            Alert.alert("Clear Selection", "Adding a video will remove any selected images. Continue?", [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'OK', onPress: async () => {
+            CustomAlert.confirm(
+                'Clear Selection',
+                'Adding a video will remove any selected images. Continue?',
+                async () => {
                     const result = await ImagePicker.launchImageLibraryAsync({
                         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
                         allowsEditing: true,
@@ -160,8 +160,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                     if (!result.canceled) {
                         setMedia([{ uri: result.assets[0].uri, type: 'video' as const }]);
                     }
-                }}
-            ]);
+                }
+            );
             return;
         }
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -187,20 +187,20 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
         // Audio is not supported for posts, only for chat
     };
 
-    const handlePost = async () => {
-        if (!content && media.length === 0) {
-            Alert.alert('Error', 'Please add some content, an image, or a video to your post.');
-            return;
-        }
-        
-        let finalPollOptions = undefined;
-        if (showPoll) {
-            const validOptions = pollOptions.filter(o => o.trim().length > 0);
-            if (validOptions.length < 2) {
-                Alert.alert('Error', 'Poll must have at least 2 options.');
-                return;
-            }
-            finalPollOptions = validOptions.map(opt => ({ text: opt }));
+     const handlePost = async () => {
+         if (!content && media.length === 0) {
+             CustomAlert.error('Error', 'Please add some content, an image, or a video to your post.');
+             return;
+         }
+
+         let finalPollOptions = undefined;
+         if (showPoll) {
+             const validOptions = pollOptions.filter(o => o.trim().length > 0);
+             if (validOptions.length < 2) {
+                 CustomAlert.error('Error', 'Poll must have at least 2 options.');
+                 return;
+             }
+             finalPollOptions = validOptions.map(opt => ({ text: opt }));
         }
 
         setIsLoading(true);
@@ -248,40 +248,58 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
             setShowPoll(false);
             setPollOptions(['', '']);
             setSelectedCategory(undefined);
-        } catch (error) {
-            console.error('Error creating post:', error);
-            Alert.alert('Error', 'Failed to create post. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
+         } catch (error) {
+             console.error('Error creating post:', error);
+             CustomAlert.error('Error', 'Failed to create post. Please try again.');
+         } finally {
+             setIsLoading(false);
+         }
     };
 
     return (
         <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
             <ThemedView style={[styles.container, { backgroundColor }]} safe>
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }}>
-                        <Ionicons name="close" size={24} color={textColor} />
+                <View style={[styles.header, { borderBottomColor: borderColor }]}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} style={styles.headerButton}>
+                        <ThemedText style={{ color: lightTextColor }}>Cancel</ThemedText>
                     </TouchableOpacity>
-                    <ThemedText style={{ fontSize: typography.sizes.title, fontFamily: typography.families.bold }}>New Post</ThemedText>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handlePost(); }} disabled={isLoading}>
-                        {isLoading ? <ActivityIndicator color={primaryColor} /> : <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.title, fontFamily: typography.families.bold }}>Post</ThemedText>}
+                    <ThemedText style={[styles.headerTitle, { color: textColor }]}>New Post</ThemedText>
+                    <TouchableOpacity 
+                        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handlePost(); }} 
+                        disabled={isLoading || (!content && media.length === 0)}
+                        style={[styles.postButton, { backgroundColor: (content || media.length > 0) ? primaryColor : surfaceColor }]}
+                    >
+                        {isLoading ? (
+                            <ActivityIndicator color={white} size="small" />
+                        ) : (
+                            <ThemedText style={{ color: white, fontWeight: typography.weights.semibold }}>Post</ThemedText>
+                        )}
                     </TouchableOpacity>
                 </View>
 
-                <ScrollView style={styles.content}>
+                <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
                     <View style={styles.userInfo}>
                         {isAnonymous ? (
                             <Image source={{ uri: 'https://i.pravatar.cc/150?u=anon' }} style={styles.avatar} />
                         ) : user?.profilePhoto ? (
                             <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatar} />
                         ) : (
-                            <View style={[styles.avatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}><Ionicons name="person" size={20} color={lightTextColor} /></View>
+                            <View style={[styles.avatar, { backgroundColor: surfaceColor }]}><Ionicons name="person" size={20} color={lightTextColor} /></View>
                         )}
-                        <View>
-                            <ThemedText style={{ fontFamily: typography.families.bold }}>
+                        <View style={styles.userDetails}>
+                            <ThemedText style={{ fontWeight: typography.weights.semibold, color: textColor }}>
                                 {isAnonymous ? 'Anonymous' : user?.username}
                             </ThemedText>
+                            <TouchableOpacity 
+                                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsPublic(!isPublic); }}
+                                style={[styles.audienceSelector, { backgroundColor: surfaceColor }]}
+                            >
+                                <Ionicons name={isPublic ? "globe" : "people"} size={12} color={lightTextColor} />
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>
+                                    {isPublic ? 'Public' : 'Friends'}
+                                </ThemedText>
+                                <Ionicons name="chevron-down" size={12} color={lightTextColor} />
+                            </TouchableOpacity>
                         </View>
                     </View>
                     <TextInput
@@ -291,6 +309,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                         value={content}
                         onChangeText={setContent}
                         multiline
+                        textAlignVertical="top"
                     />
                     
                     {showPoll && (
@@ -380,37 +399,36 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                     )}
                 </ScrollView>
 
-                <View style={styles.actions}>
+                <View style={styles.optionsRow}>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsAnonymous(!isAnonymous); }} style={[styles.optionPill, { backgroundColor: isAnonymous ? primaryColor + '20' : surfaceColor }]}>
+                        <Ionicons name={isAnonymous ? "glasses" : "eye-off"} size={16} color={primaryColor} />
+                        <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.caption }}>{isAnonymous ? 'Anonymous' : 'Normal'}</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCommentsDisabled(!commentsDisabled); }} style={[styles.optionPill, { backgroundColor: commentsDisabled ? primaryColor + '20' : surfaceColor }]}>
+                        <Ionicons name={commentsDisabled ? "chatbox-ellipses-outline" : "chatbox-ellipses"} size={16} color={primaryColor} />
+                        <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.caption }}>{commentsDisabled ? 'Off' : 'On'}</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTagModal(true); }} style={styles.optionPill}>
+                        <Ionicons name="person-add" size={16} color={primaryColor} />
+                        <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.caption }}>Tag</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowPoll(!showPoll); }} style={[styles.optionPill, { backgroundColor: showPoll ? primaryColor + '20' : surfaceColor }]}>
+                        <Ionicons name="stats-chart" size={16} color={primaryColor} />
+                        <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.caption }}>Poll</ThemedText>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.mediaActions}>
                     <MediaPickerButton
                         onMediaSelected={handleMediaSelected}
                         icon="camera"
-                        size={24}
+                        size={22}
                     />
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsPublic(!isPublic); }} style={styles.actionButton}>
-                        <Ionicons name={isPublic ? "globe" : "people"} size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>{isPublic ? 'Public' : 'Friends'}</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsAnonymous(!isAnonymous); }} style={styles.actionButton}>
-                        <Ionicons name={isAnonymous ? "glasses" : "person"} size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>{isAnonymous ? 'Incognito' : 'Visible'}</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCommentsDisabled(!commentsDisabled); }} style={styles.actionButton}>
-                        <Ionicons name={commentsDisabled ? "chatbox-ellipses-outline" : "chatbox-ellipses"} size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>{commentsDisabled ? 'No Comments' : 'Comments'}</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTagModal(true); }} style={styles.actionButton}>
-                        <Ionicons name="person-add" size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>Tag</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowPoll(!showPoll); }} style={styles.actionButton}>
-                        <Ionicons name="stats-chart" size={24} color={primaryColor} />
-                        <ThemedText style={{ color: primaryColor }}>Poll</ThemedText>
-                    </TouchableOpacity>
                 </View>
 
                 {/* Category Selection */}
                 <View style={styles.categorySection}>
-                    <ThemedText style={{ fontFamily: typography.families.bold, marginBottom: spacing.sm }}>Category (Optional)</ThemedText>
+                    <ThemedText style={{ fontWeight: typography.weights.semibold, marginBottom: spacing.md, color: textColor }}>Category</ThemedText>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryList}>
                         {categories.map((cat) => (
                             <TouchableOpacity
@@ -432,9 +450,6 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
-                </View>
-
-                <View style={styles.actions}>
                 </View>
 
                 {/* Tag Modal */}
@@ -519,79 +534,111 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: spacing.md,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.md,
+    },
+    headerButton: {
+        padding: spacing.xs,
+    },
+    headerTitle: {
+        fontSize: typography.sizes.title,
+        fontWeight: typography.weights.semibold,
+    },
+    postButton: {
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.xl,
+        minWidth: 64,
+        alignItems: 'center',
     },
     content: {
-        padding: spacing.md,
         flex: 1,
+        paddingHorizontal: spacing.lg,
     },
     userInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: spacing.md,
+        marginBottom: spacing.lg,
     },
     avatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         marginRight: spacing.md,
+    },
+    userDetails: {
+        gap: spacing.xs,
+    },
+    audienceSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        borderRadius: borderRadius.md,
     },
     input: {
         fontSize: typography.sizes.body1,
-        minHeight: 100,
+        minHeight: 120,
         textAlignVertical: 'top',
+        lineHeight: 24,
     },
     pollContainer: {
-        marginTop: spacing.md,
-        padding: spacing.sm,
+        marginTop: spacing.lg,
+        padding: spacing.md,
         backgroundColor: 'rgba(0,0,0,0.03)',
-        borderRadius: borderRadius.md,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: '#D1D1D6',
     },
     pollInput: {
-        minHeight: 40,
+        minHeight: 44,
         marginBottom: spacing.sm,
-        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
     },
     mediaItem: {
-        width: 200,
-        height: 200,
+        width: 180,
+        height: 180,
         marginRight: spacing.sm,
     },
     mediaPreviewContainer: {
-        marginTop: spacing.md,
+        marginTop: spacing.lg,
     },
     previewImage: {
         width: '100%',
         height: '100%',
-        borderRadius: borderRadius.md,
+        borderRadius: borderRadius.lg,
     },
     removeMediaButton: {
         position: 'absolute',
-        top: 5,
-        right: 5,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        borderRadius: 12,
+        top: spacing.sm,
+        right: spacing.sm,
     },
     previewVideo: {
         width: '100%',
-        height: 200,
-        borderRadius: borderRadius.md,
-        marginTop: spacing.md,
+        height: 180,
+        borderRadius: borderRadius.lg,
+        marginTop: spacing.lg,
     },
-    actions: {
+    optionsRow: {
         flexDirection: 'row',
-        padding: spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
-        gap: spacing.md,
-        flexWrap: 'wrap',
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+        gap: spacing.sm,
     },
-    actionButton: {
+    optionPill: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.sm,
+        gap: spacing.xs,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.round,
+        backgroundColor: '#F2F2F7',
+    },
+    mediaActions: {
+        flexDirection: 'row',
+        paddingHorizontal: spacing.lg,
+        paddingBottom: spacing.lg,
     },
     modalOverlay: {
         flex: 1,
@@ -602,68 +649,67 @@ const styles = StyleSheet.create({
     tagModal: {
         width: '90%',
         maxHeight: '80%',
-        borderRadius: borderRadius.lg,
-        padding: spacing.md,
+        borderRadius: borderRadius.xl,
+        padding: spacing.lg,
     },
     modalHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: spacing.md,
+        marginBottom: spacing.lg,
     },
     searchInput: {
-        height: 40,
+        height: 44,
         borderWidth: 1,
-        borderRadius: borderRadius.md,
-        paddingHorizontal: spacing.md,
-        marginBottom: spacing.md,
+        borderRadius: borderRadius.lg,
+        paddingHorizontal: spacing.lg,
+        marginBottom: spacing.lg,
     },
     doneButton: {
-        paddingVertical: spacing.sm,
-        paddingHorizontal: spacing.md,
-        borderRadius: borderRadius.md,
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.xl,
+        borderRadius: borderRadius.lg,
         alignSelf: 'flex-end',
+        marginTop: spacing.md,
     },
     userRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: spacing.sm,
-        borderBottomWidth: 1,
+        paddingVertical: spacing.md,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     userAvatar: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: spacing.sm,
+        marginRight: spacing.md,
     },
     avatarImage: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
     },
     tagsContainer: {
-        marginTop: spacing.sm,
+        marginTop: spacing.md,
     },
     tagsList: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: spacing.xs,
-        marginTop: spacing.xs,
+        gap: spacing.sm,
+        marginTop: spacing.sm,
     },
     tagChip: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.xs,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.xs,
-        borderRadius: borderRadius.lg,
+        gap: spacing.sm,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.round,
     },
     categorySection: {
-        padding: spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
+        padding: spacing.lg,
     },
     categoryList: {
         paddingHorizontal: spacing.lg,
@@ -672,14 +718,14 @@ const styles = StyleSheet.create({
     catPill: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: spacing.md,
+        paddingHorizontal: spacing.lg,
         paddingVertical: spacing.sm,
-        borderRadius: borderRadius.xl,
+        borderRadius: borderRadius.round,
         gap: spacing.sm,
         borderWidth: 1,
     },
     catText: {
-        fontFamily: typography.families.bold,
+        fontWeight: typography.weights.medium,
         fontSize: typography.sizes.body2,
     },
 });

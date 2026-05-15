@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
+import { CustomAlert } from './alert';
 
 // Use machine IP for iOS simulator or physical devices.
 // For Android emulator, '10.0.2.2' maps to the host machine's localhost.
@@ -227,16 +228,16 @@ function getApiErrorMessage(status: number, data?: any): { title: string; messag
  */
 function getNetworkErrorMessage(error: any): { title: string; message: string } {
   const message = error.message?.toLowerCase() || '';
-  
+
   if (message.includes('timeout') || message.includes('timed out')) {
     return { title: 'Request Timeout', message: 'The request took too long. Please check your connection and try again.' };
   }
-  
-  if (message.includes('network') || message.includes('fetch') || message.includes('connection') || 
+
+  if (message.includes('network') || message.includes('fetch') || message.includes('connection') ||
       message.includes('ECONNREFUSED') || message.includes('ENOTFOUND') || message.includes('unable to resolve')) {
-    return { title: 'Connection Error', message: 'Unable to connect to the server. Please check your internet connection and make sure the backend is running.' };
+    return { title: 'Connection Error', message: 'Unable to connect. Please check your internet connection and try again.' };
   }
-  
+
   return { title: 'Network Error', message: 'A network error occurred. Please check your connection and try again.' };
 }
 
@@ -262,57 +263,59 @@ function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?
     // Alert suppressed - caller will handle showing error to user
     return;
   }
-  
+
   const now = Date.now();
-  
+
   // Store retry callback for network errors
   if (isNetworkError && onRetry) {
     retryCallback = onRetry;
   }
-  
+
   // Rate limit alerts - only for non-critical errors (4xx)
   // Always show for network errors (backend offline)
   if (!isNetworkError && now - lastAlertTime < ALERT_COOLDOWN_MS) {
     return;
   }
-  
+
   lastAlertTime = now;
-  
+
   let errorInfo: { title: string; message: string; shouldRedirect?: boolean };
-  
+
   if (isNetworkError || !error.response) {
     errorInfo = getNetworkErrorMessage(error);
   } else {
     errorInfo = getApiErrorMessage(error.response.status, error.response.data);
-    
+
     // Clear tokens on 401 (unauthorized) errors before redirecting
     if (error.response.status === 401) {
       AsyncStorage.removeItem('authToken');
       AsyncStorage.removeItem('sessionId');
     }
   }
-  
+
   // Build alert buttons
   const buttons = [];
-  
+
   // Add retry button for network errors
   if (isNetworkError && onRetry) {
-    buttons.push({ text: 'Retry', onPress: onRetry });
+    buttons.push({ text: 'Retry', onPress: onRetry, style: 'default' });
   }
-  
+
   // Add redirect or OK button
   if (errorInfo.shouldRedirect) {
-    buttons.push({ text: 'OK', onPress: () => router.replace('/login') });
+    buttons.push({ text: 'OK', onPress: () => router.replace('/login'), style: 'cancel' });
   } else {
-    buttons.push({ text: 'OK' });
+    buttons.push({ text: 'OK', style: 'cancel' });
   }
-  
-  // Show alert
-  Alert.alert(
-    errorInfo.title,
-    errorInfo.message,
-    buttons
-  );
+
+  // Show alert using CustomAlert
+  CustomAlert.show({
+    type: 'error',
+    title: errorInfo.title,
+    message: errorInfo.message,
+    buttons,
+    dismissable: !isNetworkError || !onRetry
+  });
 }
 
 const api: AxiosInstance = axios.create({
@@ -798,8 +801,16 @@ export const communityAPI = {
 // Helper function to get full image URL
 export const getImageUrl = (imagePath?: string): string | undefined => {
   if (!imagePath) return undefined;
-  if (imagePath.startsWith('http')) return imagePath; // Already a full URL
-  return `${BASE_URL}${imagePath}`;
+  
+  // Return Supabase URLs as-is - they should work
+  if (imagePath.startsWith('http')) {
+return imagePath;
+
+  }
+  if (imagePath.startsWith('/uploads/')) {
+    return `${BASE_URL}${imagePath}`;
+  }
+  return imagePath;
 };
 
 // Get base URL (without /api) for Socket.IO
@@ -869,26 +880,28 @@ export async function apiCallWithRetry<T>(
  * This can be used in components to show user-friendly errors
  */
 export function showNetworkErrorWithRetry(
-  message: string = 'Unable to connect to the server. Please check your internet connection and make sure the backend is running.',
+  message: string = 'Unable to connect. Please check your internet connection and try again.',
   onRetry: () => void
 ): void {
   const now = Date.now();
-  
+
   // Rate limit alerts
   if (now - lastAlertTime < ALERT_COOLDOWN_MS) {
     return;
   }
-  
+
   lastAlertTime = now;
-  
-  Alert.alert(
-    'Connection Error',
+
+  CustomAlert.show({
+    type: 'error',
+    title: 'Connection Error',
     message,
-    [
-      { text: 'Retry', onPress: onRetry },
+    buttons: [
+      { text: 'Retry', onPress: onRetry, style: 'default' },
       { text: 'OK', style: 'cancel' }
-    ]
-  );
+    ],
+    dismissable: true
+  });
 }
 
 export default api;

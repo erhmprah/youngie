@@ -252,14 +252,20 @@ export function usePushNotifications() {
         return true;
       }
     } catch (error: any) {
-      console.error('❌ Error registering push token:', error);
-      setState(prev => ({ 
-        ...prev, 
-        isLoading: false,
-        error: error.message || 'Failed to get push token'
-      }));
-      return false;
-    }
+       console.error('❌ Error registering push token:', error);
+       console.error('Error details:', {
+         message: error.message,
+         stack: error.stack,
+         code: error.code,
+         name: error.name
+       });
+       setState(prev => ({
+         ...prev,
+         isLoading: false,
+         error: error.message || 'Failed to get push token'
+       }));
+       return false;
+     }
   }, [requestPermissions, registerTokenWithBackend]);
 
   // Unregister push token from backend (for logout)

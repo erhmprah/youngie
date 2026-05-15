@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSocket } from '@/utils/socket';
 import * as Haptics from 'expo-haptics';
 import { showErrorAlert, showNetworkErrorAlert } from '@/utils/error-handler';
+import { CustomAlert } from '@/utils/alert';
 
 const { width } = Dimensions.get('window');
 
@@ -174,11 +175,15 @@ export default function SwipeScreen() {
                 try {
                     await userAPI.sendFriendRequest(user._id, currentProfile._id);
                     setProfiles(prev => prev.filter(p => p._id !== currentProfile._id));
-                    Alert.alert('✅', 'Friend request sent!', [
-                        { text: 'Continue' }
-                    ]);
+                    CustomAlert.show({
+                        type: 'success',
+                        title: '✅',
+                        message: 'Friend request sent!',
+                        buttons: [{ text: 'Continue', style: 'default' }],
+                        dismissable: true
+                    });
                 } catch (error: any) {
-                    Alert.alert('Error', 'Something went wrong. Please try again.');
+                    CustomAlert.error('Error', 'Something went wrong. Please try again.');
                     setCurrentIndex((prev) => prev + 1);
                 }
             } else {

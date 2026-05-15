@@ -186,7 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    }, [sessionId]);
 
    const updateUser = useCallback((updatedUser: Partial<User>) => {
-      setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : null);
+      setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : (updatedUser as User));
    }, []);
 
    const value: AuthContextType = {

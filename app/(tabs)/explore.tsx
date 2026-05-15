@@ -17,6 +17,7 @@ import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { showErrorAlert } from '@/utils/error-handler';
+import { CustomAlert } from '@/utils/alert';
 
 const { width } = Dimensions.get('window');
 
@@ -231,27 +232,27 @@ export default function ExploreScreen() {
     }
   };
 
-  const handleSendFriendRequest = async (targetUserId: string, userName: string) => {
-    if (!user?._id) return;
-    try {
-      await userAPI.sendFriendRequest(user._id, targetUserId);
-      setSentRequestIds(prev => [...prev, targetUserId]);
-      Alert.alert('Success', `Friend request sent to ${userName}`);
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
+   const handleSendFriendRequest = async (targetUserId: string, userName: string) => {
+     if (!user?._id) return;
+     try {
+       await userAPI.sendFriendRequest(user._id, targetUserId);
+       setSentRequestIds(prev => [...prev, targetUserId]);
+       CustomAlert.success('Success', `Friend request sent to ${userName}`);
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
+   };
 
-  const handleJoinCommunity = async (communityId: string, communityName: string) => {
-    try {
-      await communityAPI.join(communityId);
-      Alert.alert('Success', `Joined ${communityName}`);
-      // Refetch to update the list
-      fetchExploreData();
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
+   const handleJoinCommunity = async (communityId: string, communityName: string) => {
+     try {
+       await communityAPI.join(communityId);
+       CustomAlert.success('Success', `Joined ${communityName}`);
+       // Refetch to update the list
+       fetchExploreData();
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
+   };
 
   const renderUserAction = (targetUser: User) => {
     const isFriend = friendIds.includes(targetUser._id);
@@ -474,15 +475,15 @@ export default function ExploreScreen() {
                   <TouchableOpacity 
                     key={community._id} 
                     style={[styles.userRow, { borderBottomColor: borderColor }]} 
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      const chatId = typeof community.chat === 'object' ? (community.chat as any)?._id : community.chat;
-                      if (chatId) {
-                        router.push(`/chat/${chatId}`);
-                      } else {
-                        Alert.alert('Info', 'Chat not available for this community');
-                      }
-                    }}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        const chatId = typeof community.chat === 'object' ? (community.chat as any)?._id : community.chat;
+                        if (chatId) {
+                          router.push(`/chat/${chatId}`);
+                        } else {
+                          CustomAlert.info('Info', 'Chat not available for this community');
+                        }
+                      }}
                   >
                     <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                       {community.image ? (

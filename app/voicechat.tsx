@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, Text, Button, Platform, Alert } from 'react-native';
+import { CustomAlert } from '@/utils/alert';
 import { useNavigation } from '@react-navigation/native';
 import { Socket, io } from 'socket.io-client';
 import { ThemedView } from '@/components/themed-view';
@@ -64,7 +65,7 @@ const VoiceChatScreen: React.FC = () => {
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         if (isChatting) {
-          Alert.alert('Chat Ended', 'Your peer has disconnected.');
+          CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
           resetChat();
         }
       }
@@ -84,12 +85,12 @@ const VoiceChatScreen: React.FC = () => {
       });
       setLocalStream(stream);
       return stream;
-    } catch (error) {
-      console.log('Issue with microphone access, handling gracefully');
-      Alert.alert('Error', 'Microphone access is required. Please check your permissions.');
-      navigation.goBack();
-      return null;
-    }
+     } catch (error) {
+       console.log('Issue with microphone access, handling gracefully');
+       CustomAlert.error('Error', 'Microphone access is required. Please check your permissions.');
+       navigation.goBack();
+       return null;
+     }
   }, [navigation]);
 
   const resetChat = useCallback(() => {
@@ -131,21 +132,21 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current.on('connect_error', (error) => {
       console.error('Socket connection error:', error.message);
-      Alert.alert('Connection Error', 'Failed to connect to the chat server. Please try again.');
+      CustomAlert.error('Connection Error', 'Failed to connect to the chat server. Please try again.');
       setIsConnecting(false);
     });
 
     socket.current.on('disconnect', (reason) => {
       console.log('Socket disconnected:', reason);
       if (isChatting) {
-        Alert.alert('Disconnected', 'Connection lost. Please try connecting again.');
+        CustomAlert.error('Disconnected', 'Connection lost. Please try connecting again.');
       }
       resetChat();
     });
 
     socket.current.on('socket_error', (error: { message: string }) => {
       console.error('Socket error:', error.message);
-      Alert.alert('Socket Error', error.message);
+      CustomAlert.error('Socket Error', error.message);
     });
 
     socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
@@ -164,11 +165,11 @@ const VoiceChatScreen: React.FC = () => {
           await peerConnection.current.setLocalDescription(offer);
           socket.current?.emit('offer', offer, peerId);
         }
-      } catch (error) {
-        console.error('Error in match_found:', error);
-        Alert.alert('Connection Error', 'Failed to establish connection. Please try again.');
-        resetChat();
-      }
+       } catch (error) {
+         console.error('Error in match_found:', error);
+         CustomAlert.error('Connection Error', 'Failed to establish connection. Please try again.');
+         resetChat();
+       }
     });
 
     socket.current.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
@@ -210,7 +211,7 @@ const VoiceChatScreen: React.FC = () => {
     });
 
     socket.current.on('peer_disconnected', () => {
-      Alert.alert('Chat Ended', 'Your peer has disconnected.');
+      CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
       resetChat();
     });
 
@@ -231,7 +232,7 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current.on('reconnect_failed', () => {
       console.error('Socket reconnection failed');
-      Alert.alert('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
+      CustomAlert.error('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
     });
   }, [initLocalStream, resetChat, createPeerConnection, isChatting]);
 

@@ -1,39 +1,106 @@
 // app/signup.tsx
 
-import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking, SafeAreaView, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Linking, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { signUpWithEmail } from '@/utils/supabase';
+import { signInWithMagicLink, signInWithGoogle, handleOAuthCallback, supabase } from '@/utils/supabase';
+import * as WebBrowser from 'expo-web-browser';
+import { useAuth } from '@/contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI } from '@/utils/api';
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
 
   const router = useRouter();
+  const { updateUser } = useAuth();
 
-  const backgroundColor = useThemeColor('background');
+  // Check for existing Supabase session on mount
+  useEffect(() => {
+    const checkSupabaseSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session) {
+          const mongoToken = await AsyncStorage.getItem('authToken');
+          const profileCompleted = await AsyncStorage.getItem('profileCompleted');
+
+          if (mongoToken && profileCompleted === 'true') {
+            router.replace('/(tabs)');
+            return;
+          }
+
+          if (!mongoToken) {
+            try {
+              const supabaseToken = session.access_token;
+              const response = await authAPI.supabaseLogin(supabaseToken);
+
+              if (response.data?.needsProfileCompletion === false && response.data?.token) {
+                await AsyncStorage.setItem('authToken', response.data.token);
+                await AsyncStorage.setItem('sessionId', response.data.sessionId);
+                await AsyncStorage.setItem('profileCompleted', 'true');
+                router.replace('/(tabs)');
+                return;
+              } else if (response.data?.needsProfileCompletion === true) {
+                await AsyncStorage.setItem('supabaseUserId', response.data.supabaseUserId);
+                await AsyncStorage.setItem('userEmail', response.data.email);
+                await AsyncStorage.setItem('pendingProfileCompletion', 'true');
+                router.replace('/complete-profile');
+                return;
+              }
+            } catch (apiError) {
+              console.log('API check failed, checking local state');
+            }
+          }
+
+          const pendingProfile = await AsyncStorage.getItem('pendingProfileCompletion');
+
+          if (pendingProfile === 'true') {
+            await AsyncStorage.removeItem('pendingProfileCompletion');
+            router.replace('/complete-profile');
+            return;
+          }
+
+          if (profileCompleted === 'true') {
+            router.replace('/complete-profile');
+            return;
+          }
+
+          return;
+        }
+      } catch (error) {
+        console.warn('Error checking Supabase session:', error);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      checkSupabaseSession();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [router]);
+
   const primaryColor = useThemeColor('primary');
+  const primaryDark = useThemeColor('primaryDark');
   const textColor = useThemeColor('text');
   const lightTextColor = useThemeColor('lightText');
-  const errorColor = useThemeColor('error');
   const inputBackgroundColor = useThemeColor('inputBackground');
   const inputBorderColor = useThemeColor('inputBorder');
   const white = useThemeColor('white');
 
   const handleSignup = async () => {
-    // Validation
-    if (!email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
@@ -42,41 +109,25 @@ export default function SignupScreen() {
       return;
     }
 
-    // Email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      // Sign up with Supabase
-      const { data, error } = await signUpWithEmail(email, password);
+      const { data, error } = await signInWithMagicLink(email);
 
       if (error) {
-        // Check for specific error types
         const errorMessage = error.message?.toLowerCase() || '';
-        
+
         if (errorMessage.includes('email')) {
           Alert.alert(
-            'Email Already Registered',
-            'An account with this email already exists. Please login or use a different email address.',
-            [
-              { text: 'Login Instead', onPress: () => router.push('/login') },
-              { text: 'OK', style: 'cancel' }
-            ]
+            'Email Error',
+            'Unable to send magic link. Please check the email address and try again.',
+            [{ text: 'OK', style: 'cancel' }]
           );
           setIsLoading(false);
           return;
@@ -84,188 +135,225 @@ export default function SignupScreen() {
         throw error;
       }
 
-      // Check if email confirmation is required
-      if (!data.session) {
-        // Email confirmation required
-        setIsLoading(false);
-        Alert.alert(
-          '📧 Check Your Email!',
-          `We've sent a confirmation link to ${email}. Please click the link to verify your account.`
-        );
-        return;
-      }
-
-      // Supabase signup successful - navigate to complete profile
       setIsLoading(false);
-      router.replace('/complete-profile');
+      setMagicLinkSent(true);
 
     } catch (error: any) {
       setIsLoading(false);
-      
-      // Handle Supabase AuthApiError specifically to prevent app crashes
-      const errorMessage = error?.message?.toLowerCase() || '';
+
       const errorName = error?.name || '';
-      
-      // Check for AuthApiError - this is the specific error from Supabase
-      // that can crash the app if not caught
+
       if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
         Alert.alert(
           'Signup Failed',
-          'An account with this email already exists or the credentials are invalid. Please try a different email or log in.',
-          [
-            { text: 'Login Instead', onPress: () => router.push('/login') },
-            { text: 'OK', style: 'cancel' }
-          ]
+          'Unable to send magic link. Please try again later.',
+          [{ text: 'OK' }]
         );
         return;
       }
-      
-      // Check for email already registered errors
-      if (errorMessage?.toLowerCase().includes('email')) {
-        Alert.alert(
-          'Email Already Registered',
-          'An account with this email already exists. Please login or use a different email address.',
-          [
-            { text: 'Login Instead', onPress: () => router.push('/login') },
-            { text: 'OK', style: 'cancel' }
-          ]
-        );
-        return;
-      }
-      
-      // Handle any other errors gracefully - don't crash the app
+
       console.log('Signup issue, handling gracefully');
       Alert.alert('Signup Failed', 'Something went wrong. Please try again later.');
     }
   };
 
+  const handleGoogleSignup = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await signInWithGoogle();
+
+      if (error) {
+        Alert.alert('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, 'youngie://auth/callback');
+
+        if (result.type === 'success') {
+          const session = await handleOAuthCallback(result.url);
+          if (session) {
+            router.replace('/auth/callback');
+            return;
+          }
+        } else if (result.type === 'cancel') {
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace('/auth/callback');
+        return;
+      }
+
+      setIsLoading(false);
+    } catch (error: any) {
+      console.error('Google signup error:', error);
+      setIsLoading(false);
+      Alert.alert('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+    }
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <ThemedView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-              <View style={styles.logoContainer}>
-                <Image 
-                  source={require('@/assets/images/youngie_icon.png')} 
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
-              </View>
-              <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Create Account</ThemedText>
-              <ThemedText type="body1" style={{ color: lightTextColor }}>Join the community</ThemedText>
-            </View>
-
-            {/* Form - Email and Password only */}
-            <View style={styles.form}>
-              <View style={styles.inputContainer}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Email</ThemedText>
-                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                  <IconSymbol name="at-sign" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    placeholder="your@email.com"
-                    placeholderTextColor={lightTextColor}
-                    value={email}
-                    onChangeText={setEmail}
-                    editable={!isLoading}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
+    <LinearGradient colors={[primaryColor + '06', 'transparent']} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.container}>
+              {/* Header */}
+              <View style={styles.header}>
+                <View style={styles.logoContainer}>
+                  <LinearGradient
+                    colors={[primaryColor + '18', primaryColor + '06']}
+                    style={styles.logoBg}
                   />
+                  <Image source={require('@/assets/images/youngie_icon.png')} style={{ width: 52, height: 52 }} resizeMode="contain" />
                 </View>
+                <ThemedText type="heading1" style={styles.titleText}>Create Account</ThemedText>
+                <ThemedText type="body1" style={styles.subtitleText}>Join the community and meet new people</ThemedText>
               </View>
 
-              <View style={styles.inputContainer}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Password</ThemedText>
-                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                  <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    placeholder="•••••••• (6+ chars)"
-                    placeholderTextColor={lightTextColor}
-                    value={password}
-                    onChangeText={setPassword}
-                    editable={!isLoading}
-                    secureTextEntry={!showPassword}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
-                    <IconSymbol name={showPassword ? "eye" : "eye-off"} size={20} color={textColor} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.inputContainer}>
-                <ThemedText type="body2" style={{ fontWeight: '600' }}>Confirm Password</ThemedText>
-                <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                  <IconSymbol name="lock" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    placeholder="••••••••"
-                    placeholderTextColor={lightTextColor}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    editable={!isLoading}
-                    secureTextEntry={!showConfirmPassword}
-                  />
-                  <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} disabled={isLoading}>
-                    <IconSymbol name={showConfirmPassword ? "eye" : "eye-off"} size={20} color={textColor} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Policy Acceptance */}
-              <TouchableOpacity 
-                style={styles.termsContainer} 
-                onPress={() => setAcceptTerms(!acceptTerms)}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.checkbox, 
-                  { borderColor: inputBorderColor, backgroundColor: acceptTerms ? primaryColor : 'transparent' }
-                ]}>
-                  {acceptTerms && <IconSymbol name="check" size={14} color={white} />}
-                </View>
-                <View style={styles.termsTextContainer}>
-                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>
-                    I agree to the{' '}
-                  </ThemedText>
-                  <TouchableOpacity onPress={() => router.push('/terms')}>
-                    <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Terms of Service</ThemedText>
-                  </TouchableOpacity>
-                  <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}> and </ThemedText>
-                  <TouchableOpacity onPress={() => router.push('/privacy')}>
-                    <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.body2, fontWeight: '600' }}>Privacy Policy</ThemedText>
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-
-              {/* Create Account Button */}
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: primaryColor }, isLoading && styles.buttonDisabled]}
-                onPress={handleSignup}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color={white} size="small" />
+              {/* Form Card */}
+              <ThemedView style={styles.formCard}>
+                {magicLinkSent ? (
+                  <View style={styles.magicLinkContainer}>
+                    <LinearGradient
+                      colors={[primaryColor + '18', primaryColor + '08']}
+                      style={styles.magicLinkIconBg}
+                    >
+                      <IconSymbol name="mail.fill" size={36} color={primaryColor} />
+                    </LinearGradient>
+                    <ThemedText type="heading1" style={styles.successTitle}>Check Your Email</ThemedText>
+                    <ThemedText type="body1" style={styles.successText}>
+                      We've sent a magic link to{'\n'}
+                      <ThemedText style={styles.emailBold}>{email}</ThemedText>
+                    </ThemedText>
+                    <ThemedText type="body2" style={styles.successHint}>Click the link in the email to create your account</ThemedText>
+                    <TouchableOpacity
+                      style={styles.primaryButtonWrapper}
+                      onPress={() => {
+                        setMagicLinkSent(false);
+                        setEmail('');
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient colors={[primaryColor, primaryDark]} style={styles.primaryButton}>
+                        <ThemedText style={[styles.primaryButtonText, { color: white }]}>Use Different Email</ThemedText>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.textButton}
+                      onPress={() => setMagicLinkSent(false)}
+                      disabled={isLoading}
+                    >
+                      <ThemedText style={[styles.textButtonText, { color: primaryColor }]}>Resend Link</ThemedText>
+                    </TouchableOpacity>
+                  </View>
                 ) : (
-                  <ThemedText style={[styles.buttonText, { color: white }]}>Create Account</ThemedText>
-                )}
-              </TouchableOpacity>
+                  <View style={styles.form}>
+                    {/* Email Input */}
+                    <View style={styles.inputGroup}>
+                      <ThemedText type="body2" style={styles.inputLabel}>Email</ThemedText>
+                      <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
+                        <View style={[styles.inputIconContainer, { backgroundColor: primaryColor + '15' }]}>
+                          <IconSymbol name="at-sign" size={18} color={primaryColor} />
+                        </View>
+                        <TextInput
+                          style={[styles.input, { color: textColor }]}
+                          placeholder="your@email.com"
+                          placeholderTextColor={lightTextColor}
+                          value={email}
+                          onChangeText={setEmail}
+                          editable={!isLoading}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
 
-              {/* Login Link */}
+                    {/* Terms */}
+                    <TouchableOpacity
+                      style={styles.termsContainer}
+                      onPress={() => setAcceptTerms(!acceptTerms)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[
+                        styles.checkbox,
+                        { backgroundColor: acceptTerms ? primaryColor : inputBackgroundColor, borderColor: acceptTerms ? primaryColor : inputBorderColor },
+                      ]}>
+                        {acceptTerms && <IconSymbol name="checkmark" size={14} color={white} />}
+                      </View>
+                      <ThemedText type="body2" style={styles.termsText}>
+                        I agree to the{' '}
+                        <ThemedText type="body2" style={[styles.termsHighlight, { color: primaryColor }]}>Terms</ThemedText>
+                        {' '}and{' '}
+                        <ThemedText type="body2" style={[styles.termsHighlight, { color: primaryColor }]}>Privacy Policy</ThemedText>
+                      </ThemedText>
+                    </TouchableOpacity>
+
+                    {/* Create Account Button */}
+                    <TouchableOpacity
+                      style={styles.primaryButtonWrapper}
+                      onPress={handleSignup}
+                      disabled={isLoading || !acceptTerms}
+                      activeOpacity={0.85}
+                    >
+                      {/* Force layout stability */}
+                      <LinearGradient
+                        colors={[primaryColor, primaryDark]}
+                        style={[styles.primaryButton, (!acceptTerms || isLoading) && styles.primaryButtonDisabled]}
+                      >
+                        {isLoading ? (
+                          <ActivityIndicator color={white} size="small" />
+                        ) : (
+                          <ThemedText type="body1" style={[styles.primaryButtonText, { color: white }]}>Send Magic Link</ThemedText>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Divider */}
+                    <View style={styles.divider}>
+                      <View style={[styles.dividerLine, { backgroundColor: inputBorderColor }]} />
+                      <ThemedText type="body2" style={[styles.dividerText, { color: lightTextColor }]}>or</ThemedText>
+                      <View style={[styles.dividerLine, { backgroundColor: inputBorderColor }]} />
+                    </View>
+
+                    {/* Continue with Google */}
+                    <TouchableOpacity
+                      style={[styles.googleButton, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}
+                      onPress={handleGoogleSignup}
+                      disabled={isLoading}
+                      activeOpacity={0.75}
+                    >
+                      <IconSymbol name="logo-google" size={20} color="#4285F4" />
+                      <ThemedText type="body1" style={styles.googleButtonText}>Continue with Google</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ThemedView>
+
+              {/* Footer */}
               <View style={styles.footer}>
-                <ThemedText style={{ color: lightTextColor }}>Already have an account? </ThemedText>
-                <TouchableOpacity onPress={() => router.push('/login')} disabled={isLoading}>
-                  <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Sign In</ThemedText>
-                </TouchableOpacity>
+                <View style={styles.switchRow}>
+                  <ThemedText type="body2" style={{ color: lightTextColor }}>Already have an account?</ThemedText>
+                  <TouchableOpacity onPress={() => router.replace('/login')} hitSlop={8} activeOpacity={0.7}>
+                    <ThemedText type="body2" style={[styles.switchLink, { color: primaryColor }]}>Sign In</ThemedText>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </ThemedView>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
@@ -273,15 +361,14 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xxl + spacing.sm,
+    paddingBottom: spacing.xxl + spacing.sm,
   },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: spacing.xl,
-  },
+  container: {},
   header: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.xxl + spacing.sm,
   },
   logoContainer: {
     width: 100,
@@ -289,55 +376,130 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
+    position: 'relative',
   },
-  logoImage: {
-    width: 100,
-    height: 100,
+  logoBg: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: borderRadius.round,
+  },
+  titleText: {
+    fontFamily: typography.families.bold,
+    fontSize: typography.sizes.heading1,
+    marginBottom: spacing.xs,
+    letterSpacing: -0.6,
+  },
+  subtitleText: {
+    fontSize: typography.sizes.body1,
+    textAlign: 'center',
+    color: '#636366',
+    lineHeight: 24,
+  },
+  formCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    ...shadows.xl,
+  },
+  magicLinkContainer: {
+    alignItems: 'center',
+  },
+  magicLinkIconBg: {
+    width: 72,
+    height: 72,
+    borderRadius: borderRadius.round,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  successTitle: {
+    fontFamily: typography.families.bold,
+    fontSize: typography.sizes.heading2,
+    marginBottom: spacing.sm,
+    letterSpacing: -0.5,
+  },
+  successText: {
+    textAlign: 'center',
+    fontSize: typography.sizes.body1,
+    lineHeight: 26,
+    marginBottom: spacing.xs,
+  },
+  emailBold: {
+    fontFamily: typography.families.bold,
+    color: '#636366',
+  },
+  successHint: {
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xl,
+    fontSize: typography.sizes.body2,
   },
   form: {
     gap: spacing.lg,
   },
-  inputContainer: {
+  inputGroup: {
     gap: spacing.sm,
+  },
+  inputLabel: {
+    fontWeight: '600',
+    fontSize: typography.sizes.body2,
+    letterSpacing: -0.2,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
     ...shadows.sm,
+  },
+  inputIconContainer: {
+    padding: spacing.md,
+    marginLeft: spacing.sm,
   },
   input: {
     flex: 1,
     paddingVertical: spacing.md,
+    paddingRight: spacing.md,
+    paddingLeft: spacing.xs,
     fontSize: typography.sizes.body1,
+    fontFamily: typography.families.regular,
+    lineHeight: 22,
   },
-  button: {
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.md,
-    ...shadows.md,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    fontSize: typography.sizes.title,
-    fontFamily: typography.families.bold,
-  },
-  footer: {
+  googleButton: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: spacing.md,
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1.5,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  googleButtonText: {
+    fontSize: typography.sizes.body1,
+    fontWeight: '500',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xxs,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  dividerText: {
+    paddingHorizontal: spacing.md,
+    fontSize: typography.sizes.caption,
+    fontWeight: '500',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#8E8E93',
   },
   termsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginTop: spacing.sm,
+    gap: spacing.sm,
   },
   checkbox: {
     width: 20,
@@ -346,13 +508,54 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
     marginTop: 2,
   },
-  termsTextContainer: {
+  termsText: {
     flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    color: '#636366',
+    lineHeight: 22,
+  },
+  termsHighlight: {
+    fontWeight: '600',
+  },
+  primaryButtonWrapper: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  primaryButton: {
+    paddingVertical: spacing.md + 3,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    fontSize: typography.sizes.body1,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  textButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  textButtonText: {
+    fontSize: typography.sizes.body2,
+    fontWeight: '600',
+  },
+  footer: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl,
+    gap: spacing.md,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs,
+  },
+  switchLink: {
+    fontWeight: '600',
+    fontSize: typography.sizes.body1,
   },
 });

@@ -167,21 +167,39 @@ export default function CompleteProfileScreen() {
 
     setIsLoading(true);
 
+    let user: any = null;
     try {
-      // Get the current user from Supabase
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to complete your profile');
-        router.replace('/login');
-        return;
+      // Use timeout to avoid hanging
+      const userPromise = supabase.auth.getUser();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('getUser timeout')), 5000)
+      );
+      
+      const result = await Promise.race([userPromise, timeoutPromise]) as any;
+      user = result?.data?.user;
+    } catch (e) {
+      console.log('getUser timed out or failed, checking stored values');
+      // Try to get from stored values
+      const storedUserId = await AsyncStorage.getItem('supabaseUserId');
+      const storedEmail = await AsyncStorage.getItem('userEmail');
+      if (storedUserId && storedEmail) {
+        user = { id: storedUserId, email: storedEmail };
       }
+    }
 
-      if (!user.email) {
-        Alert.alert('Error', 'Your account does not have an email address');
-        return;
-      }
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to complete your profile');
+      router.replace('/login');
+      return;
+    }
 
+    if (!user.email) {
+      Alert.alert('Error', 'Your account does not have an email address');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
       // Update user metadata in Supabase
       const { error: updateError } = await supabase.auth.updateUser({
         data: {
@@ -230,7 +248,19 @@ export default function CompleteProfileScreen() {
 
       // Update AuthContext with user data
       if (backendUserData) {
+        console.log('Updating AuthContext with user data:', backendUserData);
         updateUser(backendUserData);
+      } else {
+        // If no backend user data, create a basic user object from inputs
+        console.log('No backend user data, creating from inputs');
+        updateUser({
+          _id: user.id,
+          username,
+          email: user.email,
+          birthYear: birthYearNum,
+          gender,
+          location,
+        });
       }
 
       // Mark profile as completed
@@ -243,7 +273,10 @@ export default function CompleteProfileScreen() {
       Alert.alert(
         '🎉 Welcome to Youngie!',
         `Your profile has been created successfully.`,
-        [{ text: 'Continue', onPress: () => router.replace('/(tabs)') }]
+        [{ 
+          text: 'Continue', 
+          onPress: () => router.replace('/(tabs)') 
+        }]
       );
 
     } catch (error: any) {

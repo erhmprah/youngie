@@ -67,6 +67,30 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
     const group = storyGroups[currentGroupIndex];
     const story = group?.stories[currentStoryIndex];
+    const storyGroupsLengthRef = useRef(storyGroups.length);
+
+    // Reset to initial index when storyGroups changes (e.g., after deletion)
+    useEffect(() => {
+        // Only reset when the number of story groups changes (not on every open)
+        if (storyGroups.length !== storyGroupsLengthRef.current) {
+            storyGroupsLengthRef.current = storyGroups.length;
+            
+            if (storyGroups.length === 0) {
+                // No stories left - close the viewer
+                onClose();
+            } else if (currentGroupIndex >= storyGroups.length) {
+                // Current group index is now invalid - reset
+                setCurrentGroupIndex(0);
+                setCurrentStoryIndex(0);
+            }
+        }
+    }, [storyGroups.length, onClose, currentGroupIndex]);
+
+    // Reset to initial index when opened with a new initialGroupIndex
+    useEffect(() => {
+        setCurrentGroupIndex(initialGroupIndex);
+        setCurrentStoryIndex(0);
+    }, [initialGroupIndex]);
 
     useEffect(() => {
         setCurrentPollOptions(story?.pollOptions || []);
@@ -113,8 +137,9 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
     useEffect(() => {
         if (visible && story) {
-            // Mark as viewed if not already viewed
-            if (user && !story.viewers?.some(v => v.user._id === user._id)) {
+            // Mark as viewed if not already viewed AND not the author
+            const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
+            if (user && !isAuthor && !story.viewers?.some(v => v.user._id === user._id)) {
                  storyAPI.viewStory(story._id).then(() => {
                      onStoryViewed?.(story._id);
                  }).catch(() => {});
@@ -272,8 +297,10 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                 <TouchableOpacity
                     style={{ flexDirection: 'row', alignItems: 'center' }}
                     onPress={() => {
-                        onClose();
-                        router.push(`/user/${group.user._id}`);
+                        if (group.user._id !== user?._id) {
+                            onClose();
+                            router.push(`/user/${group.user._id}`);
+                        }
                     }}
                 >
                     <Image source={{ uri: getImageUrl(group.user.profilePhoto) }} style={styles.avatar} />
@@ -359,10 +386,13 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                 onClose={() => setShowViewersModal(false)}
                 viewers={story.viewers || []}
                 reactions={story.reactions || []}
+                currentUserId={user?._id || ''}
                 onUserSelect={(userId) => {
-                    setShowViewersModal(false);
-                    onClose();
-                    router.push(`/user/${userId}`);
+                    if (userId !== user?._id) {
+                        setShowViewersModal(false);
+                        onClose();
+                        router.push(`/user/${userId}`);
+                    }
                 }}
             />
         </Modal>

@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, StyleSheet, Button, Platform, Alert, PermissionsAndroid, TouchableOpacity, ActivityIndicator, Dimensions, PanResponder, Animated, TextInput, FlatList, KeyboardAvoidingView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { useFocusEffect } from 'expo-router';
-import { Socket, io } from 'socket.io-client';
+import { View, StyleSheet, Text, Platform, Alert } from 'react-native';
+import { CustomAlert } from '@/utils/alert';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { SOCKET_URL, userAPI } from '@/utils/api'; // Import SOCKET_URL
-import { useAuth } from '@/contexts/AuthContext';
+import { SOCKET_URL } from '@/utils/api';
+import { useCustomAlert } from '@/utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, borderRadius, shadows, typography } from '@/constants/design-tokens';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -186,7 +184,7 @@ const VideoChatScreen: React.FC = () => {
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         if (isChatting) {
-          Alert.alert('Chat Ended', 'Connection lost.');
+           CustomAlert.info('Chat Ended', 'Connection lost.');
           resetChat();
         }
       }
@@ -220,22 +218,22 @@ const VideoChatScreen: React.FC = () => {
         },
       });
       
-      setLocalStream(stream);
-      return stream;
-    } catch (error) {
-      if ((error as Error).message.includes('development build')) {
-        Alert.alert(
-          'Development Build Required',
-          'WebRTC requires a development build. Please run the app using a development build (npx expo run:android).',
-          [
-            { text: 'OK', onPress: () => navigation.goBack() }
-          ]
-        );
-      } else {
-        Alert.alert('Error', (error as Error).message || 'Failed to access camera and microphone.');
-      }
-      return null;
-    }
+       setLocalStream(stream);
+       return stream;
+     } catch (error) {
+       if ((error as Error).message.includes('development build')) {
+         CustomAlert.show({
+           type: 'error',
+           title: 'Development Build Required',
+           message: 'WebRTC requires a development build. Please run the app using a development build (npx expo run:android).',
+           buttons: [{ text: 'OK', onPress: () => navigation.goBack(), style: 'cancel' }],
+           dismissable: false
+         });
+       } else {
+         CustomAlert.error('Error', (error as Error).message || 'Failed to access camera and microphone.');
+       }
+       return null;
+     }
   }, [hasPermissions, mediaDevices, navigation]);
 
   const resetChat = useCallback((keepLocalStream = false) => {
@@ -281,18 +279,18 @@ const VideoChatScreen: React.FC = () => {
     KeepAwake.deactivateKeepAwake().catch(() => {});
   }, []);
 
-  const startVideoChat = useCallback(async () => {
-    if (!webRTCSupported) {
-      Alert.alert('WebRTC Not Available', 'Please ensure you are running a development build with react-native-webrtc installed.');
-      return;
-    }
+   const startVideoChat = useCallback(async () => {
+     if (!webRTCSupported) {
+       CustomAlert.error('WebRTC Not Available', 'Please ensure you are running a development build with react-native-webrtc installed.');
+       return;
+     }
 
-    await checkPermissions();
-    
-    if (!hasPermissions) {
-      Alert.alert('Permissions Required', 'Camera and microphone permissions are required for video chat.');
-      return;
-    }
+     await checkPermissions();
+
+     if (!hasPermissions) {
+       CustomAlert.warning('Permissions Required', 'Camera and microphone permissions are required for video chat.');
+       return;
+     }
 
     resetChat();
     setIsConnecting(true);
@@ -320,7 +318,7 @@ const VideoChatScreen: React.FC = () => {
 
       socket.current.on('error', (error) => {
         console.error('Video chat socket error:', error.message || error);
-        Alert.alert('Connection Error', 'A socket error occurred. Please try again.');
+        CustomAlert.error('Connection Error', 'A socket error occurred. Please try again.');
         setIsConnecting(false);
         resetChat();
       });
@@ -331,7 +329,7 @@ const VideoChatScreen: React.FC = () => {
         if (socket.current && !socket.current.connected) {
           setTimeout(() => {
             if (!socket.current?.connected) {
-              Alert.alert('Connection Error', 'Failed to connect to video chat server. Please check your internet connection and try again.');
+              CustomAlert.error('Connection Error', 'Failed to connect. Please check your internet connection and try again.');
               setIsConnecting(false);
             }
           }, 15000); // Wait 15 seconds before showing error to allow reconnection attempts
@@ -340,14 +338,14 @@ const VideoChatScreen: React.FC = () => {
 
       socket.current.on('timeout', () => {
         console.log('Video chat socket connection timed out');
-        Alert.alert('Connection Timeout', 'The connection timed out. Please try again.');
+        CustomAlert.error('Connection Timeout', 'The connection timed out. Please try again.');
         setIsConnecting(false);
       });
 
       socket.current.on('close', () => {
         console.log('Video chat socket closed');
         if (isChatting || isConnecting) {
-          Alert.alert('Connection Closed', 'The connection was closed unexpectedly.');
+          CustomAlert.error('Connection Closed', 'The connection was closed unexpectedly.');
           resetChat();
         }
       });
@@ -355,7 +353,7 @@ const VideoChatScreen: React.FC = () => {
       socket.current.on('disconnect', (reason) => {
         console.log('Video chat socket disconnected:', reason);
         if (isChatting || isConnecting) {
-          Alert.alert('Disconnected', 'Connection lost. Please try connecting again.');
+          CustomAlert.error('Disconnected', 'Connection lost. Please try connecting again.');
         }
         resetChat();
       });
@@ -373,7 +371,7 @@ const VideoChatScreen: React.FC = () => {
 
       socket.current.on('reconnect_failed', () => {
         console.error('Video chat socket reconnection failed');
-        Alert.alert('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
+        CustomAlert.error('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
       });
 
       socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
@@ -396,12 +394,12 @@ const VideoChatScreen: React.FC = () => {
         setIsChatting(true);
         KeepAwake.activateKeepAwake().catch(() => {});
 
-        if (initiator) {
-          peerConnection.current = createPeerConnection();
-          if (!peerConnection.current) {
-            Alert.alert('Error', 'Failed to create peer connection.');
-            return;
-          }
+         if (initiator) {
+           peerConnection.current = createPeerConnection();
+           if (!peerConnection.current) {
+             CustomAlert.error('Error', 'Failed to create peer connection.');
+             return;
+           }
 
           stream.getTracks().forEach((track: any) => {
             try {
@@ -483,13 +481,13 @@ const VideoChatScreen: React.FC = () => {
       });
 
       socket.current.on('peer_disconnected', () => {
-        Alert.alert('Chat Ended', 'Your peer has disconnected.');
+        CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
         resetChat();
       });
 
       socket.current.on('socket_error', (error: { message: string }) => {
         console.error('Video chat socket error:', error.message);
-        Alert.alert('Socket Error', error.message);
+        CustomAlert.error('Socket Error', error.message);
       });
 
       socket.current.on('video_status_change', (data: { isPaused: boolean }) => {
@@ -509,27 +507,20 @@ const VideoChatScreen: React.FC = () => {
         }
       });
 
-    } catch (error) {
-      Alert.alert('Error', 'Failed to start video chat.');
-      setIsConnecting(false);
-    }
+     } catch (error) {
+       CustomAlert.error('Error', 'Failed to start video chat.');
+       setIsConnecting(false);
+     }
   }, [webRTCSupported, hasPermissions, checkPermissions, resetChat, initLocalStream, createPeerConnection, RTCSessionDescription, RTCIceCandidate]);
 
   const handleReportUser = useCallback(() => {
-    Alert.alert(
+    CustomAlert.confirm(
       'Report User',
       'Are you sure you want to report this user for inappropriate behavior?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert('Reported', 'User has been reported. Finding a new peer...');
-            findNextPeer();
-          },
-        },
-      ]
+      () => {
+        CustomAlert.success('Reported', 'User has been reported. Finding a new peer...');
+        findNextPeer();
+      }
     );
   }, [findNextPeer]);
 
@@ -537,9 +528,9 @@ const VideoChatScreen: React.FC = () => {
     if (!user?._id || !peerId) return;
     try {
       await userAPI.sendFriendRequest(user._id, peerId);
-      Alert.alert('Success', 'Friend request sent!');
+      CustomAlert.success('Success', 'Friend request sent!');
     } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      CustomAlert.error('Error', 'Something went wrong. Please try again.');
     }
   }, [user, peerId]);
 
@@ -655,16 +646,16 @@ const VideoChatScreen: React.FC = () => {
     })
   ).current;
 
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    if (isConnecting) {
-      timeout = setTimeout(() => {
-        Alert.alert('Timeout', 'No match found. Please try again.');
-        resetChat();
-      }, 30000);
-    }
-    return () => clearTimeout(timeout);
-  }, [isConnecting, resetChat]);
+   useEffect(() => {
+     let timeout: NodeJS.Timeout;
+     if (isConnecting) {
+       timeout = setTimeout(() => {
+         CustomAlert.warning('Timeout', 'No match found. Please try again.');
+         resetChat();
+       }, 30000);
+     }
+     return () => clearTimeout(timeout);
+   }, [isConnecting, resetChat]);
 
   if (!webRTCSupported) {
     return (

@@ -7,6 +7,7 @@ const AlbumPhoto = require('../models/AlbumPhoto');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -35,6 +36,18 @@ router.post('/upload-image', auth, upload.single('image'), async (req, res) => {
       return res.status(400).json({ msg: 'No file uploaded' });
     }
 
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      const fs = require('fs');
+      const buffer = fs.readFileSync(req.file.path);
+      const imageUrl = await uploadFile(buffer, req.file.originalname, req.file.mimetype, 'posts');
+      
+      // Clean up local file
+      fs.unlinkSync(req.file.path);
+      
+      return res.json({ imageUrl });
+    }
+
     // Ensure uploads/posts directory exists
     const fs = require('fs');
     const postsDir = 'uploads/posts/';
@@ -55,6 +68,23 @@ router.post('/upload-image-base64', auth, async (req, res) => {
     const { imageData, filename } = req.body;
     if (!imageData || !filename) {
       return res.status(400).json({ msg: 'Image data and filename required' });
+    }
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      try {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = imageData.match(/^data:image\/(\w+);base64,/)?.[1] || 'jpeg';
+        const imageUrl = await uploadFile(buffer, filename, mimeType, 'posts');
+        console.log('✅ Post image uploaded to Supabase:', imageUrl);
+        return res.json({ imageUrl });
+      } catch (supabaseError) {
+        console.error('❌ Supabase upload failed:', supabaseError.message);
+        // Fall through to local storage fallback
+      }
+    } else {
+      console.log('ℹ️ Supabase not configured, using local storage');
     }
 
     // Ensure uploads/posts directory exists
@@ -85,6 +115,18 @@ router.post('/upload-video', auth, upload.single('video'), async (req, res) => {
       return res.status(400).json({ msg: 'No file uploaded' });
     }
 
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      const fs = require('fs');
+      const buffer = fs.readFileSync(req.file.path);
+      const videoUrl = await uploadFile(buffer, req.file.originalname, req.file.mimetype, 'posts');
+      
+      // Clean up local file
+      fs.unlinkSync(req.file.path);
+      
+      return res.json({ videoUrl });
+    }
+
     // Ensure uploads/posts directory exists
     const fs = require('fs');
     const postsDir = 'uploads/posts/';
@@ -105,6 +147,15 @@ router.post('/upload-video-base64', auth, async (req, res) => {
     const { videoData, filename } = req.body;
     if (!videoData || !filename) {
       return res.status(400).json({ msg: 'Video data and filename required' });
+    }
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      const base64Data = videoData.replace(/^data:video\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const mimeType = videoData.match(/^data:(\w+);base64,/)?.[1] || 'video/mp4';
+      const videoUrl = await uploadFile(buffer, filename, `video/${mimeType}`, 'posts');
+      return res.json({ videoUrl });
     }
 
     // Ensure uploads/posts directory exists
@@ -1257,6 +1308,26 @@ router.post('/album', auth, async (req, res) => {
     const { imageData, filename } = req.body;
     if (!imageData || !filename) {
       return res.status(400).json({ msg: 'Image data and filename required' });
+    }
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      try {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = imageData.match(/^data:image\/(\w+);base64,/)?.[1] || 'jpeg';
+        const imageUrl = await uploadFile(buffer, filename, mimeType, 'album');
+        
+        const newPhoto = new AlbumPhoto({
+          user: req.userId,
+          image: imageUrl
+        });
+
+        await newPhoto.save();
+        return res.json(newPhoto);
+      } catch (supabaseError) {
+        console.error('❌ Supabase album upload failed:', supabaseError.message);
+      }
     }
 
     // Ensure uploads/album directory exists

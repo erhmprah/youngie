@@ -12,6 +12,7 @@ import { getColors, spacing, typography, borderRadius, shadows } from '@/constan
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Swipeable } from 'react-native-gesture-handler';
 import { showErrorAlert } from '@/utils/error-handler';
+import { CustomAlert } from '@/utils/alert';
 
 interface Notification {
   _id: string;
@@ -81,14 +82,14 @@ export default function NotificationsScreen() {
     if (!user?._id) return;
     try {
       await userAPI.acceptFriendRequest(user._id, senderId);
-      await notificationAPI.markAsRead(notificationId);
-      setNotifications(prev => prev.map(notif =>
-        notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request accepted' } : notif
-      ));
-      Alert.alert('Success', 'Friend request accepted!');
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
+       await notificationAPI.markAsRead(notificationId);
+       setNotifications(prev => prev.map(notif =>
+         notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request accepted' } : notif
+       ));
+       CustomAlert.success('Success', 'Friend request accepted!');
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
   };
 
   const handleIgnoreRequest = async (senderId: string, notificationId: string) => {
@@ -96,65 +97,92 @@ export default function NotificationsScreen() {
     try {
       await userAPI.ignoreFriendRequest(user._id, senderId);
       await notificationAPI.markAsRead(notificationId);
-      setNotifications(prev => prev.map(notif =>
-        notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request ignored' } : notif
-      ));
-      Alert.alert('Ignored', 'Friend request ignored');
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
+       setNotifications(prev => prev.map(notif =>
+         notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request ignored' } : notif
+       ));
+       CustomAlert.info('Ignored', 'Friend request ignored');
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
   };
 
-  const handleApproveCommunity = async (communityId: string, senderId: string, notificationId: string) => {
-    try {
-      await communityAPI.approveMember(communityId, senderId);
-      await notificationAPI.markAsRead(notificationId);
-      setNotifications(prev => prev.map(notif =>
-        notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request approved' } : notif
-      ));
-      Alert.alert('Success', 'Member approved!');
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
+   const handleApproveCommunity = async (communityId: string, senderId: string, notificationId: string) => {
+     try {
+       await communityAPI.approveMember(communityId, senderId);
+       await notificationAPI.markAsRead(notificationId);
+       setNotifications(prev => prev.map(notif =>
+         notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request approved' } : notif
+       ));
+       CustomAlert.success('Success', 'Member approved!');
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
+   };
 
-  const handleRejectCommunity = async (notificationId: string) => {
-    try {
-      await notificationAPI.markAsRead(notificationId);
-      setNotifications(prev => prev.map(notif =>
-        notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request rejected' } : notif
-      ));
-      Alert.alert('Rejected', 'Join request rejected');
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
+   const handleRejectCommunity = async (notificationId: string) => {
+     try {
+       await notificationAPI.markAsRead(notificationId);
+       setNotifications(prev => prev.map(notif =>
+         notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request rejected' } : notif
+       ));
+       CustomAlert.info('Rejected', 'Join request rejected');
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
+   };
 
-  const handleAcceptChatInvitation = async (chatId: string, notificationId: string) => {
-    try {
-      await chatAPI.acceptInvitation(chatId);
-      await notificationAPI.markAsRead(notificationId);
-      setNotifications(prev => prev.map(notif =>
-        notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation accepted' } : notif
-      ));
-      Alert.alert('Success', 'You have joined the chat!');
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
+   const handleAcceptChatInvitation = async (chatId: string, notificationId: string) => {
+     try {
+       await chatAPI.acceptInvitation(chatId);
+       await notificationAPI.markAsRead(notificationId);
+       setNotifications(prev => prev.map(notif =>
+         notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation accepted' } : notif
+       ));
+       CustomAlert.success('Success', 'You have joined the chat!');
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
+   };
 
-  const handleRejectChatInvitation = async (chatId: string, notificationId: string) => {
-    try {
-      await chatAPI.rejectInvitation(chatId);
-      await notificationAPI.markAsRead(notificationId);
-      setNotifications(prev => prev.map(notif =>
-        notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation rejected' } : notif
-      ));
-      Alert.alert('Rejected', 'Chat invitation rejected');
-    } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
+   const handleRejectChatInvitation = async (chatId: string, notificationId: string) => {
+     try {
+       await chatAPI.rejectInvitation(chatId);
+       await notificationAPI.markAsRead(notificationId);
+       setNotifications(prev => prev.map(notif =>
+         notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation rejected' } : notif
+       ));
+       CustomAlert.info('Rejected', 'Chat invitation rejected');
+     } catch (error: any) {
+       CustomAlert.error('Error', 'Something went wrong. Please try again.');
+     }
+   };
+
+
+
+   const handleClearAllNotifications = () => {
+     CustomAlert.show({
+       type: 'confirm',
+       title: 'Clear All Notifications',
+       message: 'Are you sure you want to clear all notifications?',
+       buttons: [
+         { text: 'Cancel', style: 'cancel' },
+         {
+           text: 'Clear',
+           style: 'destructive',
+           onPress: async () => {
+             try {
+               await notificationAPI.clearAll();
+               setNotifications([]);
+               CustomAlert.success('Success', 'All notifications cleared');
+             } catch (error) {
+               CustomAlert.error('Error', 'Failed to clear notifications');
+             }
+           },
+         }
+       ],
+       dismissable: true
+     });
+   };
 
   const handleMarkAllAsRead = async () => {
     try {
@@ -165,28 +193,7 @@ export default function NotificationsScreen() {
     }
   };
 
-  const handleClearAllNotifications = () => {
-    Alert.alert(
-      'Clear All Notifications',
-      'Are you sure you want to clear all notifications?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await notificationAPI.clearAll();
-              setNotifications([]);
-              Alert.alert('Success', 'All notifications cleared');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to clear notifications');
-            }
-          },
-        },
-      ]
-    );
-  };
+
 
   const groupedNotifications = useMemo(() => {
     const today = new Date();
@@ -237,87 +244,97 @@ export default function NotificationsScreen() {
       handleMarkAsRead(notification._id);
     }
 
-    // Navigate based on notification type
-    if ((notification.type === 'tag' || notification.type === 'like' || notification.type === 'comment') && notification.relatedPost) {
-      // Check if the post still exists before navigating
+    // Post-like notifications
+    if (
+      (notification.type === 'tag' ||
+        notification.type === 'like' ||
+        notification.type === 'comment') &&
+      notification.relatedPost
+    ) {
       try {
         const response = await postAPI.getPost(notification.relatedPost);
-        
-        if (response.data) {
-          // Navigate to the feed and scroll to the specific post
+
+        if (response?.data) {
           router.push(`/?postId=${notification.relatedPost}`);
         } else {
-          // Post no longer exists, remove the notification and show alert
-          Alert.alert('Post Deleted', 'This post has been deleted and the notification has been removed.');
+          CustomAlert.info(
+            'Post Deleted',
+            'This post has been deleted and the notification has been removed.'
+          );
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
-          
-          // Also delete the notification from the backend
+
           try {
             await notificationAPI.deleteNotification(notification._id);
-          } catch (err) {
-            // Ignore errors, notification already removed from UI
+          } catch {
+            // ignore
           }
         }
       } catch (error: any) {
-        // Post doesn't exist or error occurred
-        if (error.response?.status === 404) {
-          Alert.alert('Post Deleted', 'This post has been deleted and the notification has been removed.');
+        if (error?.response?.status === 404) {
+          CustomAlert.info(
+            'Post Deleted',
+            'This post has been deleted and the notification has been removed.'
+          );
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
-          
-          // Also delete the notification from the backend
+
           try {
             await notificationAPI.deleteNotification(notification._id);
-          } catch (err) {
-            // Ignore errors, notification already removed from UI
+          } catch {
+            // ignore
           }
         } else {
-          // Network error or other issue, navigate anyway (feed will handle invalid postId)
           router.push(`/?postId=${notification.relatedPost}`);
         }
       }
-    } else if (notification.relatedCommunity) {
-      // Check if the community still exists before navigating
+
+      return;
+    }
+
+    // Community notifications
+    if (notification.relatedCommunity) {
       try {
         const response = await communityAPI.getCommunity(notification.relatedCommunity);
-        
-        if (response.data) {
-          // Navigate to community
+
+        if (response?.data) {
           router.push(`/community/${notification.relatedCommunity}`);
         } else {
-          // Community no longer exists, remove the notification and show alert
-          Alert.alert('Community Deleted', 'This community has been deleted and the notification has been removed.');
+          CustomAlert.info(
+            'Community Deleted',
+            'This community has been deleted and the notification has been removed.'
+          );
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
-          
-          // Also delete the notification from the backend
+
           try {
             await notificationAPI.deleteNotification(notification._id);
-          } catch (err) {
-            // Ignore errors, notification already removed from UI
+          } catch {
+            // ignore
           }
         }
       } catch (error: any) {
-        // Community doesn't exist or error occurred
-        if (error.response?.status === 404) {
-          Alert.alert('Community Deleted', 'This community has been deleted and the notification has been removed.');
+        if (error?.response?.status === 404) {
+          CustomAlert.info(
+            'Community Deleted',
+            'This community has been deleted and the notification has been removed.'
+          );
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
-          
-          // Also delete the notification from the backend
+
           try {
             await notificationAPI.deleteNotification(notification._id);
-          } catch (err) {
-            // Ignore errors, notification already removed from UI
+          } catch {
+            // ignore
           }
         } else {
-          // Network error or other issue, navigate anyway
           router.push(`/community/${notification.relatedCommunity}`);
         }
       }
-    } else if (notification.relatedChat) {
-      // Navigate to chat
+
+      return;
+    }
+
+    // Chat invitations
+    if (notification.relatedChat) {
       router.push(`/chat/${notification.relatedChat}`);
     }
-    // Note: Story notifications don't have relatedStory in the interface yet
-    // Add more navigation cases as needed
   };
 
   const renderNotification = ({ item }: { item: Notification }) => {

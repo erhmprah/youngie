@@ -8,6 +8,7 @@ const auth = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -28,6 +29,24 @@ const upload = multer({ storage });
 router.post('/upload-attachment', auth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ msg: 'No file uploaded' });
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      const buffer = fs.readFileSync(req.file.path);
+      const fileUrl = await uploadFile(buffer, req.file.originalname, req.file.mimetype, 'chats');
+      
+      // Clean up local file
+      fs.unlinkSync(req.file.path);
+      
+      const attachment = {
+        fileName: req.file.originalname,
+        url: fileUrl,
+        size: req.file.size,
+        type: req.file.mimetype,
+      };
+      return res.json(attachment);
+    }
+
     const attachment = {
       fileName: req.file.filename,
       url: `/uploads/chats/${req.file.filename}`,
@@ -45,6 +64,26 @@ router.post('/upload-attachment-base64', auth, async (req, res) => {
   try {
     const { imageData, filename } = req.body;
     if (!imageData || !filename) return res.status(400).json({ msg: 'Image data and filename required' });
+
+    // If Supabase is configured, upload to Supabase
+    if (supabaseStorage) {
+      try {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = imageData.match(/^data:image\/(\w+);base64,/)?.[1] || 'jpeg';
+        const fileUrl = await uploadFile(buffer, filename, mimeType, 'chats');
+        
+        const attachment = {
+          fileName: filename,
+          url: fileUrl,
+          size: buffer.length,
+          type: `image/${mimeType}`,
+        };
+        return res.json(attachment);
+      } catch (supabaseError) {
+        console.error('❌ Supabase chat attachment upload failed:', supabaseError.message);
+      }
+    }
 
     const buffer = Buffer.from(imageData, 'base64');
     const fileName = Date.now() + '-' + filename;

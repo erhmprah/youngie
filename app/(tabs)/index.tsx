@@ -73,7 +73,7 @@ interface StoryGroup {
 }
 
 export default function FeedScreen() {
-    const { user, isSignedIn, logout } = useAuth();
+    const { user, isSignedIn, logout, isLoading: authLoading } = useAuth();
     const router = useRouter();
     const { postId } = useLocalSearchParams();
     
@@ -164,20 +164,29 @@ export default function FeedScreen() {
     }, [loadingMore, hasMorePosts, isSignedIn, fetchData, postsPage]);
 
     const fetchFeedIfLoggedIn = useCallback(async () => {
+        console.log('fetchFeedIfLoggedIn called:', { authLoading, isSignedIn, userId: user?._id });
+        // Wait for auth to finish loading before fetching
+        if (authLoading) {
+            console.log('Auth loading, skipping fetch');
+            return;
+        }
         if (isSignedIn) {
+            console.log('User signed in, fetching data');
             await fetchData(1);
         } else {
+            console.log('User not signed in, clearing data');
             // Clear data when not logged in
             setPosts([]);
             setStories([]);
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, [isSignedIn, fetchData]);
+    }, [isSignedIn, fetchData, authLoading, user]);
 
     useEffect(() => {
+        console.log('Feed useEffect triggered', { isSignedIn, authLoading });
         fetchFeedIfLoggedIn();
-    }, [fetchFeedIfLoggedIn]);
+    }, [fetchFeedIfLoggedIn, authLoading, isSignedIn]);
 
     // Listen for story updates via socket
     useEffect(() => {
@@ -280,29 +289,35 @@ export default function FeedScreen() {
                     const updatedStories = [...group.stories];
                     const story = updatedStories[storyIndex];
                     
-                    // Always update the story to mark it as viewed
-                    const isAlreadyViewed = story.viewers?.some(v => v.user?._id === user?._id);
-                    if (user && !isAlreadyViewed) {
-                        updatedStories[storyIndex] = {
-                            ...story,
-                            viewers: [
-                                ...(story.viewers || []),
-                                { 
-                                    user: { 
-                                        _id: user._id, 
-                                        username: user.username, 
-                                        profilePhoto: user.profilePhoto,
-                                        avatar: user.avatar 
-                                    }, 
-                                    viewedAt: new Date().toISOString() 
-                                }
-                            ]
-                        };
+                    // Check if current user is the author - don't count author's view
+                    const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
+                    
+                    // Only update the story to mark it as viewed if not the author
+                    if (user && !isAuthor) {
+                        const isAlreadyViewed = story.viewers?.some(v => v.user?._id === user?._id);
+                        if (!isAlreadyViewed) {
+                            updatedStories[storyIndex] = {
+                                ...story,
+                                viewers: [
+                                    ...(story.viewers || []),
+                                    { 
+                                        user: { 
+                                            _id: user._id, 
+                                            username: user.username, 
+                                            profilePhoto: user.profilePhoto,
+                                            avatar: user.avatar 
+                                        }, 
+                                        viewedAt: new Date().toISOString() 
+                                    }
+                                ]
+                            };
+                        }
                     }
 
                     // Recalculate allViewed for the entire group
                     const allViewed = updatedStories.every(s => {
-                        if (s.author._id === user?._id) return true;
+                        const storyAuthorId = s.author?._id || s.author?._id;
+                        if (storyAuthorId === user?._id || storyAuthorId === user?.id) return true;
                         return s.viewers?.some(v => v.user?._id === user?._id);
                     });
 
@@ -371,7 +386,7 @@ export default function FeedScreen() {
                                             </View>
                                         </TouchableOpacity>
                                         <TouchableOpacity style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
-                                            <IconSymbol name="plus" size={12} color={white} />
+                                            <IconSymbol name="plus" size={10} color={white} />
                                         </TouchableOpacity>
                                         <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
                                     </View>
@@ -383,7 +398,7 @@ export default function FeedScreen() {
                                         <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
                                             {renderAvatar(item.user)}
                                             <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
-                                                <IconSymbol name="plus" size={12} color={white} />
+                                                <IconSymbol name="plus" size={10} color={white} />
                                             </View>
                                         </View>
                                         <ThemedText style={styles.storyUsername}>{item.user.username}</ThemedText>
@@ -472,12 +487,18 @@ export default function FeedScreen() {
                     ListHeaderComponent={renderHeader}
                     refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={primaryColor} />}
                     contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: spacing.lg }}
-                    // Performance optimization props
-                    initialNumToRender={5}
-                    maxToRenderPerBatch={10}
-                    windowSize={10}
+// Performance optimization props
+                    initialNumToRender={3}
+                    maxToRenderPerBatch={1}
+                    windowSize={31}
                     updateCellsBatchingPeriod={50}
-                    removeClippedSubviews={true}
+                    removeClippedSubviews={false}
+                    getItemLayout={(_,index) => ({
+                      length: 410,
+                      offset: 410 * index,
+                      index
+                    })}
+
                     onScrollToIndexFailed={(info) => {
                         const wait = new Promise(resolve => setTimeout(resolve, 500));
                         wait.then(() => {
@@ -523,7 +544,24 @@ export default function FeedScreen() {
                 
                 <CreatePostModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} onPost={fetchFeedIfLoggedIn} initialAnonymous={isIncognito} />
                 <CreateStoryModal visible={showCreateStoryModal} onClose={() => setShowCreateStoryModal(false)} onCreate={fetchFeedIfLoggedIn} />
-                <StoryViewer visible={showStoryViewer} onClose={() => setShowStoryViewer(false)} storyGroups={stories} initialGroupIndex={selectedStoryGroupIndex} onStoryDeleted={fetchFeedIfLoggedIn} onStoryViewed={handleStoryViewed} />
+                <StoryViewer 
+                    visible={showStoryViewer} 
+                    onClose={() => setShowStoryViewer(false)} 
+                    storyGroups={stories} 
+                    initialGroupIndex={selectedStoryGroupIndex} 
+                    onStoryDeleted={() => {
+                        // Remove the deleted story from local state immediately
+                        setStories(prevStories => {
+                            return prevStories.map(group => {
+                                // Filter out any stories that might have been deleted locally
+                                // The fetchFeedIfLoggedIn will refresh from backend
+                                return group;
+                            });
+                        });
+                        fetchFeedIfLoggedIn();
+                    }} 
+                    onStoryViewed={handleStoryViewed} 
+                />
                 <CommentModal visible={showCommentModal} onClose={() => setShowCommentModal(false)} post={selectedPostForComments} initialAnonymous={isIncognito} />
             </ThemedView>
         </SafeAreaView>
@@ -566,16 +604,16 @@ const styles = StyleSheet.create({
     },
     storyItem: {
         alignItems: 'center',
-        marginRight: spacing.lg,
-        width: 70,
+        marginRight: spacing.sm,
+        width: 64,
     },
     storyRing: {
-        width: 68,
-        height: 68,
-        borderRadius: 34,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         borderWidth: 2,
         padding: 2,
-        marginBottom: spacing.xs,
+        marginBottom: 4,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -598,16 +636,16 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     storyUsername: {
-        fontSize: typography.sizes.caption,
+        fontSize: 9,
         textAlign: 'center',
     },
     addStoryBadge: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        width: 20,
-        height: 20,
-        borderRadius: 10,
+        width: 18,
+        height: 18,
+        borderRadius: 9,
         borderWidth: 2,
         justifyContent: 'center',
         alignItems: 'center',

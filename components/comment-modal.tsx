@@ -227,7 +227,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
     };
 
     const handleDeleteComment = async (commentId: string) => {
-        if (!post) return;
+        if (!post || !post._id) return;
         Alert.alert(
             'Delete Comment',
             'Are you sure you want to delete this comment?',
@@ -239,10 +239,19 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                     onPress: async () => {
                         try {
                             const response = await postAPI.deleteComment(post._id, commentId);
-                            setComments(response.data.comments);
-                        } catch (error) {
+                            if (response.data?.comments) {
+                                setComments(response.data.comments);
+                            } else if (response.data) {
+                                setComments(prev => prev.filter(c => c._id !== commentId));
+                            }
+                        } catch (error: any) {
                             console.error('Error deleting comment:', error);
-                            Alert.alert('Error', 'Failed to delete comment.');
+                            if (error.response?.status === 404) {
+                                setComments(prev => prev.filter(c => c._id !== commentId));
+                            } else {
+                                const errorMsg = error.response?.data?.msg || 'Failed to delete comment.';
+                                Alert.alert('Error', errorMsg);
+                            }
                         }
                     }
                 }
@@ -273,8 +282,10 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
         return (
             <View style={[styles.commentContainer, isReply && styles.replyContainer]}>
                 <TouchableOpacity onPress={() => {
-                    onClose();
-                    router.push(`/user/${item.author._id}`);
+                    if (item.author._id !== user?._id) {
+                        onClose();
+                        router.push(`/user/${item.author._id}`);
+                    }
                 }}>
                     {item.author.profilePhoto ? (
                         <Image source={{ uri: getImageUrl(item.author.profilePhoto) }} style={styles.avatar} />
@@ -286,8 +297,10 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                 </TouchableOpacity>
                 <View style={{ flex: 1 }}>
                     <TouchableOpacity onPress={() => {
-                        onClose();
-                        router.push(`/user/${item.author._id}`);
+                        if (item.author._id !== user?._id) {
+                            onClose();
+                            router.push(`/user/${item.author._id}`);
+                        }
                     }}>
                         <ThemedText style={{ fontFamily: typography.families.bold }}>
                             {item.author.username}

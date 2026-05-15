@@ -18,6 +18,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSocket } from '@/utils/socket';
 import { useRouter } from 'expo-router';
+import { CustomAlert } from '@/utils/alert';
 
 const REACTION_ICONS: Record<ReactionType, keyof typeof Ionicons.glyphMap> = {
     like: 'thumbs-up',
@@ -232,59 +233,65 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
     const handleDelete = () => {
         setOptionsVisible(false);
-        Alert.alert(
-            "Delete Post",
-            "Are you sure you want to delete this post?",
-            [
-                { text: "Cancel", style: "cancel" },
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Delete Post',
+            message: 'Are you sure you want to delete this post?',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
                 {
-                    text: "Delete",
-                    style: "destructive",
+                    text: 'Delete',
+                    style: 'destructive',
                     onPress: () => onDelete?.(post._id)
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleReport = () => {
         setOptionsVisible(false);
-        Alert.alert(
-            "Report Post",
-            "Are you sure you want to report this post?",
-            [
-                { text: "Cancel", style: "cancel" },
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Report Post',
+            message: 'Are you sure you want to report this post?',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
                 {
-                    text: "Report",
+                    text: 'Report',
                     onPress: () => {
                         onReport?.(post._id);
-                        Alert.alert("Reported", "Thanks for letting us know. We will review this post.");
+                        CustomAlert.success('Reported', 'Thanks for letting us know. We will review this post.');
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleMute = async () => {
         setOptionsVisible(false);
-        Alert.alert(
-            "Mute User",
-            `Are you sure you want to mute ${post.author.username}? You won't see their posts in your feed anymore.`,
-            [
-                { text: "Cancel", style: "cancel" },
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Mute User',
+            message: `Are you sure you want to mute ${post.author.username}? You won't see their posts in your feed anymore.`,
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
                 {
-                    text: "Mute",
-                    style: "destructive",
+                    text: 'Mute',
+                    style: 'destructive',
                     onPress: async () => {
                         try {
                             await userAPI.muteUser(post.author._id);
-                            Alert.alert("Muted", `You have muted ${post.author.username}.`);
+                            CustomAlert.success('Muted', `You have muted ${post.author.username}.`);
                         } catch (error: any) {
-                            Alert.alert("Error", "Something went wrong. Please try again.");
+                            CustomAlert.error('Error', 'Something went wrong. Please try again.');
                         }
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleSaveEdit = async (content: string, media?: { uri: string; type: 'image' | 'video' }) => {
@@ -302,22 +309,23 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
             const response = await postAPI.updatePost(post._id, updateData);
             onUpdate?.(response.data);
-            Alert.alert("Success", "Post updated successfully");
+            CustomAlert.success('Success', 'Post updated successfully');
         } catch (error: any) {
-            Alert.alert("Error", "Something went wrong. Please try again.");
+            CustomAlert.error('Error', 'Something went wrong. Please try again.');
         }
     };
 
     const handleShare = async () => {
         if (post.isAnonymous) {
-            Alert.alert('Cannot Share', 'Sharing anonymous posts is not allowed.');
+            CustomAlert.warning('Cannot Share', 'Sharing anonymous posts is not allowed.');
             return;
         }
 
-        Alert.alert(
-            'Share Post',
-            'Are you sure you want to share this post to your feed?',
-            [
+        CustomAlert.show({
+            type: 'confirm',
+            title: 'Share Post',
+            message: 'Are you sure you want to share this post to your feed?',
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Share',
@@ -326,7 +334,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                             await postAPI.sharePost(post._id);
 
                             const repostContent = post.content ? `Shared: ${post.content}` : 'Shared post';
-                            
+
                             const newPostData: any = {
                                 content: repostContent,
                                 isPublic: true,
@@ -343,14 +351,15 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                             }
 
                             await postAPI.createPost(newPostData);
-                            Alert.alert('Success', 'Post reposted to your feed');
+                            CustomAlert.success('Success', 'Post reposted to your feed');
                         } catch (_error: any) {
-                            Alert.alert('Error', 'Failed to repost post');
+                            CustomAlert.error('Error', 'Failed to repost post');
                         }
                     }
                 }
-            ]
-        );
+            ],
+            dismissable: true
+        });
     };
 
     const handleReactionSelect = async (reaction: ReactionType) => {
@@ -390,7 +399,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                 <View style={styles.userInfo}>
                     <TouchableOpacity 
                         style={styles.authorRow}
-                        onPress={() => router.push(`/user/${post.author._id}`)}
+                        onPress={() => {
+                            if (post.author._id !== currentUserId) {
+                                router.push(`/user/${post.author._id}`);
+                            }
+                        }}
                     >
                         <View style={styles.avatarContainer}>
                             {post.author.profilePhoto ? (
@@ -451,10 +464,13 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                                 {item.type === 'image' ? (
                                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
                                         <Image
-                                            source={{ uri: getImageUrl(item.url) || '' }}
+source={{ uri: getImageUrl(item.url) || '' }}
                                             style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
                                             resizeMode="cover"
+                                            fadeDuration={0}
+                                            progressiveRenderingEnabled={true}
                                         />
+
                                     </TouchableWithoutFeedback>
                                 ) : (
                                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
@@ -493,10 +509,13 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                                 <View style={{ width: availableWidth, height: availableWidth }}>
                                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
                                         <Image
-                                            source={{ uri: getImageUrl(item) }}
+source={{ uri: getImageUrl(item) }}
                                             style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
                                             resizeMode="cover"
+                                            fadeDuration={0}
+                                            progressiveRenderingEnabled={true}
                                         />
+
                                     </TouchableWithoutFeedback>
                                 </View>
                             )}
@@ -517,7 +536,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                     </View>
                 ) : post.image ? (
                     <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                        <Image source={{ uri: getImageUrl(post.image) }} style={[styles.postMedia, { width: availableWidth, height: availableWidth }]} resizeMode="cover" />
+                        resizeMode="cover"
+                                            fadeDuration={0}
+                                            progressiveRenderingEnabled={true}
+                                        />
+
                     </TouchableWithoutFeedback>
                 ) : post.video ? (
                     <TouchableWithoutFeedback onPress={handleDoubleTap}>

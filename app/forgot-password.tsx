@@ -46,27 +46,6 @@ export default function ForgotPasswordScreen() {
     try {
       // Use Supabase to send password reset email
       const { error } = await resetPassword(email);
-      
-      if (error) {
-        // Check if user doesn't exist in Supabase
-        if (error.message?.includes('User not found') || error.message?.includes('No user')) {
-          // Don't reveal if email exists or not for security
-          setIsEmailSent(true);
-          Alert.alert(
-            'Reset Link Sent',
-            'If an account exists with this email, a password reset link has been sent to your inbox.'
-          );
-          return;
-        }
-        throw error;
-      }
-      
-      setIsEmailSent(true);
-      Alert.alert(
-        'Reset Link Sent',
-        'A password reset link has been sent to your email. Please check your inbox and follow the instructions to reset your password.'
-      );
-    } catch (error: any) {
       // Only log a brief message, not the full error object
       console.log('Password reset failed, handling gracefully...');
       

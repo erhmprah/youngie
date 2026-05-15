@@ -494,26 +494,17 @@ export default function UserProfileScreen() {
               {/* Posts/Album Grid */}
               {activeTab === 'posts' && (
                 <View style={styles.postsList}>
-                  {getPostsData() ? (
-                    posts.map((post) => {
-                      const postWithAuthor = {
-                        ...post,
-                        author: {
-                          _id: profile?._id || '',
-                          username: profile?.username || '',
-                          profilePhoto: profile?.profilePhoto,
-                          avatar: profile?.profilePhoto
-                        },
-                        updatedAt: post.createdAt || new Date().toISOString()
-                      };
-                      return (
-                        <FeedCard
-                          key={post._id}
-                          post={postWithAuthor as any}
-                          currentUserId={currentUser?._id || ''}
-                        />
-                      );
-                    })
+              <FlatList
+                    data={posts.map(normalizePost)}  // Add normalizePost later
+                    renderItem={renderPostItem}
+                    keyExtractor={item => item._id}
+                    removeClippedSubviews={false}
+                    windowSize={21}
+                    numColumns={1}
+                    onEndReached={loadMorePosts}
+                    onEndReachedThreshold={0.1}
+                  />
+
                   ) : (
                     <View style={styles.emptyContainer}>
                       <IconSymbol name="camera" size={48} color={lightTextColor} />

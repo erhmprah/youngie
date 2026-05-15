@@ -90,7 +90,9 @@ export default function ResetPasswordScreen() {
       // For deep links, we need to get the URL directly
       try {
         const initialUrl = await Linking.getInitialURL();
+        const linkingUrlResult = await Linking.openURL().catch(() => null);
         console.log('Reset password initial URL:', initialUrl);
+        console.log('All URL params:', Object.fromEntries(new URL(initialUrl || 'http://x').searchParams));
         
         if (initialUrl) {
           // Parse the URL to extract parameters - handle both query params and hash
@@ -110,24 +112,51 @@ export default function ResetPasswordScreen() {
           const urlGoogle = urlObj.searchParams.get('google');
           const urlType = urlObj.searchParams.get('type');
           
-          console.log('URL params - access_token:', !!urlAccessToken, 'refresh_token:', !!urlRefreshToken, 'token:', !!urlToken, 'type:', urlType);
+          // Handle deep link format: youngie://reset-password?token=xxx
+          // The token might be passed differently when app is opened via custom scheme
+          const deepLinkToken = urlObj.searchParams.get('token') || urlObj.searchParams.get('access_token');
+          
+          console.log('URL params - access_token:', !!urlAccessToken, 'refresh_token:', !!urlRefreshToken, 'token:', !!urlToken, 'deepLinkToken:', !!deepLinkToken, 'type:', urlType, 'fullUrl:', urlToParse);
           
           // If we have an access_token from the URL, this is a Supabase password reset
-          if (urlAccessToken) {
+          // Also handle 'token' parameter which Supabase uses
+          const supabaseToken = urlAccessToken || urlToken;
+          if (supabaseToken) {
+            console.log('Setting Supabase session with token:', !!supabaseToken);
             setIsSupabaseReset(true);
             supabase.auth.setSession({
-              access_token: urlAccessToken,
+              access_token: supabaseToken,
               refresh_token: urlRefreshToken || '',
             }).then(({ error }) => {
               if (error) {
-                console.error('Error setting Supabase session from URL:', error);
+                console.error('Error setting Supabase session:', error.message);
+              } else {
+                console.log('Supabase session set successfully');
               }
             });
             return;
           }
           
-          // Check for token (non-Supabase reset)
-          if (!urlToken && !urlGoogle) {
+          // Check for token - support both 'token' (Supabase) and 'access_token'
+          const hasValidToken = urlToken || urlAccessToken;
+          console.log('Token check:', { urlToken: !!urlToken, urlAccessToken: !!urlAccessToken, hasValidToken });
+          
+          if (!hasValidToken && !urlGoogle) {
+            // Try to parse the redirect_to URL for token
+            const redirectTo = urlObj.searchParams.get('redirect_to');
+            if (redirectTo) {
+              console.log('Redirect to:', redirectTo);
+              // Try to extract params from redirect_to
+              try {
+                const redirectUrl = new URL(redirectTo);
+                const redirectToken = redirectUrl.searchParams.get('token') || redirectUrl.searchParams.get('access_token');
+                if (redirectToken) {
+                  console.log('Found token in redirect_to:', !!redirectToken);
+                  setIsSupabaseReset(true);
+                  return;
+                }
+              } catch (e) {}
+            }
             Alert.alert(
               'Invalid Link',
               'This password reset link is invalid or has expired.',
