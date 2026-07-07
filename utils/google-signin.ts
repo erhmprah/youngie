@@ -1,31 +1,36 @@
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { Alert } from 'react-native';
+import { supabase } from './supabase';
 
-// Initialize Google Sign-In
 GoogleSignin.configure({
-  webClientId: 'YOUR_WEB_CLIENT_ID', // Replace with your web client ID
-  iosClientId: 'YOUR_IOS_CLIENT_ID', // Replace with your iOS client ID
+  webClientId: '274460413616-cqu0cvkqhajj72hleui5l2raovj59ssd.apps.googleusercontent.com',
   offlineAccess: true,
-  forceCodeForRefreshToken: true,
 });
 
 export const signInWithGoogle = async () => {
   try {
-    // Check if device supports Google Play
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-    
-    // Sign in with Google
     const userInfo = await GoogleSignin.signIn();
     
-    if (userInfo.data) {
-      return {
-        email: userInfo.data.user.email,
-        name: userInfo.data.user.name,
-        photo: userInfo.data.user.photo,
-      };
+    const idToken = userInfo.data?.idToken;
+    const accessToken = userInfo.data?.accessToken;
+    
+    if (!idToken) {
+      throw new Error('No ID token received from Google');
     }
     
-    return null;
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'google',
+      token: idToken,
+      access_token: accessToken || undefined,
+    });
+    
+    if (error) {
+      console.error('Supabase ID token sign-in error:', error);
+      throw error;
+    }
+    
+    return { data: { session: data.session }, error: null };
   } catch (error: any) {
     console.error('Google Sign-In Error:', error);
     
@@ -36,9 +41,9 @@ export const signInWithGoogle = async () => {
     } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
       Alert.alert('Play Services not available', 'Please install Google Play Services.');
     } else {
-      Alert.alert('Sign-in failed', 'An error occurred while signing in.');
+      Alert.alert('Sign-in failed', error.message || 'An error occurred while signing in.');
     }
     
-    return null;
+    return { data: null, error };
   }
 };

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Switch, TouchableOpacity, Alert, ScrollView, TextInput } from 'react-native';
+import React from 'react';
+import { StyleSheet, View, TouchableOpacity, ScrollView } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -18,20 +18,9 @@ export default function SecuritySettingsScreen() {
     const primaryColor = useThemeColor('primary');
     const borderColor = useThemeColor('border');
 
-    const handleChangePassword = () => {
-        Haptics.selectionAsync();
-        Alert.alert('Change Password', 'This feature is not yet implemented.');
-    };
-
-
     const handleLoginActivity = () => {
         Haptics.selectionAsync();
         router.push('/login-activity');
-    };
-
-    const handleAccountRecovery = () => {
-        Haptics.selectionAsync();
-        Alert.alert('Account Recovery', 'Set up recovery options for your account.');
     };
 
     return (
@@ -39,21 +28,6 @@ export default function SecuritySettingsScreen() {
             <Stack.Screen options={{ title: 'Security', headerBackTitle: 'Settings' }} />
 
             <ScrollView contentContainerStyle={styles.content}>
-                <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account Security</ThemedText>
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
-                    <TouchableOpacity
-                        style={[styles.item, { borderBottomColor: borderColor }]}
-                        onPress={handleChangePassword}
-                    >
-                        <View style={styles.itemLeft}>
-                            <IconSymbol name="lock" size={20} color={textColor} />
-                            <ThemedText style={styles.label}>Change Password</ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
-
-                </View>
-
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account Management</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
                     <TouchableOpacity
@@ -63,17 +37,6 @@ export default function SecuritySettingsScreen() {
                         <View style={styles.itemLeft}>
                             <IconSymbol name="clock" size={20} color={textColor} />
                             <ThemedText style={styles.label}>Login Activity</ThemedText>
-                        </View>
-                        <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.item}
-                        onPress={handleAccountRecovery}
-                    >
-                        <View style={styles.itemLeft}>
-                            <IconSymbol name="key" size={20} color={textColor} />
-                            <ThemedText style={styles.label}>Account Recovery</ThemedText>
                         </View>
                         <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
                     </TouchableOpacity>

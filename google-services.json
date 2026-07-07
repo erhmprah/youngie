@@ -1,89 +1,26 @@
 {
   "project_info": {
-    "project_number": "917869943882",
-    "project_id": "youngie-91ab7",
-    "storage_bucket": "youngie-91ab7.firebasestorage.app"
+    "project_number": "274460413616",
+    "project_id": "youngie-332f6",
+    "storage_bucket": "youngie-332f6.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:917869943882:android:767aedc380e0d8d55bdab3",
+        "mobilesdk_app_id": "1:274460413616:android:5517c4a592041a23163575",
         "android_client_info": {
           "package_name": "com.erhmprah.youngie"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "917869943882-97rfmkhvt3s5m54c70849gfpif8m70kb.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.erhmprah.youngie",
-            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
-          }
-        },
-        {
-          "client_id": "917869943882-5epfdf4toethe55poi2386d0k43lgp4f.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAulrl-uCE40bdLpR1Xro6kCkL6xiFdEak"
+          "current_key": "AIzaSyA7WA1ETnPQciNwcGNI60a3Jr2Iab5P0Uc"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "917869943882-5epfdf4toethe55poi2386d0k43lgp4f.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "917869943882-hqe21ghsclqm4poijs6a3f9eq30ivn67.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.erhmprah.youngie",
-                "app_store_id": "112211"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:917869943882:android:f028bc89651907e55bdab3",
-        "android_client_info": {
-          "package_name": "com.youngie"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "917869943882-5epfdf4toethe55poi2386d0k43lgp4f.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyAulrl-uCE40bdLpR1Xro6kCkL6xiFdEak"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "917869943882-5epfdf4toethe55poi2386d0k43lgp4f.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "917869943882-hqe21ghsclqm4poijs6a3f9eq30ivn67.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.erhmprah.youngie",
-                "app_store_id": "112211"
-              }
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

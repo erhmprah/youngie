@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, StyleSheet, Text, Platform, Alert } from 'react-native';
+import { View, StyleSheet, Text, Platform, Alert, Animated, PanResponder, Dimensions, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, FlatList, TextInput, PermissionsAndroid } from 'react-native';
 import { CustomAlert } from '@/utils/alert';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { SOCKET_URL } from '@/utils/api';
@@ -10,6 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { spacing, borderRadius, shadows, typography } from '@/constants/design-tokens';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as KeepAwake from 'expo-keep-awake';
+import { Socket, io } from 'socket.io-client';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Message = {
   id: string;
@@ -39,7 +42,7 @@ const VideoChatScreen: React.FC = () => {
   const peerIdRef = useRef<string | null>(null);
   const socket = useRef<Socket | null>(null);
   const localStreamRef = useRef<any>(null);
-  const navigation = useNavigation();
+  const router = useRouter();
   const { user } = useAuth();
 
   const primaryColor = useThemeColor('primary');
@@ -226,7 +229,7 @@ const VideoChatScreen: React.FC = () => {
            type: 'error',
            title: 'Development Build Required',
            message: 'WebRTC requires a development build. Please run the app using a development build (npx expo run:android).',
-           buttons: [{ text: 'OK', onPress: () => navigation.goBack(), style: 'cancel' }],
+            buttons: [{ text: 'OK', onPress: () => router.back(), style: 'cancel' }],
            dismissable: false
          });
        } else {
@@ -234,7 +237,7 @@ const VideoChatScreen: React.FC = () => {
        }
        return null;
      }
-  }, [hasPermissions, mediaDevices, navigation]);
+  }, [hasPermissions, mediaDevices, router]);
 
   const resetChat = useCallback((keepLocalStream = false) => {
     // Notify peer before cleaning up
