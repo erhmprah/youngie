@@ -1,5 +1,6 @@
 // sockets/chat.js
 
+const mongoose = require('mongoose');
 const Chat = require('../models/Chat');
 const User = require('../models/User');
 const Message = require('../models/Message');
@@ -114,7 +115,7 @@ module.exports = function (io) {
     });
 
     // Listen for a new message (via socket - for real-time, but don't save as REST API handles persistence)
-    socket.on('new-message', async ({ chatId, senderId, content, attachment, isAnonymous, tempId }) => {
+    socket.on('new-message', async ({ chatId, senderId, content, attachment, isAnonymous, tempId, replyTo }) => {
       try {
         // Update sender's activity timestamp
         if (senderId) {
@@ -127,9 +128,6 @@ module.exports = function (io) {
           return;
         }
 
-        // Don't save here - REST API already saves the message
-        // Just broadcast the message for real-time updates to other users
-        
         // Populate sender info for the message
         let senderData = chat.isAnonymous
           ? { _id: senderId, username: 'Anonymous', profilePhoto: null }
@@ -143,15 +141,32 @@ module.exports = function (io) {
         // This allows the sender to match and replace their temporary message
         const messageId = tempId || `temp-${Date.now()}`;
 
+        // Fetch replyTo data if provided
+        let replyToData = null;
+        if (replyTo && mongoose.Types.ObjectId.isValid(replyTo)) {
+          const replyMessage = await Message.findById(replyTo).populate('sender', 'username').select('content sender attachment');
+          if (replyMessage) {
+            replyToData = {
+              _id: replyMessage._id,
+              content: replyMessage.content,
+              sender: {
+                username: replyMessage.sender?.username || 'Unknown'
+              },
+              attachment: replyMessage.attachment
+            };
+          }
+        }
+
         const broadcastMessage = {
             _id: messageId,
             chat: chatId,
             sender: senderData,
-            content: content || null,
+            content: content || '',
             attachment: attachment || null,
             isAnonymous: isAnonymous || false,
             createdAt: new Date().toISOString(),
             readBy: [senderId],
+            replyTo: replyToData,
         };
 
         // Broadcast the new message to all clients in the chat room

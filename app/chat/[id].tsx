@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -32,13 +32,20 @@ interface Message {
    chat: string;
    isDeleted?: boolean;
    readBy?: string[];
-   replyTo?: {
-     _id: string;
-     sender: {
-       username: string;
-     };
-     content: string;
-   };
+    replyTo?: {
+      _id: string;
+      sender: {
+        username: string;
+      };
+      content: string;
+      attachment?: {
+        fileName: string;
+        url: string;
+        type: string;
+        size: number;
+        duration?: number;
+      } | string;
+    };
    attachment?: {
      fileName: string;
      url: string;
@@ -83,6 +90,8 @@ export default function ChatScreen() {
   const [messageToForward, setMessageToForward] = useState<Message | null>(null);
   const [showMessageOptionsModal, setShowMessageOptionsModal] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [deleteMessageData, setDeleteMessageData] = useState<Message | null>(null);
   const [userChats, setUserChats] = useState<any[]>([]);
   const [forwardSearchText, setForwardSearchText] = useState('');
   const [attachment, setAttachment] = useState<any>(null);
@@ -99,6 +108,8 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [audioStatus, setAudioStatus] = useState<Record<string, any>>({});
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const highlightedMessageTimeout = useRef<number | null>(null);
 
   // Format last seen time to show relative time (e.g., "2 hours ago", "Yesterday")
   const formatLastSeen = (dateString: string) => {
@@ -208,17 +219,33 @@ export default function ChatScreen() {
     const handleNewMessage = (message: Message) => {
       if (message.chat === id) {
         setMessages(prevMessages => {
-          // Check if this replaces a temporary message
-          const existingIndex = prevMessages.findIndex(msg => msg._id.startsWith('temp-') && msg.sender._id === message.sender._id && msg.content === message.content);
+          // Check if this replaces a temporary message (server echoes tempId as _id)
+          const tempIndex = prevMessages.findIndex(msg => msg._id === message._id && msg._id.startsWith('temp-'));
+          if (tempIndex !== -1) {
+            const newMessages = [...prevMessages];
+            newMessages[tempIndex] = message;
+            return newMessages;
+          }
+
+          // Fallback: replace a temporary message by sender + content (handles media-only messages)
+          const existingIndex = prevMessages.findIndex(msg =>
+            msg._id.startsWith('temp-') &&
+            msg.sender._id === message.sender._id &&
+            (msg.content || '') === (message.content || '')
+          );
           if (existingIndex !== -1) {
-            // Replace the temporary message with the real one
             const newMessages = [...prevMessages];
             newMessages[existingIndex] = message;
             return newMessages;
-          } else {
-            // Add as new message
-            return [...prevMessages, message];
           }
+
+          // Prevent duplicate messages from being added (same _id already present)
+          if (prevMessages.some(msg => msg._id === message._id)) {
+            return prevMessages;
+          }
+
+          // Add as new message
+          return [...prevMessages, message];
         });
         chatAPI.markAsRead(id as string); // Mark as read if receiving while open
       }
@@ -311,6 +338,12 @@ export default function ChatScreen() {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
+      }
+
+      // Clean up highlighted message timeout if pending
+      if (highlightedMessageTimeout.current) {
+        clearTimeout(highlightedMessageTimeout.current);
+        highlightedMessageTimeout.current = null;
       }
     };
   }, [id]);
@@ -416,7 +449,8 @@ export default function ChatScreen() {
       replyTo: currentReplyTo ? {
         _id: currentReplyTo._id,
         sender: { username: currentReplyTo.sender.username },
-        content: currentReplyTo.content
+        content: currentReplyTo.content,
+        attachment: currentReplyTo.attachment
       } : undefined,
       attachment: currentAttachment ? {
         url: currentAttachment.uri,
@@ -516,31 +550,56 @@ export default function ChatScreen() {
     setReplyTo(message);
   };
 
-  const handleDelete = (message: Message) => {
-    Alert.alert(
-      'Delete Message',
-      'Are you sure you want to delete this message?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await chatAPI.deleteMessage(id as string, message._id);
-              setMessages(prevMessages => prevMessages.map(msg =>
-                msg._id === message._id ? { ...msg, content: 'Message deleted', isDeleted: true } : msg
-              ));
-            } catch (error) {
-              // Still mark as deleted locally if API fails
-              setMessages(prevMessages => prevMessages.map(msg =>
-                msg._id === message._id ? { ...msg, content: 'Message deleted', isDeleted: true } : msg
-              ));
-            }
-          }
-        }
-      ]
-    );
+  const handleReplyPress = (messageId: string) => {
+    if (highlightedMessageTimeout.current) {
+      clearTimeout(highlightedMessageTimeout.current);
+    }
+
+    const targetIndex = messages.findIndex(msg => msg._id === messageId);
+    if (targetIndex !== -1) {
+      flatListRef.current?.scrollToIndex({
+        index: targetIndex,
+        animated: true,
+        viewPosition: 0.5,
+      });
+      setHighlightedMessageId(messageId);
+      highlightedMessageTimeout.current = setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 2000);
+    }
+  };
+
+  const handleDelete = async (message: Message, deleteType: 'me' | 'everyone' = 'me') => {
+    try {
+      await chatAPI.deleteMessage(id as string, message._id, deleteType);
+      setMessages(prevMessages => prevMessages.map(msg =>
+        msg._id === message._id ? { ...msg, content: 'Message deleted', isDeleted: true } : msg
+      ));
+    } catch (error) {
+      setMessages(prevMessages => prevMessages.map(msg =>
+        msg._id === message._id ? { ...msg, content: 'Message deleted', isDeleted: true } : msg
+      ));
+    }
+  };
+
+  const showDeleteOptions = (message: Message) => {
+    const isSent = message.sender._id === user?._id;
+    const otherParticipant = chat?.participants?.find((p: any) => p._id !== user?._id);
+    const isRead = otherParticipant && message.readBy?.some((id: string) => id === otherParticipant._id);
+
+    if (isSent) {
+      const canDeleteForEveryone = !isRead;
+      if (canDeleteForEveryone) {
+        setDeleteMessageData(message);
+        setShowDeleteConfirmModal(true);
+      } else {
+        setDeleteMessageData(message);
+        setShowDeleteConfirmModal(true);
+      }
+    } else {
+      setDeleteMessageData(message);
+      setShowDeleteConfirmModal(true);
+    }
   };
 
   const handleForward = (message: Message) => {
@@ -864,7 +923,7 @@ export default function ChatScreen() {
     }
 
     return (
-      <TouchableOpacity onPress={() => { handleDelete(message); close(); }}>
+      <TouchableOpacity onPress={() => { showDeleteOptions(message); close(); }}>
         <Animated.View style={[styles.leftAction, styles.deleteAction, { transform: [{ translateX: trans }] }]}>
           <IconSymbol name="trash" size={24} color={white} />
           <ThemedText style={styles.leftActionText}>Delete</ThemedText>
@@ -1001,7 +1060,7 @@ export default function ChatScreen() {
     const displayPhoto = showAnonymous ? undefined : item.sender.profilePhoto;
 
     const messageContent = (
-      <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}>
+      <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer, item._id === highlightedMessageId && styles.highlightedMessage]}>
         {!isMyMessage && (
           <View style={[styles.avatarContainer, { backgroundColor: surfaceColor }]}>
             {!showAnonymous && displayPhoto ? (
@@ -1012,16 +1071,44 @@ export default function ChatScreen() {
           </View>
         )}
         <TouchableOpacity onLongPress={() => showMessageOptions(item)} style={[styles.bubble, { backgroundColor: isMyMessage ? myMessageColor : otherMessageColor }]}>
-          {item.replyTo && item.replyTo.sender && (
-            <View style={[styles.replyContainer, { backgroundColor: isMyMessage ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]}>
-              <ThemedText style={[styles.replyLabel, { color: isMyMessage ? white : primaryColor }]}>
-                Replying to {item.replyTo.sender.username}
-              </ThemedText>
-              <ThemedText style={[styles.replyText, { color: isMyMessage ? white : textColor }]}>
-                {item.replyTo.content.length > 50 ? item.replyTo.content.substring(0, 50) + '...' : item.replyTo.content}
-              </ThemedText>
-            </View>
-          )}
+           {item.replyTo && item.replyTo.sender && (
+             <TouchableOpacity onPress={() => handleReplyPress(item.replyTo!._id)} activeOpacity={0.7}>
+               <View style={[styles.replyContainer, { backgroundColor: isMyMessage ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]}>
+                 <View style={styles.replyHeader}>
+                   <ThemedText style={[styles.replyLabel, { color: isMyMessage ? white : primaryColor }]}>
+                     Replying to {item.replyTo.sender.username}
+                   </ThemedText>
+                    {item.replyTo.attachment && (() => {
+                      let attachment: any = item.replyTo.attachment;
+                      if (typeof attachment === 'string') {
+                        try { attachment = JSON.parse(attachment); } catch (e) { return null; }
+                      }
+                      if (!attachment || !attachment.url) return null;
+                      const normalizedUrl = attachment.url.replace(/\\/g, '/');
+                      const attachmentUrl = normalizedUrl.startsWith('http') ? normalizedUrl : getImageUrl(normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`);
+                      if (!attachmentUrl) return null;
+                      if (attachment.type && attachment.type.startsWith('image')) {
+                        return <Image source={{ uri: attachmentUrl }} style={styles.replyMediaThumb} resizeMode="cover" />;
+                      }
+                      if (attachment.type && attachment.type.startsWith('video')) {
+                        return (
+                          <View style={styles.replyMediaThumb}>
+                            <Video source={{ uri: attachmentUrl }} style={styles.replyMediaThumb} resizeMode={ResizeMode.COVER} useNativeControls={false} isLooping={false} />
+                            <View style={styles.replyMediaPlayOverlay}>
+                              <IconSymbol name="play.fill" size={12} color={white} />
+                            </View>
+                          </View>
+                        );
+                      }
+                      return <View style={styles.replyMediaThumb}><IconSymbol name="doc" size={14} color={textColor} /></View>;
+                    })()}
+                 </View>
+                 <ThemedText style={[styles.replyText, { color: isMyMessage ? white : textColor }]}>
+                   {item.replyTo.content.length > 50 ? item.replyTo.content.substring(0, 50) + '...' : item.replyTo.content}
+                 </ThemedText>
+               </View>
+             </TouchableOpacity>
+           )}
           {!isMyMessage && (
             <ThemedText style={[styles.username, { color: primaryColor }]}>
               {displayName}
@@ -1087,6 +1174,18 @@ export default function ChatScreen() {
     );
   };
 
+  // Deduplicate messages by _id to guarantee unique keys for the FlatList
+  const dedupedMessages = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Message[] = [];
+    for (const msg of messages) {
+      if (msg._id && seen.has(msg._id)) continue;
+      if (msg._id) seen.add(msg._id);
+      result.push(msg);
+    }
+    return result;
+  }, [messages]);
+
   if (isLoading) {
     return <ActivityIndicator style={{ flex: 1 }} size="large" color={primaryColor} />;
   }
@@ -1126,9 +1225,11 @@ export default function ChatScreen() {
                       </ThemedText>
                   )}
               </View>
-              <TouchableOpacity onPress={handleVoiceCall} style={styles.voiceCallButton}>
-                  <IconSymbol name="phone" size={24} color={textColor} />
-              </TouchableOpacity>
+              {isDirectChat && (
+                  <TouchableOpacity onPress={handleVoiceCall} style={styles.voiceCallButton}>
+                      <IconSymbol name="phone" size={24} color={textColor} />
+                  </TouchableOpacity>
+              )}
               <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.settingsButton}>
                   <IconSymbol name="settings" size={24} color={textColor} />
               </TouchableOpacity>
@@ -1137,7 +1238,7 @@ export default function ChatScreen() {
           {/* Messages */}
           <FlatList
             ref={flatListRef}
-            data={messages}
+            data={dedupedMessages}
             renderItem={renderMessage}
             keyExtractor={(item) => item._id}
             contentContainerStyle={styles.listContent}
@@ -1311,6 +1412,7 @@ export default function ChatScreen() {
           chat={chat}
           onChatUpdate={setChat}
           onMessagesUpdate={setMessages}
+          onChatDeleted={() => router.back()}
           onFontSizeChange={setFontSize}
         />
 
@@ -1388,7 +1490,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.forwardOption, { backgroundColor: '#ff4444' }]}
-              onPress={() => { handleDelete(selectedMessage); setShowMessageOptionsModal(false); setSelectedMessage(null); }}
+              onPress={() => { showDeleteOptions(selectedMessage); setShowMessageOptionsModal(false); setSelectedMessage(null); }}
             >
               <IconSymbol name="trash" size={20} color={white} />
               <ThemedText style={{ color: white, marginLeft: spacing.sm }}>Delete</ThemedText>
@@ -1396,6 +1498,48 @@ export default function ChatScreen() {
           </View>
         </View>
       )}
+
+      {showDeleteConfirmModal && deleteMessageData && (() => {
+        const isSent = deleteMessageData.sender._id === user?._id;
+        const otherParticipant = chat?.participants?.find((p: any) => p._id !== user?._id);
+        const isRead = otherParticipant && deleteMessageData.readBy?.some((id: string) => id === otherParticipant._id);
+        const canDeleteForEveryone = isSent && !isRead;
+
+        return (
+          <View style={StyleSheet.absoluteFillObject}>
+            <TouchableOpacity
+              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
+              onPress={() => { setShowDeleteConfirmModal(false); setDeleteMessageData(null); }}
+            />
+            <View style={[styles.forwardModal, { backgroundColor: surfaceColor }]}>
+              {isSent && canDeleteForEveryone ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.forwardOption, { backgroundColor: surfaceColor, borderBottomWidth: 1, borderBottomColor: textColor + '20' }]}
+                    onPress={() => { handleDelete(deleteMessageData, 'me'); setShowDeleteConfirmModal(false); setDeleteMessageData(null); }}
+                  >
+                    <ThemedText style={{ color: textColor }}>Me</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.forwardOption, { backgroundColor: '#ff4444' }]}
+                    onPress={() => { handleDelete(deleteMessageData, 'everyone'); setShowDeleteConfirmModal(false); setDeleteMessageData(null); }}
+                  >
+                    <ThemedText style={{ color: white }}>Everyone</ThemedText>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.forwardOption, { backgroundColor: '#ff4444' }]}
+                  onPress={() => { handleDelete(deleteMessageData, 'me'); setShowDeleteConfirmModal(false); setDeleteMessageData(null); }}
+                >
+                  <IconSymbol name="trash" size={20} color={white} />
+                  <ThemedText style={{ color: white, marginLeft: spacing.sm }}>Delete</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+      })()}
 
       <MediaPreviewModal
         visible={showMediaPreview}
@@ -1479,6 +1623,29 @@ const createStyles = (colors: { primaryColor: string; white: string; surfaceColo
   replyText: {
     fontSize: typography.sizes.body2,
   },
+  replyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  replyMediaThumb: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    marginLeft: spacing.xs,
+  },
+  replyMediaPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 4,
+  },
   replyInputContainer: {
     backgroundColor: colors.surfaceColor,
     padding: spacing.sm,
@@ -1496,6 +1663,9 @@ const createStyles = (colors: { primaryColor: string; white: string; surfaceColo
   replyPreviewText: {
     flex: 1,
     marginLeft: spacing.sm,
+  },
+  highlightedMessage: {
+    backgroundColor: 'rgba(255, 215, 0, 0.3)',
   },
   cancelReply: {
     padding: spacing.xs,

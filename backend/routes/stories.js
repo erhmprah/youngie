@@ -5,6 +5,7 @@ const User = require('../models/User');
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
+const pushService = require('../services/push-notification');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -177,6 +178,11 @@ router.post('/', auth, async (req, res) => {
         }
       });
       await Promise.all(notificationPromises);
+
+      tags.filter(taggedUserId => taggedUserId !== req.userId)
+        .forEach(taggedUserId => {
+          pushService.sendTagNotification(taggedUserId, null, 'story', req.userId, null, story._id).catch(() => {});
+        });
     }
 
     res.json(story);
@@ -346,6 +352,7 @@ router.post('/:storyId/react', auth, async (req, res) => {
         message: `reacted to your story ${emoji}`,
         relatedStory: story._id,
       });
+      pushService.sendReactionNotification(story.author, null, reactionType, 'story', userId, null, story._id).catch(() => {});
     }
 
     await story.save();

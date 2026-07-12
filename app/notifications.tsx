@@ -119,17 +119,18 @@ export default function NotificationsScreen() {
      }
    };
 
-   const handleRejectCommunity = async (notificationId: string) => {
-     try {
-       await notificationAPI.markAsRead(notificationId);
-       setNotifications(prev => prev.map(notif =>
-         notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request rejected' } : notif
-       ));
-       CustomAlert.info('Rejected', 'Join request rejected');
-     } catch (error: any) {
-       CustomAlert.error('Error', 'Something went wrong. Please try again.');
-     }
-   };
+   const handleRejectCommunity = async (communityId: string, senderId: string, notificationId: string) => {
+      try {
+        await communityAPI.rejectMember(communityId, senderId);
+        await notificationAPI.markAsRead(notificationId);
+        setNotifications(prev => prev.map(notif =>
+          notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request rejected' } : notif
+        ));
+        CustomAlert.info('Rejected', 'Join request rejected');
+      } catch (error: any) {
+        CustomAlert.error('Error', 'Something went wrong. Please try again.');
+      }
+    };
 
    const handleAcceptChatInvitation = async (chatId: string, notificationId: string) => {
      try {
@@ -408,7 +409,7 @@ export default function NotificationsScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.ignoreButton}
-                  onPress={() => handleRejectCommunity(item._id)}
+                  onPress={() => handleRejectCommunity(item.relatedCommunity!, item.sender._id, item._id)}
                 >
                   <ThemedText style={styles.buttonText}>Reject</ThemedText>
                 </TouchableOpacity>

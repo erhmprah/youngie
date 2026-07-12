@@ -5,6 +5,7 @@ const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
+const pushService = require('../services/push-notification');
 
 const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -660,6 +661,7 @@ router.post('/:userId/friends/:friendId', auth, async (req, res) => {
       type: 'follow',
       message: 'started following you',
     });
+    pushService.sendFollowNotification(friend._id, null, user._id).catch(() => {});
 
     await user.save();
     await friend.save();
@@ -715,6 +717,7 @@ router.post('/:userId/matches/:matchId', auth, async (req, res) => {
         type: 'match',
         message: 'matched with you!',
       });
+      pushService.sendMatchNotification(match._id, null, user._id).catch(() => {});
 
       await user.save();
       await match.save();
@@ -758,6 +761,7 @@ router.post('/:userId/friend-request/:targetUserId', auth, async (req, res) => {
       type: 'follow',
       message: 'sent you a friend request',
     });
+    pushService.sendFollowNotification(target._id, null, sender._id).catch(() => {});
 
     res.json({ msg: 'Friend request sent' });
   } catch (error) {
@@ -803,6 +807,7 @@ router.post('/:userId/accept-request/:senderId', auth, async (req, res) => {
       type: 'follow',
       message: 'accepted your friend request! You are now friends.',
     });
+    pushService.sendFollowNotification(sender._id, null, accepter._id).catch(() => {});
 
     res.json({ msg: 'Friend request accepted' });
   } catch (error) {
@@ -942,6 +947,35 @@ router.post('/:userId/unblock/:targetUserId', auth, async (req, res) => {
     await unblocker.save();
 
     res.json({ msg: 'User unblocked' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Report a user
+router.post('/:userId/report/:targetUserId', auth, async (req, res) => {
+  try {
+    const reporter = await User.findById(req.userId);
+    const target = await User.findById(req.params.targetUserId);
+
+    if (!reporter || !target) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    if (target._id.toString() === req.userId) {
+      return res.status(400).json({ msg: 'Cannot report yourself' });
+    }
+
+    const { reason } = req.body || {};
+
+    target.reports.push({
+      reporter: req.userId,
+      reason: typeof reason === 'string' ? reason : '',
+      createdAt: new Date(),
+    });
+    await target.save();
+
+    res.json({ msg: 'User reported successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -6,8 +6,10 @@ const Notification = require('../models/Notification');
 const Chat = require('../models/Chat');
 const CommunityInvite = require('../models/CommunityInvite');
 const auth = require('../middleware/auth');
+const communityFeedRoutes = require('./community-feed');
 const crypto = require('crypto');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
+const pushService = require('../services/push-notification');
 
 // Upload community image base64
 router.post('/upload-image-base64', auth, async (req, res) => {
@@ -57,6 +59,7 @@ router.get('/', auth, async (req, res) => {
     let communities = await Community.find()
       .populate('creator', 'username avatar profilePhoto')
       .populate('members', 'username avatar profilePhoto')
+      .populate('pendingMembers', 'username avatar profilePhoto')
       .populate('chat')
       .sort({ createdAt: -1 });
 
@@ -139,10 +142,8 @@ router.get('/:communityId', auth, async (req, res) => {
       await Community.updateOne({ _id: community._id }, { chat: newChat._id });
     }
 
-    // If user is creator, populate pending members
-    if (community.creator._id.toString() === req.userId) {
-      await community.populate('pendingMembers', 'username avatar profilePhoto');
-    }
+    // Populate pending members
+    await community.populate('pendingMembers', 'username avatar profilePhoto');
 
     res.json(community);
   } catch (error) {
@@ -222,6 +223,7 @@ router.post('/:communityId/join', auth, async (req, res) => {
           relatedCommunity: community._id,
         });
         await notification.save();
+        pushService.sendCommunityJoinRequestNotification(community.creator, null, community.name, community._id, req.userId).catch(() => {});
 
         return res.json({ msg: 'Join request sent for approval' });
       }
@@ -303,6 +305,28 @@ router.post('/:communityId/approve/:userId', auth, async (req, res) => {
     await community.populate('members', 'username avatar profilePhoto');
     await community.populate('pendingMembers', 'username avatar profilePhoto');
 
+    const approvedUser = await User.findById(userId);
+
+    const approvalNotification = new Notification({
+      recipient: userId,
+      sender: req.userId,
+      type: 'community_join_request',
+      message: `approved your request to join "${community.name}"`,
+      relatedCommunity: community._id,
+    });
+    await approvalNotification.save();
+    await approvalNotification.populate('sender', 'username avatar profilePhoto');
+
+    if (req.io) {
+      req.io.to(userId).emit('notification:new', approvalNotification);
+    }
+
+    if (approvedUser) {
+      pushService.sendCommunityJoinRequestApprovedNotification(
+        userId, req.userId, community.name, community._id
+      ).catch(() => {});
+    }
+
     res.json(community);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -329,6 +353,27 @@ router.post('/:communityId/reject/:userId', auth, async (req, res) => {
 
     await community.save();
     await community.populate('pendingMembers', 'username avatar profilePhoto');
+
+    const rejectionNotification = new Notification({
+      recipient: userId,
+      sender: req.userId,
+      type: 'community_join_request',
+      message: `rejected your request to join "${community.name}"`,
+      relatedCommunity: community._id,
+    });
+    await rejectionNotification.save();
+    await rejectionNotification.populate('sender', 'username avatar profilePhoto');
+
+    if (req.io) {
+      req.io.to(userId).emit('notification:new', rejectionNotification);
+    }
+
+    const rejectedUser = await User.findById(userId);
+    if (rejectedUser) {
+      pushService.sendCommunityJoinRequestRejectedNotification(
+        userId, req.userId, community.name, community._id
+      ).catch(() => {});
+    }
 
     res.json(community);
   } catch (error) {
@@ -482,6 +527,7 @@ router.post('/join/:inviteToken', async (req, res) => {
           relatedCommunity: community._id,
         });
         await notification.save();
+        pushService.sendCommunityJoinRequestNotification(community.creator, null, community.name, community._id, userId).catch(() => {});
 
         // Increment invite usage
         invite.uses += 1;
@@ -584,5 +630,8 @@ router.delete('/:communityId', auth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Community feed (posts within a community)
+router.use('/:communityId/feed', communityFeedRoutes);
 
 module.exports = router;

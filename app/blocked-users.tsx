@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, FlatList, TouchableOpacity, Image, View, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity, Image, View, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,6 +10,7 @@ import { getImageUrl, BASE_URL } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
+import { CustomAlert } from '@/utils/alert';
 
 interface BlockedUser {
     _id: string;
@@ -53,9 +54,9 @@ export default function BlockedUsersScreen() {
                 headers: { 'x-auth-token': token }
             });
             setBlockedUsers(prev => prev.filter(u => u._id !== userId));
-            Alert.alert('Success', `${username} has been unblocked`);
+            CustomAlert.success('Success', `${username} has been unblocked`);
         } catch (error) {
-            Alert.alert('Error', 'Failed to unblock user');
+            CustomAlert.error('Error', 'Failed to unblock user');
         }
     };
 

@@ -15,7 +15,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface CreateStoryModalProps {
     visible: boolean;
     onClose: () => void;
-    onCreate: () => void;
+    onCreate: (forceRefresh?: boolean) => void;
 }
 
 export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModalProps) {
@@ -111,7 +111,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
             }
 
             await storyAPI.createStory({ content, image: uploadedImageUrl, pollOptions: finalPollOptions });
-            onCreate();
+            onCreate(true);
             onClose();
             setContent('');
             setImage(null);

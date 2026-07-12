@@ -11,6 +11,7 @@ import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { postAPI, userAPI, getImageUrl } from '@/utils/api';
+import { cacheService } from '@/utils/cache';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -241,6 +242,9 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                 category: selectedCategory
             });
 
+            // Invalidate feed cache so the new post appears immediately on refresh
+            await cacheService.invalidateByPrefix('cache_posts_');
+
             onPost();
             onClose();
             setContent('');
@@ -423,6 +427,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                         onMediaSelected={handleMediaSelected}
                         icon="camera"
                         size={22}
+                        showAudioOption={false}
                     />
                 </View>
 

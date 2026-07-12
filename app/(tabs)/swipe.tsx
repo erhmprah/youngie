@@ -19,7 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { showErrorAlert, showNetworkErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371; // Radius of the earth in km
@@ -55,6 +55,7 @@ export default function SwipeScreen() {
     const [swipeHistory, setSwipeHistory] = useState<any[]>([]);
 
     const pan = useRef(new Animated.ValueXY()).current;
+    const gestureStart = useRef({ x: 0, y: 0 });
 
     const backgroundColor = useThemeColor('background');
     const primaryColor = useThemeColor('primary');
@@ -192,25 +193,53 @@ export default function SwipeScreen() {
         });
     };
 
+    const viewProfile = () => {
+        if (!currentProfile) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        Animated.timing(pan, {
+            toValue: { x: 0, y: -height },
+            duration: 250,
+            useNativeDriver: false,
+        }).start(() => {
+            pan.setValue({ x: 0, y: 0 });
+            if (currentProfile?._id) {
+                router.push(`/user/${currentProfile._id}`);
+            }
+        });
+    };
+
     const panResponder = useMemo(() =>
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
+            onPanResponderGrant: (e) => {
+                gestureStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+            },
             onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
             onPanResponderRelease: (e, { dx, dy }) => {
                 if (dx > 120) {
                     completeSwipe('right');
                 } else if (dx < -120) {
                     completeSwipe('left');
+                } else if (dy < -120) {
+                    viewProfile();
                 } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-                    if (currentProfile?._id) {
-                        router.push(`/user/${currentProfile._id}`);
+                    // Tap: switch photo based on which half of the card was tapped
+                    if (currentImages.length > 1) {
+                        const cardLeft = spacing.md;
+                        const cardWidth = width - spacing.md * 2;
+                        const cardCenter = cardLeft + cardWidth / 2;
+                        if (e.nativeEvent.pageX < cardCenter) {
+                            prevImage();
+                        } else {
+                            nextImage();
+                        }
                     }
                     Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
                 } else {
                     Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
                 }
             },
-        }), [currentProfile, completeSwipe, pan, router]
+        }), [currentProfile, currentImages, completeSwipe, viewProfile, prevImage, nextImage, pan]
     );
 
     const fetchNearbyUsers = async (filterParams?: FilterState, page: number = 0, append: boolean = false) => {
@@ -355,18 +384,33 @@ export default function SwipeScreen() {
                                     {...panResponder.panHandlers}
                                 >
                                     <View style={styles.imageContainer}>
+                                        <Animated.View
+                                            style={[
+                                                styles.swipeBadge,
+                                                styles.swipeBadgeLike,
+                                                { opacity: pan.x.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' }) },
+                                            ]}
+                                            pointerEvents="none"
+                                        >
+                                            <ThemedText style={[styles.swipeBadgeText, { color: '#4CAF50' }]}>LIKE</ThemedText>
+                                        </Animated.View>
+                                        <Animated.View
+                                            style={[
+                                                styles.swipeBadge,
+                                                styles.swipeBadgeNope,
+                                                { opacity: pan.x.interpolate({ inputRange: [-100, 0], outputRange: [1, 0], extrapolate: 'clamp' }) },
+                                            ]}
+                                            pointerEvents="none"
+                                        >
+                                            <ThemedText style={[styles.swipeBadgeText, { color: '#F44336' }]}>NOPE</ThemedText>
+                                        </Animated.View>
+
                                         {currentImage ? (
                                             <Image source={{ uri: currentImage.uri }} style={styles.cardImage} />
                                         ) : (
                                             <View style={[styles.cardImage, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                                                 <IconSymbol name="person.fill" size={120} color={lightTextColor} />
                                             </View>
-                                        )}
-                                        {currentImages.length > 1 && (
-                                            <>
-                                                <TouchableOpacity style={styles.leftTapArea} onPress={prevImage} />
-                                                <TouchableOpacity style={styles.rightTapArea} onPress={nextImage} />
-                                            </>
                                         )}
                                         {currentImages.length > 1 && (
                                             <View style={styles.imageIndicator}>
@@ -410,12 +454,35 @@ export default function SwipeScreen() {
                                             </ThemedText>
 
                                             <View style={styles.tagContainer}>
-                                                {currentProfile.interests?.slice(0, 3).map((item: string, i: number) => (
-                                                    <View key={i} style={[styles.tag, { borderColor: white }]}>
-                                                        <ThemedText style={[styles.tagText, { color: white }]}>{item}</ThemedText>
-                                                    </View>
-                                                ))}
+                                                {currentProfile.interests?.slice(0, 4).map((item: string, i: number) => {
+                                                    const isShared = !!user?.interests?.includes(item);
+                                                    return (
+                                                        <View
+                                                            key={i}
+                                                            style={[
+                                                                styles.tag,
+                                                                isShared
+                                                                    ? { backgroundColor: primaryColor, borderColor: primaryColor }
+                                                                    : { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: white },
+                                                            ]}
+                                                        >
+                                                            <ThemedText style={[styles.tagText, { color: white }]}>{item}</ThemedText>
+                                                            {isShared && (
+                                                                <IconSymbol name="checkmark" size={12} color={white} style={{ marginLeft: spacing.xxs }} />
+                                                            )}
+                                                        </View>
+                                                    );
+                                                })}
                                             </View>
+                                            {(() => {
+                                                const sharedCount = (currentProfile.interests || []).filter((i: string) => user?.interests?.includes(i)).length;
+                                                if (sharedCount === 0) return null;
+                                                return (
+                                                    <ThemedText style={[styles.sharedInterestText, { color: primaryColor }]}>
+                                                        {sharedCount} shared interest{sharedCount > 1 ? 's' : ''}
+                                                    </ThemedText>
+                                                );
+                                            })()}
                                         </View>
                                     </LinearGradient>
                                 </Animated.View>
@@ -474,6 +541,7 @@ export default function SwipeScreen() {
                     lightTextColor={lightTextColor}
                     surfaceColor={surfaceColor}
                     borderColor={borderColor}
+                    userInterests={user?.interests || []}
                 />
             )}
 
@@ -501,7 +569,8 @@ const GridView = ({
     white,
     lightTextColor,
     surfaceColor,
-    borderColor
+    borderColor,
+    userInterests,
 }: {
     profiles: any[];
     isLoading: boolean;
@@ -517,6 +586,7 @@ const GridView = ({
     lightTextColor: string;
     surfaceColor: string;
     borderColor: string;
+    userInterests?: string[];
 }) => {
     const renderProfileCard = ({ item }: { item: any }) => (
         <TouchableOpacity
@@ -542,6 +612,24 @@ const GridView = ({
                 <ThemedText style={[styles.gridLocationText, { color: lightTextColor }]}>
                     {item.location || 'Nearby'}
                 </ThemedText>
+                {item.interests?.length > 0 && (
+                    <View style={styles.gridTagContainer}>
+                        {item.interests.slice(0, 3).map((interest: string, i: number) => {
+                            const isShared = !!userInterests?.includes(interest);
+                            return (
+                                <View
+                                    key={i}
+                                    style={[
+                                        styles.gridTag,
+                                        isShared ? { backgroundColor: primaryColor, borderColor: primaryColor } : { backgroundColor: surfaceColor, borderColor: borderColor },
+                                    ]}
+                                >
+                                    <ThemedText style={[styles.gridTagText, { color: isShared ? white : lightTextColor }]}>{interest}</ThemedText>
+                                </View>
+                            );
+                        })}
+                    </View>
+                )}
             </View>
         </TouchableOpacity>
     );
@@ -617,10 +705,32 @@ const styles = StyleSheet.create({
     },
     cardImage: { width: '100%', height: '100%', position: 'absolute' },
     imageContainer: { width: '100%', height: '100%', position: 'relative' },
-    leftTapArea: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%', zIndex: 10 },
-    rightTapArea: { position: 'absolute', right: 0, top: 0, bottom: 0, width: '50%', zIndex: 10 },
     imageIndicator: { position: 'absolute', bottom: 20, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
     indicatorDot: { width: 8, height: 8, borderRadius: 4 },
+    swipeBadge: {
+        position: 'absolute',
+        top: 40,
+        zIndex: 20,
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.lg,
+        borderRadius: borderRadius.lg,
+        borderWidth: 4,
+        transform: [{ rotate: '-15deg' }],
+    },
+    swipeBadgeLike: {
+        left: 24,
+        borderColor: '#4CAF50',
+    },
+    swipeBadgeNope: {
+        right: 24,
+        transform: [{ rotate: '15deg' }],
+        borderColor: '#F44336',
+    },
+    swipeBadgeText: {
+        fontSize: typography.sizes.heading2,
+        fontFamily: typography.families.bold,
+        letterSpacing: 2,
+    },
     gradient: {
         position: 'absolute',
         left: 0,
@@ -646,6 +756,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
     },
     tagText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
+    sharedInterestText: { opacity: 0.95, marginTop: spacing.xs, fontSize: typography.sizes.caption, fontFamily: typography.families.bold },
     footer: {
         flexDirection: 'row',
         justifyContent: 'center',
@@ -684,6 +795,14 @@ const styles = StyleSheet.create({
     gridNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     gridNameText: { fontSize: typography.sizes.body1, fontFamily: typography.families.bold },
     gridLocationText: { fontSize: typography.sizes.caption, marginTop: spacing.xxs },
+    gridTagContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xxs, marginTop: spacing.xs },
+    gridTag: {
+        paddingHorizontal: spacing.xs,
+        paddingVertical: 2,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+    },
+    gridTagText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
     loadingMore: { marginVertical: spacing.lg },
     onlineIndicator: {
         width: 14,

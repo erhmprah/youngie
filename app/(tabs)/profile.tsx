@@ -71,11 +71,11 @@ export default function ProfileScreen() {
         try {
             // Use cached API for profile and posts with error handling
             const [statsResponse, postsResponse, albumResponse, sentRequestsResponse, receivedRequestsResponse] = await Promise.all([
-                cachedUserAPI.getProfile(userId).catch((err) => {
+                cachedUserAPI.getProfile(userId, true).catch((err) => {
                     console.error('getProfile error:', err);
                     return { data: { posts: [], friends: [] } };
                 }),
-                cachedPostAPI.getUserPosts(userId).catch((err) => {
+                cachedPostAPI.getUserPosts(userId, 1, 20, true).catch((err) => {
                     console.error('getUserPosts error:', err);
                     return { data: [] };
                 }),
@@ -507,9 +507,15 @@ export default function ProfileScreen() {
                             </View>
                         )}
                         {user?.interests && user.interests.length > 0 && (
-                            <View style={styles.detailRow}>
-                                <IconSymbol name="star.fill" size={16} color={lightTextColor} />
-                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{user.interests.join(', ')}</ThemedText>
+                            <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
+                                <IconSymbol name="star.fill" size={16} color={lightTextColor} style={{ marginTop: spacing.xxs }} />
+                                <View style={styles.interestChips}>
+                                    {user.interests.map((interest: string, index: number) => (
+                                        <View key={index} style={[styles.interestChip, { backgroundColor: primaryColor }]}>
+                                            <ThemedText style={[styles.interestChipText, { color: white }]}>{interest}</ThemedText>
+                                        </View>
+                                    ))}
+                                </View>
                             </View>
                         )}
                     </View>
@@ -833,6 +839,13 @@ const styles = StyleSheet.create({
     editBadge: { position: 'absolute', bottom: 5, right: 5, width: 32, height: 32, borderRadius: 16, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
     profileDetails: { gap: spacing.xs, marginBottom: spacing.md },
     detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    interestChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, flex: 1 },
+    interestChip: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xxs,
+        borderRadius: borderRadius.lg,
+    },
+    interestChipText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
     statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.lg, borderWidth: 1 },
     statBox: { flex: 1, alignItems: 'center', borderRightWidth: 1 },
     actionRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },

@@ -20,11 +20,11 @@ export const cachedUserAPI = {
   /**
    * Get user profile with caching
    */
-  getProfile: async (userId: string) => {
+  getProfile: async (userId: string, forceRefresh: boolean = false) => {
     const cacheKey = getUserCacheKey(userId);
     const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
     
-    if (cachedData && !isExpired) {
+    if (cachedData && !isExpired && !forceRefresh) {
       // Return cached data, fetch in background to update
       return { data: cachedData, fromCache: true };
     }
@@ -84,12 +84,12 @@ export const cachedPostAPI = {
   /**
    * Get posts with caching
    */
-  getPosts: async (isAnonymous?: boolean, page: number = 1, limit: number = 20) => {
+  getPosts: async (isAnonymous?: boolean, page: number = 1, limit: number = 20, forceRefresh: boolean = false) => {
     const cacheKey = getPostsCacheKey(page, isAnonymous);
     const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
     
-    // Only use cache for first page (recent posts)
-    if (cachedData && !isExpired && page === 1) {
+    // Only use cache for first page (recent posts) and when not forcing a refresh
+    if (cachedData && !isExpired && page === 1 && !forceRefresh) {
       return { data: cachedData, fromCache: true };
     }
     
@@ -106,11 +106,11 @@ export const cachedPostAPI = {
   /**
    * Get user posts with caching
    */
-  getUserPosts: async (userId: string, page: number = 1, limit: number = 20) => {
+  getUserPosts: async (userId: string, page: number = 1, limit: number = 20, forceRefresh: boolean = false) => {
     const cacheKey = `user_posts_${userId}_page${page}`;
     const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
     
-    if (cachedData && !isExpired && page === 1) {
+    if (cachedData && !isExpired && page === 1 && !forceRefresh) {
       return { data: cachedData, fromCache: true };
     }
     
@@ -332,11 +332,11 @@ export const cachedStoryAPI = {
   /**
    * Get stories with caching
    */
-  getStories: async () => {
-    const cacheKey = getStoriesCacheKey();
+  getStories: async (userId?: string, forceRefresh: boolean = false) => {
+    const cacheKey = getStoriesCacheKey(userId);
     const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
     
-    if (cachedData && !isExpired) {
+    if (cachedData && !isExpired && !forceRefresh) {
       return { data: cachedData, fromCache: true };
     }
     

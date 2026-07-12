@@ -1,24 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, TouchableOpacity, View, Alert, Image, Dimensions, Animated, TouchableWithoutFeedback, FlatList, ViewToken } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
+import { FeedPostOptions } from '@/app/chat/FeedPostOptions.component';
+import { CommentModal } from '@/components/comment-modal';
+import { EditPostModal } from '@/components/edit-post-modal';
+import { LikesModal } from '@/components/likes-modal';
+import { MediaPreviewModal } from '@/components/media-preview-modal';
+import { PollView } from '@/components/poll-view';
+import { ReactionModal } from '@/components/reaction-modal';
+import { ReactionPicker, ReactionType } from '@/components/reaction-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-import { FeedPostOptions } from '@/app/chat/FeedPostOptions.component';
-import { EditPostModal } from '@/components/edit-post-modal';
-import { PollView } from '@/components/poll-view';
-import { ReactionPicker, ReactionType } from '@/components/reaction-picker';
-import { ReactionModal } from '@/components/reaction-modal';
-import { LikesModal } from '@/components/likes-modal';
-import { CommentModal } from '@/components/comment-modal';
-import { postAPI, userAPI, getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { borderRadius, spacing, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
-import { getSocket } from '@/utils/socket';
-import { useRouter } from 'expo-router';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
+import { getImageUrl, postAPI, userAPI } from '@/utils/api';
+import { getSocket } from '@/utils/socket';
+import { getRelativeTime } from '@/utils/helpers';
+import { Ionicons } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, FlatList, Image, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
 
 const REACTION_ICONS: Record<ReactionType, keyof typeof Ionicons.glyphMap> = {
     like: 'thumbs-up',
@@ -100,6 +102,8 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const videoRef = useRef<Video>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
+    const [previewMedia, setPreviewMedia] = useState<any>(null);
+    const mediaTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0 && viewableItems[0].index !== null) {
@@ -153,7 +157,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             anim.start();
             return () => anim.stop();
         }
-    }, [post.author.isOnline]);
+    }, [post.author.isOnline, pulseAnim]);
 
     useEffect(() => {
         if (!shouldPlay && videoRef.current) {
@@ -166,16 +170,40 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         };
     }, [shouldPlay]);
 
-    const handleDoubleTap = () => {
+    const normalizeMediaUrl = (rawUrl: string): string => {
+        if (!rawUrl) return rawUrl;
+        const trimmed = rawUrl.trim().replace(/\\/g, '/');
+        if (/^(http|https):\/\//.test(trimmed)) {
+            return trimmed;
+        }
+        if (/^\/\//.test(trimmed)) {
+            return `http:${trimmed}`;
+        }
+        const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+        return getImageUrl(path) || trimmed;
+    };
+
+    const handleMediaTap = (url: string, type?: string) => {
         const now = Date.now();
         const DOUBLE_PRESS_DELAY = 300;
+        const resolvedUrl = normalizeMediaUrl(url);
+
         if (lastTap.current && (now - lastTap.current) < DOUBLE_PRESS_DELAY) {
+            if (mediaTapTimer.current) {
+                clearTimeout(mediaTapTimer.current);
+                mediaTapTimer.current = null;
+            }
             if (!isLiked) {
                 onLike?.(post._id);
             }
             lastTap.current = null;
         } else {
             lastTap.current = now;
+            mediaTapTimer.current = setTimeout(() => {
+                setPreviewMedia({ uri: resolvedUrl, type: type || 'image' });
+                lastTap.current = null;
+                mediaTapTimer.current = null;
+            }, DOUBLE_PRESS_DELAY);
         }
     };
 
@@ -218,7 +246,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                 } else {
                     await postAPI.unfavoritePost(post._id);
                 }
-            } catch (error) {
+            } catch {
                 setIsFavorited(prev => !prev);
             }
         }
@@ -259,9 +287,13 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Report',
-                    onPress: () => {
-                        onReport?.(post._id);
-                        CustomAlert.success('Reported', 'Thanks for letting us know. We will review this post.');
+                    onPress: async () => {
+                        try {
+                            await onReport?.(post._id);
+                            CustomAlert.success('Reported', 'Thanks for letting us know. We will review this post.');
+                        } catch {
+                            CustomAlert.error('Error', 'Failed to report post');
+                        }
                     }
                 }
             ],
@@ -284,7 +316,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                         try {
                             await userAPI.muteUser(post.author._id);
                             CustomAlert.success('Muted', `You have muted ${post.author.username}.`);
-                        } catch (error: any) {
+                        } catch {
                             CustomAlert.error('Error', 'Something went wrong. Please try again.');
                         }
                     }
@@ -310,7 +342,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             const response = await postAPI.updatePost(post._id, updateData);
             onUpdate?.(response.data);
             CustomAlert.success('Success', 'Post updated successfully');
-        } catch (error: any) {
+        } catch {
             CustomAlert.error('Error', 'Something went wrong. Please try again.');
         }
     };
@@ -352,7 +384,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
                             await postAPI.createPost(newPostData);
                             CustomAlert.success('Success', 'Post reposted to your feed');
-                        } catch (_error: any) {
+                        } catch {
                             CustomAlert.error('Error', 'Failed to repost post');
                         }
                     }
@@ -387,8 +419,8 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                 };
                 onUpdate?.(updatedPost);
             }
-        } catch (error) {
-            console.error('Reaction failed:', error);
+        } catch {
+            console.error('Reaction failed');
         }
         setReactionPickerVisible(false);
     };
@@ -425,7 +457,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                                 )}
                             </View>
                             <ThemedText style={styles.timestamp}>
-                                {new Date(post.createdAt).toLocaleDateString()}
+                                {getRelativeTime(post.createdAt)}
                             </ThemedText>
                         </View>
                     </TouchableOpacity>
@@ -462,7 +494,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                         renderItem={({ item }) => (
                             <View style={{ width: availableWidth, height: availableWidth }}>
                                 {item.type === 'image' ? (
-                                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <Image
 source={{ uri: getImageUrl(item.url) || '' }}
                                             style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
@@ -471,9 +503,9 @@ source={{ uri: getImageUrl(item.url) || '' }}
                                             progressiveRenderingEnabled={true}
                                         />
 
-                                    </TouchableWithoutFeedback>
+                                    </TouchableOpacity>
                                 ) : (
-                                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <Video
                                             ref={videoRef}
                                             source={{ uri: getImageUrl(item.url) || '' }}
@@ -482,7 +514,7 @@ source={{ uri: getImageUrl(item.url) || '' }}
                                             shouldPlay={shouldPlay}
                                             isLooping={true}
                                         />
-                                    </TouchableWithoutFeedback>
+                                    </TouchableOpacity>
                                 )}
                             </View>
                         )}
@@ -507,7 +539,7 @@ source={{ uri: getImageUrl(item.url) || '' }}
                             data={post.images}
                             renderItem={({ item }) => (
                                 <View style={{ width: availableWidth, height: availableWidth }}>
-                                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item, 'image')}>
                                         <Image
 source={{ uri: getImageUrl(item) }}
                                             style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
@@ -516,7 +548,7 @@ source={{ uri: getImageUrl(item) }}
                                             progressiveRenderingEnabled={true}
                                         />
 
-                                    </TouchableWithoutFeedback>
+                                    </TouchableOpacity>
                                 </View>
                             )}
                             keyExtractor={(item, index) => `${post._id}-img-${index}`}
@@ -535,15 +567,17 @@ source={{ uri: getImageUrl(item) }}
                         )}
                     </View>
                 ) : post.image ? (
-                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                        resizeMode="cover"
-                                            fadeDuration={0}
-                                            progressiveRenderingEnabled={true}
-                                        />
-
-                    </TouchableWithoutFeedback>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image, 'image')}>
+                        <Image
+                            source={{ uri: getImageUrl(post.image) }}
+                            style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
+                            resizeMode="cover"
+                            fadeDuration={0}
+                            progressiveRenderingEnabled={true}
+                        />
+                    </TouchableOpacity>
                 ) : post.video ? (
-                    <TouchableWithoutFeedback onPress={handleDoubleTap}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video, 'video')}>
                         <Video
                             ref={videoRef}
                             source={{ uri: getImageUrl(post.video) || '' }}
@@ -552,7 +586,7 @@ source={{ uri: getImageUrl(item) }}
                             shouldPlay={shouldPlay}
                             isLooping={true}
                         />
-                    </TouchableWithoutFeedback>
+                    </TouchableOpacity>
                 ) : null}
             </View>
 
@@ -665,9 +699,17 @@ source={{ uri: getImageUrl(item) }}
                 reactions={post.reactions || []}
             />
 
+            <MediaPreviewModal
+                visible={!!previewMedia}
+                onClose={() => setPreviewMedia(null)}
+                attachment={previewMedia}
+            />
+
         </ThemedView>
     );
 });
+
+FeedCard.displayName = 'FeedCard';
 
 const styles = StyleSheet.create({
     card: {

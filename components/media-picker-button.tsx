@@ -25,6 +25,7 @@ interface MediaPickerButtonProps {
     icon?: keyof typeof Ionicons.glyphMap;
     size?: number;
     disabled?: boolean;
+    showAudioOption?: boolean;
     // For chat: allow switching between attach mode and mic mode
     isRecording?: boolean;
     onStartRecording?: () => void;
@@ -36,6 +37,7 @@ export function MediaPickerButton({
     icon = 'add',
     size = 24,
     disabled = false,
+    showAudioOption = true,
     isRecording = false,
     onStartRecording,
     onStopRecording
@@ -188,19 +190,21 @@ export function MediaPickerButton({
                             <Ionicons name="chevron-forward" size={20} color={lightTextColor} />
                         </TouchableOpacity>
 
-                        <TouchableOpacity 
-                            style={styles.option}
-                            onPress={() => handleOptionSelect('audio')}
-                        >
-                            <View style={[styles.iconContainer, { backgroundColor: '#8E44AD' }]}>
-                                <Ionicons name="mic" size={24} color="white" />
-                            </View>
-                            <View style={styles.optionText}>
-                                <ThemedText style={[styles.optionTitle, { color: textColor }]}>Audio</ThemedText>
-                                <ThemedText style={[styles.optionSubtitle, { color: lightTextColor }]}>Record a voice message</ThemedText>
-                            </View>
-                            <Ionicons name="chevron-forward" size={20} color={lightTextColor} />
-                        </TouchableOpacity>
+                        {showAudioOption && (
+                            <TouchableOpacity 
+                                style={styles.option}
+                                onPress={() => handleOptionSelect('audio')}
+                            >
+                                <View style={[styles.iconContainer, { backgroundColor: '#8E44AD' }]}>
+                                    <Ionicons name="mic" size={24} color="white" />
+                                </View>
+                                <View style={styles.optionText}>
+                                    <ThemedText style={[styles.optionTitle, { color: textColor }]}>Audio</ThemedText>
+                                    <ThemedText style={[styles.optionSubtitle, { color: lightTextColor }]}>Record a voice message</ThemedText>
+                                </View>
+                                <Ionicons name="chevron-forward" size={20} color={lightTextColor} />
+                            </TouchableOpacity>
+                        )}
 
                         <TouchableOpacity 
                             style={[styles.cancelButton, { borderTopColor: borderColor }]}

@@ -10,6 +10,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
+import { getSocket } from '@/utils/socket';
 
 interface User {
   _id: string;
@@ -65,6 +66,31 @@ export default function CommunityScreen() {
     fetchCommunity();
   }, [fetchCommunity]);
 
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNotificationNew = (notification: any) => {
+      if (notification.relatedCommunity === community?._id) {
+        fetchCommunity();
+
+        if (notification.type === 'community_join_request') {
+          if (notification.message.includes('approved')) {
+            Alert.alert('Request Approved', notification.message);
+          } else if (notification.message.includes('rejected')) {
+            Alert.alert('Request Rejected', notification.message);
+          }
+        }
+      }
+    };
+
+    socket.on('notification:new', handleNotificationNew);
+
+    return () => {
+      socket.off('notification:new', handleNotificationNew);
+    };
+  }, [community?._id, fetchCommunity]);
+
 
   const handleJoin = async () => {
     if (!community) return;
@@ -73,6 +99,7 @@ export default function CommunityScreen() {
       await communityAPI.join(community._id);
       if (community.requiresApproval) {
         Alert.alert('Request Sent', 'Your request to join has been sent to the admin.');
+        fetchCommunity();
       } else {
         Alert.alert('Success', 'You have joined the community!');
         fetchCommunity();
@@ -106,7 +133,7 @@ export default function CommunityScreen() {
 
   const isMember = community?.members.some(m => m._id === user?._id) || false;
   const isCreator = community?.creator._id === user?._id || false;
-  const isPending = community?.pendingMembers?.some(m => m._id === user?._id) || false;
+  const isPending = community?.pendingMembers?.some(m => (typeof m === 'string' ? m === user?._id : m._id === user?._id)) || false;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor }}>
@@ -171,7 +198,7 @@ export default function CommunityScreen() {
                   <ActivityIndicator color={white} />
                 ) : (
                   <ThemedText style={[styles.buttonText, isPending && { color: lightTextColor }]}>
-                    {isPending ? 'Request Pending' : 'Join Community'}
+                    {isPending ? 'Requested' : 'Join Community'}
                   </ThemedText>
                 )}
               </TouchableOpacity>

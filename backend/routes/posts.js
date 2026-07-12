@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
+const pushService = require('../services/push-notification');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -428,6 +429,16 @@ router.post('/', auth, async (req, res) => {
         }
       });
       await Promise.all(notificationPromises);
+
+      tags.filter(taggedUserId => taggedUserId !== req.userId)
+        .forEach(taggedUserId => {
+          pushService.sendTagNotification(taggedUserId, null, 'post', req.userId, post._id).catch(() => {});
+        });
+    }
+
+    // Emit socket event so followers' feeds update in real time
+    if (req.io) {
+      req.io.emit('post:created', post);
     }
 
     res.json(post);
@@ -627,10 +638,7 @@ router.get('/search', auth, async (req, res) => {
       return post;
     });
 
-    res.json({
-      posts: maskedPosts,
-      hasMore: skip + posts.length < totalPosts
-    });
+    res.json(maskedPosts);
   } catch (error) {
     console.error('Error searching posts:', error);
     res.status(500).json({ error: error.message });
@@ -774,6 +782,18 @@ router.post('/:postId/like', auth, async (req, res) => {
       }
 
       await Promise.all(notificationPromises);
+
+      if (post.author.toString() !== userId) {
+        pushService.sendLikeNotification(post.author, null, post._id, userId).catch(() => {});
+      }
+
+      if (post.tags && Array.isArray(post.tags) && post.tags.length > 0) {
+        post.tags
+          .filter(taggedUserId => taggedUserId.toString() !== userId)
+          .forEach(taggedUserId => {
+            pushService.sendLikeNotification(taggedUserId, null, post._id, userId).catch(() => {});
+          });
+      }
     } else {
       // Unlike the post
       post.likes.splice(likeIndex, 1);
@@ -841,6 +861,7 @@ router.post('/:postId/react', auth, async (req, res) => {
           message: `reacted to your post with ${reactionType}`,
           relatedPost: post._id,
         });
+        pushService.sendReactionNotification(post.author, null, reactionType, 'post', userId, post._id).catch(() => {});
       }
     }
 
@@ -969,6 +990,34 @@ router.post('/:postId/comment', auth, async (req, res) => {
     await post.save();
     console.log('✓ Post saved, populating...');
 
+    // Send push notifications for comment-related events
+    if (post.author.toString() !== req.userId) {
+      pushService.sendCommentNotification(post.author, null, post._id, null, req.userId).catch(() => {});
+    }
+
+    if (post.tags && Array.isArray(post.tags) && post.tags.length > 0) {
+      post.tags
+        .filter(taggedUserId => taggedUserId.toString() !== req.userId)
+        .forEach(taggedUserId => {
+          pushService.sendCommentNotification(taggedUserId, null, post._id, null, req.userId).catch(() => {});
+        });
+    }
+
+    if (tags && Array.isArray(tags) && tags.length > 0) {
+      tags
+        .filter(taggedUserId => taggedUserId.toString() !== req.userId)
+        .forEach(taggedUserId => {
+          pushService.sendTagNotification(taggedUserId, null, 'comment', req.userId, post._id).catch(() => {});
+        });
+    }
+
+    if (parent) {
+      const parentComment = post.comments.id(parent);
+      if (parentComment && parentComment.author.toString() !== req.userId) {
+        pushService.sendCommentReplyNotification(parentComment.author, null, post._id, parent, null, req.userId).catch(() => {});
+      }
+    }
+
     await post.populate('author', 'username avatar profilePhoto bio');
     await post.populate('comments.author', 'username avatar profilePhoto');
     await post.populate('likes', '_id username avatar profilePhoto');
@@ -1038,6 +1087,7 @@ router.post('/:postId/comment/:commentId/react', auth, async (req, res) => {
           message: `reacted to your comment with ${reactionType}`,
           relatedPost: post._id,
         });
+        pushService.sendReactionNotification(comment.author, null, reactionType, 'comment', userId, post._id, null, req.params.commentId).catch(() => {});
       }
     }
 
@@ -1209,6 +1259,37 @@ router.post('/:postId/comment/:commentId/report', auth, async (req, res) => {
     }
 
     res.json({ msg: 'Comment reported successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Report a post
+router.post('/:postId/report', auth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.postId)) {
+      return res.status(400).json({ msg: 'Invalid post ID' });
+    }
+
+    const post = await Post.findById(req.params.postId);
+    if (!post) {
+      return res.status(404).json({ msg: 'Post not found' });
+    }
+
+    if (post.author.toString() === req.userId) {
+      return res.status(400).json({ msg: 'Cannot report your own post' });
+    }
+
+    const { reason } = req.body || {};
+
+    post.reports.push({
+      reporter: req.userId,
+      reason: typeof reason === 'string' ? reason : '',
+      createdAt: new Date(),
+    });
+    await post.save();
+
+    res.json({ msg: 'Post reported successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

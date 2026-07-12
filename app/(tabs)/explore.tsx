@@ -63,6 +63,8 @@ interface Community {
   description: string;
   image?: string;
   memberCount?: number;
+  requiresApproval?: boolean;
+  pendingMembers?: User[];
   chat?: { _id: string };
 }
 
@@ -79,6 +81,7 @@ export default function ExploreScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [friendIds, setFriendIds] = useState<string[]>([]);
   const [sentRequestIds, setSentRequestIds] = useState<string[]>([]);
+  const [pendingCommunityIds, setPendingCommunityIds] = useState<string[]>([]);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
   const [isFilterVisible, setFilterVisible] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
@@ -131,9 +134,9 @@ export default function ExploreScreen() {
       const communitiesResponse = results[2];
       const profileResponse = results[3];
 
-      setTrendingPosts(trendingResponse.data);
+      setTrendingPosts(trendingResponse.data || []);
 
-      let discoverData = discoverResponse.data.users;
+      let discoverData = discoverResponse.data?.users || [];
       if (activeFilters.minAge) {
         const min = parseInt(activeFilters.minAge);
         if (!isNaN(min)) discoverData = discoverData.filter((p: any) => p.age >= min);
@@ -157,7 +160,7 @@ export default function ExploreScreen() {
       }
       setDiscoverUsers(discoverData.slice(0, 4)); // Limit to 4 for display
 
-      const allCommunities = communitiesResponse.data;
+      const allCommunities = communitiesResponse.data || [];
 
       // 1. My Communities (Member or Creator)
       const myComms = allCommunities.filter((community: any) => {
@@ -208,10 +211,10 @@ export default function ExploreScreen() {
         postAPI.searchPosts(query)
       ]);
 
-      setSearchResults({
-        users: userResponse.data,
-        posts: postResponse.data
-      });
+       setSearchResults({
+         users: userResponse.data || [],
+         posts: postResponse.data || []
+       });
     } catch (error) {
       showErrorAlert(error);
     } finally {
@@ -243,16 +246,20 @@ export default function ExploreScreen() {
      }
    };
 
-   const handleJoinCommunity = async (communityId: string, communityName: string) => {
-     try {
-       await communityAPI.join(communityId);
-       CustomAlert.success('Success', `Joined ${communityName}`);
-       // Refetch to update the list
-       fetchExploreData();
-     } catch (error: any) {
-       CustomAlert.error('Error', 'Something went wrong. Please try again.');
-     }
-   };
+   const handleJoinCommunity = async (communityId: string, communityName: string, requiresApproval?: boolean) => {
+      try {
+        await communityAPI.join(communityId);
+        if (requiresApproval) {
+          setPendingCommunityIds(prev => [...prev, communityId]);
+          CustomAlert.info('Request Sent', 'The admin has been notified.');
+        } else {
+          CustomAlert.success('Success', `Joined ${communityName}`);
+        }
+        fetchExploreData();
+      } catch (error: any) {
+        CustomAlert.error('Error', 'Something went wrong. Please try again.');
+      }
+    };
 
   const renderUserAction = (targetUser: User) => {
     const isFriend = friendIds.includes(targetUser._id);
@@ -472,18 +479,9 @@ export default function ExploreScreen() {
               </View>
               {myCommunities.length > 0 ? (
                 myCommunities.map((community) => (
-                  <TouchableOpacity 
-                    key={community._id} 
-                    style={[styles.userRow, { borderBottomColor: borderColor }]} 
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        const chatId = typeof community.chat === 'object' ? (community.chat as any)?._id : community.chat;
-                        if (chatId) {
-                          router.push(`/chat/${chatId}`);
-                        } else {
-                          CustomAlert.info('Info', 'Chat not available for this community');
-                        }
-                      }}
+                  <View
+                    key={community._id}
+                    style={[styles.userRow, { borderBottomColor: borderColor }]}
                   >
                     <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                       {community.image ? (
@@ -496,17 +494,17 @@ export default function ExploreScreen() {
                       <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{community.name}</ThemedText>
                       <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
                     </View>
-                    <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
+                    <TouchableOpacity
+                      style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}
+                    >
                       <ThemedText style={[styles.followText, { color: textColor }]}>Open</ThemedText>
-                    </View>
-                    <TouchableOpacity style={{ marginLeft: spacing.sm, padding: spacing.sm }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}>
-                        <IconSymbol name="info.circle" size={24} color={lightTextColor} />
                     </TouchableOpacity>
-                  </TouchableOpacity>
+                  </View>
                 ))
               ) : (
                 <ThemedText style={{ paddingHorizontal: spacing.lg, color: lightTextColor, fontStyle: 'italic' }}>
-                  You haven't joined any communities yet.
+                  You haven&apos;t joined any communities yet.
                 </ThemedText>
               )}
             </View>
@@ -530,8 +528,36 @@ export default function ExploreScreen() {
                     <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{community.name}</ThemedText>
                     <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
                   </View>
-                  <TouchableOpacity style={[styles.followButton, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleJoinCommunity(community._id, community.name); }}>
-                    <ThemedText style={[styles.followText, { color: white }]}>Join</ThemedText>
+                  <TouchableOpacity 
+                    style={[
+                      styles.followButton, 
+                      { 
+                        backgroundColor: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)
+                          ? surfaceColor 
+                          : primaryColor,
+                        borderWidth: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id) ? 1 : 0,
+                        borderColor: borderColor
+                      }
+                    ]} 
+                    onPress={() => { 
+                      const isPending = pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id);
+                      if (!isPending) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
+                        handleJoinCommunity(community._id, community.name, community.requiresApproval); 
+                      }
+                    }} 
+                    disabled={pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)}
+                  >
+                    <ThemedText style={[
+                      styles.followText, 
+                      { 
+                        color: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)
+                          ? textColor 
+                          : white 
+                      }
+                    ]}>
+                      {pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id) ? 'Requested' : 'Join'}
+                    </ThemedText>
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))}

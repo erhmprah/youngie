@@ -571,6 +571,8 @@ export const userAPI = {
   clearLoginActivity: () => api.delete('/users/login-activity'),
   getIncomingFriendRequests: () => api.get('/users/friend-requests/incoming'),
   getSentFriendRequests: () => api.get('/users/friend-requests/sent'),
+  reportUser: (userId: string, targetUserId: string, reason?: string) =>
+    api.post(`/users/${userId}/report/${targetUserId}`, reason ? { reason } : {}),
 };
 
 export const notificationAPI = {
@@ -594,9 +596,11 @@ export const chatAPI = {
   createChat: (data: any) => api.post('/chats', data),
   sendMessage: (chatId: string, data: { content?: string; isAnonymous?: boolean; replyTo?: string; attachment?: any; pollOptions?: { text: string }[] }) =>
     api.post(`/chats/${chatId}/messages`, data),
-  deleteMessage: (chatId: string, messageId: string) =>
-    api.delete(`/chats/${chatId}/messages/${messageId}`),
+  deleteMessage: (chatId: string, messageId: string, type: 'me' | 'everyone' = 'me') =>
+    api.delete(`/chats/${chatId}/messages/${messageId}`, { params: { type } }),
   markAsRead: (chatId: string) => api.put(`/chats/${chatId}/read`),
+  delete: (chatId: string) => api.delete(`/chats/${chatId}`),
+  restore: (chatId: string) => api.post(`/chats/${chatId}/restore`),
   leave: (chatId: string) => api.post(`/chats/${chatId}/leave`),
   addMember: (chatId: string, userId: string) => api.post(`/chats/${chatId}/members`, { userId }),
   removeMember: (chatId: string, userId: string) => api.delete(`/chats/${chatId}/members/${userId}`),
@@ -653,6 +657,8 @@ export const postAPI = {
     api.put(`/posts/${postId}`, data),
   deletePost: (postId: string) =>
     api.delete(`/posts/${postId}`),
+  reportPost: (postId: string, reason?: string) =>
+    api.post(`/posts/${postId}/report`, reason ? { reason } : {}),
   likePost: (postId: string) =>
     api.post(`/posts/${postId}/like`, {}),
   unlikePost: (postId: string) =>
@@ -796,6 +802,14 @@ export const communityAPI = {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return response.json();
   },
+  getFeed: (communityId: string, page?: number, limit?: number) =>
+    api.get(`/communities/${communityId}/feed`, { params: { page, limit } }),
+  createFeed: (communityId: string, data: { content?: string; images?: string[] }) =>
+    api.post(`/communities/${communityId}/feed`, data),
+  deleteFeed: (communityId: string, feedId: string) =>
+    api.delete(`/communities/${communityId}/feed/${feedId}`),
+  likeFeed: (communityId: string, feedId: string) =>
+    api.post(`/communities/${communityId}/feed/${feedId}/like`, {}),
 };
 
 // Helper function to get full image URL

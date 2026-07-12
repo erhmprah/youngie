@@ -1,19 +1,17 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Image, ActivityIndicator, TouchableOpacity, Alert, Animated, ScrollView } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { userAPI, getImageUrl, chatAPI, postAPI } from '@/utils/api';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-import { useAuth } from '@/contexts/AuthContext';
-import { shadows } from '@/constants/design-tokens';
 import { FeedCard } from '@/app/chat/FeedCard.component';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
+import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
+import { useAuth } from '@/contexts/AuthContext';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
+import { chatAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 
@@ -76,6 +74,7 @@ export default function UserProfileScreen() {
   const borderColor = useThemeColor('border');
   const white = useThemeColor('white');
   const errorColor = useThemeColor('error');
+  const cardBackgroundColor = useThemeColor('surface');
 
   const fetchProfile = useCallback(async () => {
     if (!id || !currentUser?._id) return;
@@ -270,10 +269,11 @@ export default function UserProfileScreen() {
   const handleBlock = async () => {
     if (!currentUser?._id || !profile) return;
 
-    Alert.alert(
-      'Block User',
-      `Are you sure you want to block ${profile.username}? This will remove them from your friends and prevent them from contacting you.`,
-      [
+    CustomAlert.show({
+      type: 'confirm',
+      title: 'Block User',
+      message: `Are you sure you want to block ${profile.username}? This will remove them from your friends and prevent them from contacting you.`,
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Block',
@@ -281,16 +281,16 @@ export default function UserProfileScreen() {
           onPress: async () => {
             try {
               await userAPI.blockUser(currentUser._id, profile._id);
-              Alert.alert('Success', `${profile.username} has been blocked`);
+              CustomAlert.success('Success', `${profile.username} has been blocked`);
               router.back();
             } catch (error) {
               console.error('Error blocking user:', error);
-              Alert.alert('Error', 'Failed to block user');
+              CustomAlert.error('Error', 'Failed to block user');
             }
           }
         }
       ]
-    );
+    });
   };
 
   const renderPostItem = ({ item }: { item: Post }) => {
@@ -340,7 +340,7 @@ export default function UserProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor }}>
-      <Stack.Screen options={{ headerShown: false }} />
+      <Stack.Screen options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
 
       {/* Loading View */}
       <Animated.View style={[
@@ -494,26 +494,23 @@ export default function UserProfileScreen() {
               {/* Posts/Album Grid */}
               {activeTab === 'posts' && (
                 <View style={styles.postsList}>
-              <FlatList
-                    data={posts.map(normalizePost)}  // Add normalizePost later
-                    renderItem={renderPostItem}
-                    keyExtractor={item => item._id}
-                    removeClippedSubviews={false}
-                    windowSize={21}
-                    numColumns={1}
-                    onEndReached={loadMorePosts}
-                    onEndReachedThreshold={0.1}
-                  />
-
+                  {posts.length > 0 ? (
+                    posts.map((p) => renderPostItem({ item: p }))
                   ) : (
                     <View style={styles.emptyContainer}>
                       <IconSymbol name="camera" size={48} color={lightTextColor} />
                       <ThemedText style={[styles.emptyText, { color: textColor }]}>No posts yet</ThemedText>
                     </View>
                   )}
-                  {loadingPosts && <ActivityIndicator size="small" color={primaryColor} style={styles.loadingMore} />}
                 </View>
               )}
+
+              {activeTab !== 'posts' && (
+                <View />
+              )}
+
+              {/* Album empty/loading state handled in album section below */
+              /* (removed erroneous extra wrapper that broke JSX structure) */}
               {activeTab === 'album' && (
                 <View style={styles.albumGrid}>
                   {getAlbumData() ? (

@@ -17,10 +17,11 @@ interface ChatSettingsModalProps {
     chat: any;
     onChatUpdate: (updatedChat: any) => void;
     onMessagesUpdate: (messages: any[]) => void;
+    onChatDeleted?: () => void;
     onFontSizeChange?: (size: 'small' | 'medium' | 'large') => void;
 }
 
-const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMessagesUpdate, onFontSizeChange }: ChatSettingsModalProps) => {
+const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMessagesUpdate, onChatDeleted, onFontSizeChange }: ChatSettingsModalProps) => {
     const { user } = useAuth();
     const [chatName, setChatName] = useState(chat?.name || '');
     const [isMuted, setIsMuted] = useState(false);
@@ -226,12 +227,16 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                         try {
                             if (isCommunityChat) {
                                 // Leave community (which also removes from chat)
-                                await communityAPI.leave(chat.relatedCommunity);
+                                const communityId = typeof chat.relatedCommunity === 'object' && chat.relatedCommunity
+                                    ? chat.relatedCommunity._id
+                                    : chat.relatedCommunity;
+                                await communityAPI.leave(communityId);
                             } else {
                                 // Leave group chat
                                 await chatAPI.leave(chat._id);
                             }
                             Alert.alert('Success', 'You have left the chat successfully');
+                            onChatDeleted?.();
                             onClose(); // Close the modal
                             // The parent component should handle updating the chat list
                         } catch (error: any) {
@@ -270,19 +275,43 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
     };
 
     const handleDeleteChat = () => {
-        if (!isAdmin) return;
+        if (isGroupChat && !isAdmin) return;
+
+        const isCommunityChat = isGroupChat && !!chat?.relatedCommunity;
+        const deleteMessage = isCommunityChat
+            ? 'Are you sure you want to delete this community? The community and its chat will be permanently removed. This action cannot be undone.'
+            : isGroupChat
+            ? 'Are you sure you want to delete this group chat? This action cannot be undone.'
+            : 'Are you sure you want to delete this chat? It will be removed from your chat list only.';
 
         Alert.alert(
-            'Delete Chat',
-            'Are you sure you want to delete this chat? This action cannot be undone.',
+            isCommunityChat ? 'Delete Community' : 'Delete Chat',
+            deleteMessage,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Delete',
                     style: 'destructive',
                     onPress: async () => {
-                        // TODO: Implement delete chat functionality
-                        Alert.alert('Info', 'Delete chat functionality not yet implemented');
+                        setIsLoading(true);
+                        try {
+                            if (isCommunityChat) {
+                                const communityId = typeof chat.relatedCommunity === 'object' && chat.relatedCommunity
+                                    ? chat.relatedCommunity._id
+                                    : chat.relatedCommunity;
+                                await communityAPI.delete(communityId);
+                            } else {
+                                await chatAPI.delete(chat._id);
+                            }
+                            Alert.alert('Success', isCommunityChat ? 'Community deleted successfully' : 'Chat deleted');
+                            onChatDeleted?.();
+                            onClose();
+                        } catch (error: any) {
+                            console.error('Delete chat error:', error);
+                            Alert.alert('Error', error.response?.data?.msg || 'Failed to delete');
+                        } finally {
+                            setIsLoading(false);
+                        }
                     }
                 }
             ]
@@ -538,6 +567,51 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                         </View>
                     </View>
 
+                    {/* Danger Zone */}
+                    <View style={styles.section}>
+                        <ThemedText type="title" style={[styles.sectionTitle, { color: errorColor }]}>
+                            Danger Zone
+                        </ThemedText>
+
+                        {isGroupChat && isMember && (
+                            <TouchableOpacity
+                                style={[styles.dangerButton, { borderColor: errorColor }]}
+                                onPress={handleLeaveChat}
+                                disabled={isLoading}
+                            >
+                                <IconSymbol name="logout" size={20} color={errorColor} />
+                                <ThemedText style={{ color: errorColor, marginLeft: spacing.sm, fontFamily: typography.families.medium }}>
+                                    {chat?.relatedCommunity ? 'Exit Community' : 'Exit Group'}
+                                </ThemedText>
+                            </TouchableOpacity>
+                        )}
+
+                        {isGroupChat && isAdmin && (
+                            <TouchableOpacity
+                                style={[styles.dangerButton, { borderColor: errorColor, backgroundColor: errorColor }]}
+                                onPress={handleDeleteChat}
+                                disabled={isLoading}
+                            >
+                                <IconSymbol name="trash" size={20} color={white} />
+                                <ThemedText style={{ color: white, marginLeft: spacing.sm, fontFamily: typography.families.medium }}>
+                                    {chat?.relatedCommunity ? 'Delete Community' : 'Delete Group'}
+                                </ThemedText>
+                            </TouchableOpacity>
+                        )}
+
+                        {!isGroupChat && isMember && (
+                            <TouchableOpacity
+                                style={[styles.dangerButton, { borderColor: errorColor, backgroundColor: errorColor }]}
+                                onPress={handleDeleteChat}
+                                disabled={isLoading}
+                            >
+                                <IconSymbol name="trash" size={20} color={white} />
+                                <ThemedText style={{ color: white, marginLeft: spacing.sm, fontFamily: typography.families.medium }}>
+                                    Delete Chat
+                                </ThemedText>
+                            </TouchableOpacity>
+                        )}
+                    </View>
 
                 </ScrollView>
             </ThemedView>

@@ -15,6 +15,21 @@ const FCM_CONFIG = {
   // This is initialized lazily when needed
 };
 
+async function getUserById(userId) {
+  if (!userId) return null;
+  const user = await User.findById(userId).select('username');
+  return user;
+}
+
+async function resolveSender(sender, senderId) {
+  if (sender && typeof sender === 'object' && sender.username) {
+    return sender;
+  }
+  const id = senderId || (sender && typeof sender === 'string' ? sender : null);
+  if (!id) return null;
+  return await getUserById(id);
+}
+
 /**
  * Send push notification to a user
  * @param {string} userId - The recipient user ID
@@ -356,13 +371,15 @@ const notificationHelpers = {
   /**
    * Send a like notification
    */
-  async sendLikeNotification(recipientId, sender, postId) {
+  async sendLikeNotification(recipientId, sender, postId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
       title: 'New Like',
-      body: `${sender.username} liked your post`,
+      body: `${senderUser.username} liked your post`,
       type: 'like',
       data: {
-        senderId: sender._id,
+        senderId: senderUser._id,
         postId
       }
     });
@@ -371,13 +388,15 @@ const notificationHelpers = {
   /**
    * Send a comment notification
    */
-  async sendCommentNotification(recipientId, sender, postId, commentId) {
+  async sendCommentNotification(recipientId, sender, postId, commentId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
       title: 'New Comment',
-      body: `${sender.username} commented on your post`,
+      body: `${senderUser.username} commented on your post`,
       type: 'comment',
       data: {
-        senderId: sender._id,
+        senderId: senderUser._id,
         postId,
         commentId
       }
@@ -387,13 +406,15 @@ const notificationHelpers = {
   /**
    * Send a follow notification
    */
-  async sendFollowNotification(recipientId, sender) {
+  async sendFollowNotification(recipientId, sender, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
       title: 'New Follower',
-      body: `${sender.username} started following you`,
+      body: `${senderUser.username} started following you`,
       type: 'follow',
       data: {
-        senderId: sender._id
+        senderId: senderUser._id
       }
     });
   },
@@ -401,13 +422,15 @@ const notificationHelpers = {
   /**
    * Send a message notification
    */
-  async sendMessageNotification(recipientId, sender, chatId, message) {
+  async sendMessageNotification(recipientId, sender, chatId, message, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
-      title: `New message from ${sender.username}`,
+      title: `New message from ${senderUser.username}`,
       body: message.substring(0, 100),
       type: 'message',
       data: {
-        senderId: sender._id,
+        senderId: senderUser._id,
         chatId
       }
     });
@@ -416,13 +439,15 @@ const notificationHelpers = {
   /**
    * Send a match notification
    */
-  async sendMatchNotification(recipientId, sender) {
+  async sendMatchNotification(recipientId, sender, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
       title: "It's a Match!",
-      body: `You and ${sender.username} liked each other!`,
+      body: `You and ${senderUser.username} liked each other!`,
       type: 'match',
       data: {
-        senderId: sender._id
+        senderId: senderUser._id
       }
     });
   },
@@ -430,13 +455,15 @@ const notificationHelpers = {
   /**
    * Send a comment like notification
    */
-  async sendCommentLikeNotification(recipientId, sender, postId, commentId) {
+  async sendCommentLikeNotification(recipientId, sender, postId, commentId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
       title: 'New Like',
-      body: `${sender.username} liked your comment`,
+      body: `${senderUser.username} liked your comment`,
       type: 'comment_like',
       data: {
-        senderId: sender._id,
+        senderId: senderUser._id,
         postId,
         commentId
       }
@@ -446,19 +473,171 @@ const notificationHelpers = {
   /**
    * Send a comment reply notification
    */
-  async sendCommentReplyNotification(recipientId, sender, postId, commentId, replyId) {
+  async sendCommentReplyNotification(recipientId, sender, postId, commentId, replyId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
     return sendPushNotification(recipientId, {
       title: 'New Reply',
-      body: `${sender.username} replied to your comment`,
+      body: `${senderUser.username} replied to your comment`,
       type: 'comment_reply',
       data: {
-        senderId: sender._id,
+        senderId: senderUser._id,
         postId,
         commentId,
         replyId
       }
     });
-  }
+  },
+
+  /**
+   * Send a tag notification
+   */
+  async sendTagNotification(recipientId, sender, context, senderId, relatedPostId, relatedStoryId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    const messages = {
+      post: `tagged you in a post`,
+      comment: `tagged you in a comment`,
+      story: `tagged you in a story`
+    };
+    return sendPushNotification(recipientId, {
+      title: 'New Tag',
+      body: `${senderUser.username} ${messages[context] || 'tagged you'}`,
+      type: 'tag',
+      data: {
+        senderId: senderUser._id,
+        context,
+        relatedPostId,
+        relatedStoryId
+      }
+    });
+  },
+
+  /**
+   * Send a reaction notification
+   */
+  async sendReactionNotification(recipientId, sender, reactionType, context, senderId, relatedPostId, relatedStoryId, relatedCommentId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'New Reaction',
+      body: `${senderUser.username} reacted to your ${context}`,
+      type: `react_${context}`,
+      data: {
+        senderId: senderUser._id,
+        reactionType,
+        context,
+        relatedPostId,
+        relatedStoryId,
+        relatedCommentId
+      }
+    });
+  },
+
+  /**
+   * Send a chat invitation notification
+   */
+  async sendChatInvitationNotification(recipientId, sender, chatId, chatName, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'New Chat Invitation',
+      body: `${senderUser.username} invited you to join "${chatName || 'a group chat'}"`,
+      type: 'chat_invitation',
+      data: {
+        senderId: senderUser._id,
+        chatId
+      }
+    });
+  },
+
+  /**
+   * Send a community join request notification
+   */
+  async sendCommunityJoinRequestNotification(recipientId, sender, communityName, communityId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'New Join Request',
+      body: `${senderUser.username} wants to join your community "${communityName}"`,
+      type: 'community_join_request',
+      data: {
+        senderId: senderUser._id,
+        communityId
+      }
+    });
+  },
+
+  /**
+   * Send a community join request approved notification
+   */
+  async sendCommunityJoinRequestApprovedNotification(recipientId, sender, communityName, communityId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'Join Request Approved',
+      body: `Your request to join "${communityName}" has been approved by ${senderUser.username}`,
+      type: 'community_join_request',
+      data: {
+        senderId: senderUser._id,
+        communityId
+      }
+    });
+  },
+
+  /**
+   * Send a community join request rejected notification
+   */
+  async sendCommunityJoinRequestRejectedNotification(recipientId, sender, communityName, communityId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'Join Request Rejected',
+      body: `Your request to join "${communityName}" has been rejected by ${senderUser.username}`,
+      type: 'community_join_request',
+      data: {
+        senderId: senderUser._id,
+        communityId
+      }
+    });
+  },
+
+  /**
+   * Send a comment like notification
+   */
+  async sendCommentLikeNotification(recipientId, sender, postId, commentId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'New Like',
+      body: `${senderUser.username} liked your comment`,
+      type: 'comment_like',
+      data: {
+        senderId: senderUser._id,
+        postId,
+        commentId
+      }
+    });
+  },
+
+  /**
+   * Send a comment reply notification
+   */
+  async sendCommentReplyNotification(recipientId, sender, postId, commentId, replyId, senderId) {
+    const senderUser = await resolveSender(sender, senderId);
+    if (!senderUser) return { success: false, error: 'Sender not found' };
+    return sendPushNotification(recipientId, {
+      title: 'New Reply',
+      body: `${senderUser.username} replied to your comment`,
+      type: 'comment_reply',
+      data: {
+        senderId: senderUser._id,
+        postId,
+        commentId,
+        replyId
+      }
+    });
+  },
 };
 
 module.exports = {
@@ -466,5 +645,9 @@ module.exports = {
   registerPushToken,
   unregisterPushToken,
   getUserPushTokens,
-  ...notificationHelpers
+  ...notificationHelpers,
+  sendTagNotification: notificationHelpers.sendTagNotification,
+  sendReactionNotification: notificationHelpers.sendReactionNotification,
+  sendChatInvitationNotification: notificationHelpers.sendChatInvitationNotification,
+  sendCommunityJoinRequestNotification: notificationHelpers.sendCommunityJoinRequestNotification,
 };

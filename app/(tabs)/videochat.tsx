@@ -4,7 +4,7 @@ import { CustomAlert } from '@/utils/alert';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { SOCKET_URL } from '@/utils/api';
+import { SOCKET_URL, userAPI } from '@/utils/api';
 import { useCustomAlert } from '@/utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, borderRadius, shadows, typography } from '@/constants/design-tokens';
@@ -241,8 +241,8 @@ const VideoChatScreen: React.FC = () => {
 
   const resetChat = useCallback((keepLocalStream = false) => {
     // Notify peer before cleaning up
-    if (peerId && socket.current?.connected) {
-      socket.current.emit('peer_disconnected', peerId);
+    if (peerIdRef.current && socket.current?.connected) {
+      socket.current.emit('peer_disconnected', peerIdRef.current);
     }
     
     if (peerConnection.current) {
@@ -484,8 +484,22 @@ const VideoChatScreen: React.FC = () => {
       });
 
       socket.current.on('peer_disconnected', () => {
-        CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
-        resetChat();
+        // Ignore if we're not actively in a chat (e.g. the peer is reacting
+        // to our own disconnect or we already returned to idle)
+        if (!isChattingRef.current && !isConnectingRef.current) return;
+
+        CustomAlert.info('Chat Ended', 'Your peer has ended the chat.');
+
+        // Clear peer so we don't re-notify an already-gone peer
+        peerIdRef.current = null;
+        setPeerId(null);
+        resetChat(true);
+
+        // Continue searching for a new match
+        if (socket.current && socket.current.connected) {
+          socket.current.emit('next_peer');
+          setIsConnecting(true);
+        }
       });
 
       socket.current.on('socket_error', (error: { message: string }) => {
@@ -520,12 +534,19 @@ const VideoChatScreen: React.FC = () => {
     CustomAlert.confirm(
       'Report User',
       'Are you sure you want to report this user for inappropriate behavior?',
-      () => {
-        CustomAlert.success('Reported', 'User has been reported. Finding a new peer...');
+      async () => {
+        try {
+          if (user?._id && peerId) {
+            await userAPI.reportUser(user._id, peerId);
+          }
+          CustomAlert.success('Reported', 'User has been reported. Finding a new peer...');
+        } catch {
+          CustomAlert.error('Error', 'Failed to report user');
+        }
         findNextPeer();
       }
     );
-  }, [findNextPeer]);
+  }, [findNextPeer, user?._id, peerId]);
 
   const handleSendFriendRequest = useCallback(async () => {
     if (!user?._id || !peerId) return;
@@ -773,6 +794,7 @@ const VideoChatScreen: React.FC = () => {
                 style={styles.localVideo}
                 objectFit="cover"
                 mirror={true}
+                zOrder={1}
               />
             )}
           </View>
@@ -933,6 +955,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     overflow: 'hidden',
     borderWidth: 2,
+    zIndex: 20,
     ...shadows.md,
   },
   localVideo: {

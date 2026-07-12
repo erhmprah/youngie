@@ -21,7 +21,7 @@ import { cachedPostAPI, cachedStoryAPI } from '@/utils/cachedApi';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
-import { getSocket } from '@/utils/socket';
+import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated } from '@/utils/socket';
 
 interface User {
     _id: string;
@@ -50,6 +50,7 @@ interface Post {
     isAnonymous?: boolean;
     commentsDisabled?: boolean;
     pollOptions?: { text: string; votes: string[] }[];
+    isFavorited?: boolean;
 }
 
 interface Story {
@@ -107,7 +108,7 @@ export default function FeedScreen() {
     const white = useThemeColor('white');
     const surfaceColor = useThemeColor('surface');
 
-    const fetchData = useCallback(async (page: number = 1) => {
+    const fetchData = useCallback(async (page: number = 1, forceRefresh: boolean = false) => {
         setError(null);
         const isLoadingMore = page > 1;
         if (isLoadingMore) {
@@ -115,8 +116,8 @@ export default function FeedScreen() {
         }
         try {
             const [postsResponse, storiesResponse] = await Promise.all([
-                cachedPostAPI.getPosts(isIncognito, page, 20),
-                page === 1 ? cachedStoryAPI.getStories() : Promise.resolve({ data: [] }),
+                cachedPostAPI.getPosts(isIncognito, page, 20, forceRefresh),
+                page === 1 ? cachedStoryAPI.getStories(user?._id, forceRefresh) : Promise.resolve({ data: [] }),
             ]);
             const postsData = postsResponse.data.posts || postsResponse.data;
             const newPosts = (Array.isArray(postsData) ? postsData : []).filter((p: any) => p && p._id);
@@ -163,7 +164,7 @@ export default function FeedScreen() {
         }
     }, [loadingMore, hasMorePosts, isSignedIn, fetchData, postsPage]);
 
-    const fetchFeedIfLoggedIn = useCallback(async () => {
+    const fetchFeedIfLoggedIn = useCallback(async (forceRefresh: boolean = false) => {
         console.log('fetchFeedIfLoggedIn called:', { authLoading, isSignedIn, userId: user?._id });
         // Wait for auth to finish loading before fetching
         if (authLoading) {
@@ -172,7 +173,7 @@ export default function FeedScreen() {
         }
         if (isSignedIn) {
             console.log('User signed in, fetching data');
-            await fetchData(1);
+            await fetchData(1, forceRefresh);
         } else {
             console.log('User not signed in, clearing data');
             // Clear data when not logged in
@@ -188,31 +189,76 @@ export default function FeedScreen() {
         fetchFeedIfLoggedIn();
     }, [fetchFeedIfLoggedIn, authLoading, isSignedIn]);
 
+    // Listen for post updates via socket (likes, comments, reactions, edits)
+    useEffect(() => {
+        const socket = getSocket();
+        if (!socket) return;
+
+        const handlePostUpdated = (updatedPost: any) => {
+            if (!updatedPost || !updatedPost._id) return;
+            setPosts(prevPosts => {
+                const exists = prevPosts.some(p => p._id === updatedPost._id);
+                if (!exists) return prevPosts;
+                return prevPosts.map(p =>
+                    p._id === updatedPost._id
+                        ? { ...updatedPost, isFavorited: p.isFavorited }
+                        : p
+                );
+            });
+        };
+
+        const handlePostCreated = (newPost: any) => {
+            if (!newPost || !newPost._id || !user) return;
+            setPosts(prevPosts => {
+                if (prevPosts.some(p => p._id === newPost._id)) return prevPosts;
+                const isSelf = newPost.author?._id === user._id;
+                const isKnownAuthor = prevPosts.some(p => p.author?._id === newPost.author?._id);
+                // Only inject posts that belong in this user's feed (self or an author they already follow)
+                if (!isSelf && !isKnownAuthor) return prevPosts;
+                return [newPost, ...prevPosts];
+            });
+        };
+
+        onPostUpdated(handlePostUpdated);
+        onPostCreated(handlePostCreated);
+
+        return () => {
+            offPostUpdated();
+            offPostCreated();
+        };
+    }, [user?._id]);
+
     // Listen for story updates via socket
     useEffect(() => {
         const socket = getSocket();
         if (!socket) return;
 
         const handleStoryUpdate = (updatedStory: Story) => {
-            setStories(prevStories =>
-                prevStories.map(group => {
-                    if (group.stories.some(s => s._id === updatedStory._id)) {
-                        const updatedStories = group.stories.map(s => s._id === updatedStory._id ? updatedStory : s);
-                        // Recalculate allViewed
-                        const allViewed = updatedStories.every(story => {
-                            const isAuthor = story.author._id === user?._id;
-                            if (isAuthor) return true;
-                            return story.viewers.some(viewer => viewer.user._id === user?._id);
-                        });
-                        return {
-                            ...group,
-                            stories: updatedStories,
-                            allViewed
-                        };
-                    }
-                    return group;
-                })
-            );
+            setStories(prevStories => {
+                const existingGroupIndex = prevStories.findIndex(group => 
+                    group.stories.some(s => s._id === updatedStory._id)
+                );
+                
+                if (existingGroupIndex !== -1) {
+                    const updatedStories = prevStories[existingGroupIndex].stories.map(s => 
+                        s._id === updatedStory._id ? updatedStory : s
+                    );
+                    const allViewed = updatedStories.every((story: any) => {
+                        const isAuthor = story.author._id === user?._id;
+                        if (isAuthor) return true;
+                        return story.viewers?.some((viewer: any) => viewer.user?._id === user?._id);
+                    });
+                    const newGroups = [...prevStories];
+                    newGroups[existingGroupIndex] = {
+                        ...prevStories[existingGroupIndex],
+                        stories: updatedStories,
+                        allViewed
+                    };
+                    return newGroups;
+                }
+                
+                return prevStories;
+            });
         };
 
         socket.on('story:updated', handleStoryUpdate);
@@ -244,7 +290,7 @@ export default function FeedScreen() {
 
     const onRefresh = () => {
         setIsRefreshing(true);
-        fetchFeedIfLoggedIn();
+        fetchFeedIfLoggedIn(true);
     };
 
     const handleLikePost = async (postId: string) => {
@@ -268,16 +314,22 @@ export default function FeedScreen() {
     };
 
     const handleReportPost = async (postId: string) => {
-        Alert.alert('Reported', 'Thank you for reporting this post.');
+        try {
+            await postAPI.reportPost(postId);
+        } catch (error) {
+            Alert.alert('Error', 'Failed to report post');
+            throw error;
+        }
     };
 
     const handleUpdatePost = (updatedPost: Post) => {
         setPosts(posts.map(p => (p._id === updatedPost._id ? updatedPost : p)));
     };
 
-    const handleStoryPress = (index: number) => {
+    const handleStoryPress = (userId: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setSelectedStoryGroupIndex(index);
+        const actualIndex = stories.findIndex(s => s.user._id === userId);
+        setSelectedStoryGroupIndex(actualIndex >= 0 ? actualIndex : 0);
         setShowStoryViewer(true);
     };
 
@@ -380,7 +432,7 @@ export default function FeedScreen() {
                                 // Render user's stories with add button
                                 return (
                                     <View style={styles.storyItem}>
-                                        <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(index); }}>
+                                        <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user._id); }}>
                                             <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
                                                 {renderAvatar(item.user)}
                                             </View>
@@ -409,7 +461,7 @@ export default function FeedScreen() {
                             // Render other users' stories
                             const isUnviewed = !item.allViewed;
                             return (
-                                <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(index); }}>
+                                <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user._id); }}>
                                     {isUnviewed ? (
                                         <LinearGradient
                                             colors={[primaryColor, '#d62976', '#fa7e1e']}
@@ -558,7 +610,7 @@ export default function FeedScreen() {
                                 return group;
                             });
                         });
-                        fetchFeedIfLoggedIn();
+                        fetchFeedIfLoggedIn(true);
                     }} 
                     onStoryViewed={handleStoryViewed} 
                 />

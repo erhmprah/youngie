@@ -4,6 +4,10 @@ import { Alert, AlertButton as RNAlertButton } from 'react-native';
 import { useAlert } from '@/contexts/AlertContext';
 import { AlertType, AlertButton } from '@/components/ui/CustomAlertModal';
 
+// Capture the original native Alert so the custom system can fall back to it
+// (e.g. before the AlertProvider mounts) and so we can safely override Alert.alert.
+const originalAlert = Alert.alert;
+
 // Store the alert context reference globally
 type AlertContextValue = {
   alert: {
@@ -79,7 +83,7 @@ export const CustomAlert = {
         style: btn.style as 'default' | 'cancel' | 'destructive' | undefined,
       }));
       
-      Alert.alert(options.title, options.message, rnButtons);
+      originalAlert(options.title, options.message, rnButtons);
     }
   },
 
@@ -90,7 +94,7 @@ export const CustomAlert = {
     if (alertContextRef) {
       alertContextRef.success(title, message);
     } else {
-      Alert.alert(title, message);
+      originalAlert(title, message);
     }
   },
 
@@ -101,7 +105,7 @@ export const CustomAlert = {
     if (alertContextRef) {
       alertContextRef.error(title, message);
     } else {
-      Alert.alert(title, message);
+      originalAlert(title, message);
     }
   },
 
@@ -112,7 +116,7 @@ export const CustomAlert = {
     if (alertContextRef) {
       alertContextRef.warning(title, message);
     } else {
-      Alert.alert(title, message);
+      originalAlert(title, message);
     }
   },
 
@@ -123,7 +127,7 @@ export const CustomAlert = {
     if (alertContextRef) {
       alertContextRef.info(title, message);
     } else {
-      Alert.alert(title, message);
+      originalAlert(title, message);
     }
   },
 
@@ -134,7 +138,7 @@ export const CustomAlert = {
     if (alertContextRef) {
       alertContextRef.confirm(title, message, onConfirm);
     } else {
-      Alert.alert(title, message, [
+      originalAlert(title, message, [
         { text: 'Cancel', style: 'cancel', onPress: onCancel },
         { text: 'Confirm', onPress: onConfirm },
       ]);
@@ -152,11 +156,38 @@ export const CustomAlert = {
   },
 
   /**
-   * Direct alias to native Alert for full compatibility
-   * Use this when you need exact native Alert behavior
+   * Direct alias to the original native Alert for full compatibility.
+   * Use this when you need exact native Alert behavior.
    */
-  native: Alert,
+  native: { alert: originalAlert } as typeof Alert,
 };
+
+/**
+ * Route every native `Alert.alert` call through the custom alert system.
+ * react-native's `Alert` is a shared singleton, so mutating its `alert`
+ * method affects every `Alert.alert(...)` call in the app (and in any
+ * library that uses it). When the AlertProvider context isn't mounted yet,
+ * the custom system falls back to the original native alert, so this is safe.
+ */
+Alert.alert = ((
+  title: string,
+  message?: string,
+  buttons?: RNAlertButton[],
+  options?: { cancelable?: boolean; onDismiss?: () => void; userInterfaceStyle?: 'light' | 'dark' },
+) => {
+  const hasDestructive = Array.isArray(buttons) && buttons.some(b => b.style === 'destructive');
+  CustomAlert.show({
+    type: hasDestructive ? 'confirm' : 'info',
+    title,
+    message,
+    buttons: buttons?.map(b => ({
+      text: b.text,
+      onPress: b.onPress,
+      style: b.style,
+    })),
+    dismissable: options?.cancelable !== false,
+  });
+}) as typeof Alert.alert;
 
 /**
  * Hook to access the custom alert context

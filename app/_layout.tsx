@@ -71,12 +71,6 @@ function RootLayoutNav() {
       if (Notifications) {
         // Set up notification response listener
 notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
-          // Always check isSignedIn first - signed-in users go to tabs
-          if (isSignedIn) {
-            router.replace('/(tabs)');
-            return;
-          }
-          
           if (!isAppReadyRef.current) return;
           
           const data = response.notification.request.content.data as any;
@@ -226,14 +220,15 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
   useEffect(() => {
     if (isLoading || isCheckingSupabase) return;
 
+    // Mark app as ready after initial navigation
+    isAppReadyRef.current = true;
+
     // Force signed-in users to tabs regardless of notification state
     if (isSignedIn) {
       router.replace('/(tabs)');
       return;
     }
     
-    // Mark app as ready after initial navigation
-    isAppReadyRef.current = true;
     console.log('App navigation ready, not signed in');
     
     // Not signed in - go to login

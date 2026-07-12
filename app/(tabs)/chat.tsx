@@ -40,6 +40,7 @@ interface Chat {
     lastMessage?: string;
     updatedAt?: string;
     isGroupChat?: boolean;
+    groupPhoto?: string;
     unreadCount?: number;
 }
 
@@ -181,6 +182,10 @@ export default function ChatScreen() {
             });
         };
 
+        const handleChatDeleted = (data: { chatId: string }) => {
+            setChats(prev => prev.filter(c => c._id !== data.chatId));
+        };
+
         const handleNotification = (data: any) => {
             if (data.type === 'message') {
                 fetchChats();
@@ -209,6 +214,7 @@ export default function ChatScreen() {
             socket.on('newChat', handleNewChat);
             socket.on('messages-read', handleMessagesRead);
             socket.on('user_status_change', handleStatusChange);
+            socket.on('chatDeleted', handleChatDeleted);
         }
         onNewNotification(handleNotification);
 
@@ -218,6 +224,7 @@ export default function ChatScreen() {
                 socket.off('newChat', handleNewChat);
                 socket.off('messages-read', handleMessagesRead);
                 socket.off('user_status_change', handleStatusChange);
+                socket.off('chatDeleted', handleChatDeleted);
             }
             offNewNotification();
         };
@@ -237,6 +244,7 @@ export default function ChatScreen() {
 
         if (isGroup) {
             chatName = item.name || 'Group Chat';
+            avatarSource = item.groupPhoto ? { uri: getImageUrl(item.groupPhoto) } : undefined;
         } else {
             chatName = participant?.username || 'Unknown User';
             avatarSource = participant?.profilePhoto ? { uri: getImageUrl(participant.profilePhoto) } : undefined;

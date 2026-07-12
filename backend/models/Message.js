@@ -33,6 +33,10 @@ const MessageSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  deletedFor: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    deletedAt: { type: Date, default: Date.now }
+  }],
   createdAt: {
     type: Date,
     default: Date.now
@@ -44,5 +48,6 @@ MessageSchema.index({ chat: 1, createdAt: -1 });
 MessageSchema.index({ sender: 1, createdAt: -1 });
 MessageSchema.index({ chat: 1, readBy: 1 });
 MessageSchema.index({ createdAt: -1 });
+MessageSchema.index({ 'deletedFor.user': 1 });
 
 module.exports = mongoose.model('Message', MessageSchema);

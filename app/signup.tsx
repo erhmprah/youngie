@@ -1,7 +1,7 @@
 // app/signup.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
@@ -14,6 +14,7 @@ import { signInWithGoogle } from '@/utils/google-signin';
 import { useAuth } from '@/contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '@/utils/api';
+import { CustomAlert } from '@/utils/alert';
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -99,18 +100,18 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     if (!email) {
-      Alert.alert('Error', 'Please enter your email address');
+      CustomAlert.error('Error', 'Please enter your email address');
       return;
     }
 
     if (!acceptTerms) {
-      Alert.alert('Terms Required', 'Please accept the Terms of Service and Privacy Policy to continue');
+      CustomAlert.error('Terms Required', 'Please accept the Terms of Service and Privacy Policy to continue');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      CustomAlert.error('Error', 'Please enter a valid email address');
       return;
     }
 
@@ -123,10 +124,9 @@ export default function SignupScreen() {
         const errorMessage = error.message?.toLowerCase() || '';
 
         if (errorMessage.includes('email')) {
-          Alert.alert(
+          CustomAlert.error(
             'Email Error',
-            'Unable to send magic link. Please check the email address and try again.',
-            [{ text: 'OK', style: 'cancel' }]
+            'Unable to send magic link. Please check the email address and try again.'
           );
           setIsLoading(false);
           return;
@@ -143,16 +143,12 @@ export default function SignupScreen() {
       const errorName = error?.name || '';
 
       if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
-        Alert.alert(
-          'Signup Failed',
-          'Unable to send magic link. Please try again later.',
-          [{ text: 'OK' }]
-        );
+        CustomAlert.error('Signup Failed', 'Unable to send magic link. Please try again later.');
         return;
       }
 
       console.log('Signup issue, handling gracefully');
-      Alert.alert('Signup Failed', 'Something went wrong. Please try again later.');
+      CustomAlert.error('Signup Failed', 'Something went wrong. Please try again later.');
     }
   };
 
@@ -170,7 +166,7 @@ export default function SignupScreen() {
     } catch (error: any) {
       console.error('Google signup error:', error);
       setIsLoading(false);
-      Alert.alert('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+      CustomAlert.error('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
     }
   };
 

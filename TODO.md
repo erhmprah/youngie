@@ -1,6 +1,7 @@
 # TODO
 
-- [x] Restyle sign-in and sign-up screens: reorder buttons so **Send Magic Link** appears before **Continue with Google**
-- [x] Fix type issue introduced during edit (`typography.families.extrabold` -> `typography.families.bold`)
-- [ ] Style the login page to look more professional and elegant
+- [ ] Add robust URI extraction fallbacks in `components/media-preview-modal.tsx` (support more attachment shapes/fields).
+- [ ] Harden URL normalization to avoid bad `getImageUrl()` transformations (double slashes / leading slash handling).
+- [ ] Improve UX when image fails: show placeholder image (and keep existing error UI).
+- [ ] Run typecheck/lint (if available) and verify modal renders image.
 

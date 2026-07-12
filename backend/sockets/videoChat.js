@@ -139,6 +139,7 @@ module.exports = (io) => {
           io.to(peerId).emit('peer_disconnected');
           activeChats.delete(peerId);
         }
+        activeChats.delete(socket.id);
       } catch (error) {
         console.error(`Error sending peer_disconnected from ${socket.id}:`, error.message);
       }

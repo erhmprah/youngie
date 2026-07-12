@@ -115,6 +115,22 @@ const PostSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    reports: [
+      {
+        reporter: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        reason: {
+          type: String,
+          default: '',
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );

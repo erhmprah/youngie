@@ -19,9 +19,11 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
     const [username, setUsername] = useState(initialData?.username || '');
     const [bio, setBio] = useState(initialData?.bio || '');
     const [location, setLocation] = useState(initialData?.location || '');
-    const [interests, setInterests] = useState((initialData?.interests || []).join(', '));
+    const [interests, setInterests] = useState<string[]>(initialData?.interests || []);
+    const [interestInput, setInterestInput] = useState('');
     const [isPrivate, setIsPrivate] = useState(initialData?.isPrivate || false);
     const [isLoading, setIsLoading] = useState(false);
+    const [showSuggestions, setShowSuggestions] = useState(true);
     const [suggestions, setSuggestions] = useState<string[]>([]);
 
     const backgroundColor = useThemeColor('background');
@@ -32,6 +34,24 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
     const inputBackgroundColor = useThemeColor('inputBackground');
     const inputBorderColor = useThemeColor('border');
 
+    const SUGGESTED_INTERESTS = [
+        'Travel', 'Photography', 'Music', 'Art', 'Sports',
+        'Fitness', 'Cooking', 'Reading', 'Gaming', 'Nature',
+        'Movies', 'Tech', 'Dance', 'Hiking', 'Yoga'
+    ];
+
+    const addInterest = (interest: string) => {
+        const trimmed = interest.trim();
+        if (trimmed && !interests.includes(trimmed)) {
+            setInterests(prev => [...prev, trimmed]);
+        }
+        setInterestInput('');
+    };
+
+    const removeInterest = (interest: string) => {
+        setInterests(prev => prev.filter(i => i !== interest));
+    };
+
     const handleSave = async () => {
         setIsLoading(true);
         try {
@@ -39,7 +59,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                 username,
                 bio,
                 location,
-                interests: interests.split(',').map((s: string) => s.trim()).filter(Boolean),
+                interests,
                 isPrivate,
             });
             onClose();
@@ -160,14 +180,50 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                     </View>
                     <View style={styles.inputContainer}>
                         <ThemedText style={styles.label}>Interests</ThemedText>
-                        <TextInput
-                            style={[styles.input, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor, color: textColor }]}
-                            value={interests}
-                            onChangeText={setInterests}
-                            placeholder="e.g., music, art, sports"
-                            placeholderTextColor={lightTextColor}
-                        />
-                         <ThemedText style={{fontSize: typography.sizes.caption, color: lightTextColor}}>Separate interests with a comma</ThemedText>
+                        <View style={[styles.chipsContainer, { borderColor: inputBorderColor }]}>
+                            {interests.map((item) => (
+                                <View key={item} style={[styles.chip, { backgroundColor: primaryColor }]}>
+                                    <ThemedText style={[styles.chipText, { color: white }]}>{item}</ThemedText>
+                                    <TouchableOpacity onPress={() => removeInterest(item)}>
+                                        <ThemedText style={[styles.chipClose, { color: white }]}> x</ThemedText>
+                                    </TouchableOpacity>
+                                </View>
+                            ))}
+                        </View>
+                        <View style={styles.interestInputRow}>
+                            <TextInput
+                                style={[styles.interestInput, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor, color: textColor }]}
+                                value={interestInput}
+                                onChangeText={setInterestInput}
+                                placeholder="Add a new interest"
+                                placeholderTextColor={lightTextColor}
+                                onSubmitEditing={() => addInterest(interestInput)}
+                                returnKeyType="done"
+                                blurOnSubmit
+                            />
+                            <TouchableOpacity
+                                style={[styles.addButton, { backgroundColor: primaryColor }]}
+                                onPress={() => addInterest(interestInput)}
+                            >
+                                <ThemedText style={[styles.addButtonText, { color: white }]}>Add</ThemedText>
+                            </TouchableOpacity>
+                        </View>
+                        {showSuggestions && interests.length < 8 && (
+                            <View style={styles.suggestionsSection}>
+                                <ThemedText style={[styles.suggestionsLabel, { color: lightTextColor }]}>Suggested interests</ThemedText>
+                                <View style={styles.suggestionsContainer}>
+                                    {SUGGESTED_INTERESTS.filter(s => !interests.includes(s)).slice(0, 10).map((item) => (
+                                        <TouchableOpacity
+                                            key={item}
+                                            style={[styles.suggestionChip, { borderColor: inputBorderColor, backgroundColor: inputBackgroundColor }]}
+                                            onPress={() => addInterest(item)}
+                                        >
+                                            <ThemedText style={[styles.suggestionChipText, { color: textColor }]}>{item}</ThemedText>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                        )}
                     </View>
                     <View style={styles.inputContainer}>
                         <View style={styles.switchRow}>
@@ -249,5 +305,80 @@ const styles = StyleSheet.create({
         padding: spacing.md,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: '#ccc',
+    },
+    chipsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.xs,
+        paddingVertical: spacing.xs,
+        minHeight: 40,
+        borderWidth: 1,
+        borderRadius: borderRadius.md,
+        padding: spacing.sm,
+    },
+    chip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xxs,
+        borderRadius: borderRadius.lg,
+        margin: spacing.xxs,
+    },
+    chipText: {
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.medium,
+    },
+    chipClose: {
+        fontSize: typography.sizes.body1,
+        fontWeight: 'bold',
+        marginLeft: spacing.xxs,
+    },
+    interestInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+    },
+    interestInput: {
+        flex: 1,
+        borderWidth: 1,
+        borderRadius: borderRadius.md,
+        padding: spacing.md,
+        fontSize: typography.sizes.body1,
+    },
+    addButton: {
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.md,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    addButtonText: {
+        fontSize: typography.sizes.body1,
+        fontFamily: typography.families.bold,
+    },
+    suggestionsSection: {
+        marginTop: spacing.md,
+    },
+    suggestionsLabel: {
+        fontSize: typography.sizes.caption,
+        marginBottom: spacing.xs,
+        opacity: 0.6,
+    },
+    suggestionsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.xs,
+    },
+    suggestionChip: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xxs,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        margin: spacing.xxs,
+    },
+    suggestionChipText: {
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.medium,
     },
 });

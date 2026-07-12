@@ -147,8 +147,25 @@ export const onMessagesRead = (callback: (data: { userId: string; chatId: string
 }
 
 export const offMessagesRead = () => {
-    socket?.off('messages-read');
+  socket?.off('messages-read');
 }
+
+// Post real-time event listeners
+export const onPostUpdated = (callback: (post: any) => void) => {
+  socket?.on('post:updated', callback);
+};
+
+export const offPostUpdated = () => {
+  socket?.off('post:updated');
+};
+
+export const onPostCreated = (callback: (post: any) => void) => {
+  socket?.on('post:created', callback);
+};
+
+export const offPostCreated = () => {
+  socket?.off('post:created');
+};
 
 // Voice call event listeners
 export const onVoiceCallOffer = (callback: (data: { offer: any; caller: any; chatId: string }) => void) => {

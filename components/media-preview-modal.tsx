@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Modal, StyleSheet, View, TouchableOpacity, Image, Dimensions, Text, Alert, ActivityIndicator } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
-import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { IconSymbol } from './ui/icon-symbol';
-import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageUrl } from '@/utils/api';
+import { ResizeMode, Video } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
+import { useEffect, useState } from 'react';
+import { Alert, Dimensions, Image, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemedText } from './themed-text';
+import { IconSymbol } from './ui/icon-symbol';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,40 +29,105 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
 
     if (!attachment) return null;
 
-    // Parse attachment if it's a string (for sent media)
-    let parsedAttachment = attachment;
-    if (typeof attachment === 'string') {
-        try {
-            parsedAttachment = JSON.parse(attachment);
-        } catch (e) {
-            console.error('Failed to parse attachment', e);
-            return null;
+    const parseAttachment = (value: any): any => {
+        if (typeof value === 'string') {
+            try {
+                return JSON.parse(value);
+            } catch {
+                return { uri: value };
+            }
         }
-    }
-    const isVideo = parsedAttachment.type?.startsWith('video') || parsedAttachment.type === 'video';
+        return value;
+    };
 
-    // Handle both uri (composed) and url (sent/received)
-    // If uri is already a full URL (http/https), use it directly
-    let uri = parsedAttachment.uri || parsedAttachment.url;
+    const extractUri = (value: any): string | undefined => {
+        if (!value) return undefined;
+
+        if (typeof value === 'string') {
+            return value;
+        }
+
+        if (typeof value === 'object') {
+            const fallbackKeys = [
+                'uri',
+                'url',
+                'mediaUrl',
+                'imageUrl',
+                'thumbnailUrl',
+                'downloadUrl',
+                'fileUrl',
+                'videoUrl',
+                'source',
+                'src',
+                'path',
+                'image',
+                'photo',
+                'file',
+                'attachment',
+            ];
+
+            for (const key of fallbackKeys) {
+                const candidate = value[key];
+                if (typeof candidate === 'string' && candidate.length > 0) {
+                    return candidate;
+                }
+                if (typeof candidate === 'object') {
+                    const nested = extractUri(candidate);
+                    if (nested) return nested;
+                }
+            }
+
+            for (const key of Object.keys(value)) {
+                const candidate = value[key];
+                if (typeof candidate === 'string' && /^(https?:)?\/\//.test(candidate)) {
+                    return candidate;
+                }
+                if (typeof candidate === 'string' && /\.(jpg|jpeg|png|gif|mp4|mov|avi|mkv|webm)(\?|$)/i.test(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+
+        return undefined;
+    };
+
+    const parsedAttachment = parseAttachment(attachment);
+    let uri = extractUri(parsedAttachment);
+
+    if (!uri && typeof attachment === 'string') {
+        uri = attachment;
+    }
     if (!uri) return null;
 
-    // Normalize path separators for Windows backends
-    uri = uri.replace(/\\/g, '/');
+    const normalizedUri = String(uri).trim().replace(/\\/g, '/');
+    const normalizedPath = normalizedUri.startsWith('/') ? normalizedUri : `/${normalizedUri}`;
+    const finalUri = /^(http|https):/.test(normalizedUri)
+        ? normalizedUri
+        : normalizedUri.startsWith('//')
+            ? `http:${normalizedUri}`
+            : getImageUrl(normalizedPath) || normalizedUri;
+    const uriToDisplay = encodeURI(finalUri);
 
-    // Check if it's already a full URL - if so, use it directly
-    const isFullUrl = /^(http|https):/.test(uri);
+    const inferType = (value: any, fallback: string): string => {
+        if (!value) return fallback;
+        if (typeof value === 'string' && value.startsWith('video')) return 'video';
+        if (typeof value === 'string' && value.startsWith('image')) return 'image';
+        if (typeof value === 'string' && /\.(mp4|mov|avi|mkv|webm)(\?|$)/i.test(value)) return 'video';
+        if (typeof value === 'string' && /\.(jpe?g|png|gif|webp|bmp|heic)(\?|$)/i.test(value)) return 'image';
+        return fallback;
+    };
 
-    // Only run through getImageUrl if it's not already a full URL
-    if (!isFullUrl) {
-        uri = getImageUrl(uri.startsWith('/') ? uri : `/${uri}`);
-    }
+    const type = parsedAttachment.type ?? parsedAttachment.mimeType ?? parsedAttachment.contentType ?? inferType(finalUri, 'image');
+    const isVideo = type === 'video' || (typeof type === 'string' && type.startsWith('video'));
+    const isLocalFile = uriToDisplay.startsWith('file://');
 
     console.log('MediaPreviewModal URI debug:', {
-      rawUri: parsedAttachment.uri || parsedAttachment.url,
-      finalUri: uri,
-      isFullUrl,
-      attachment: parsedAttachment
+      rawUri: parsedAttachment.uri ?? parsedAttachment.url ?? parsedAttachment.mediaUrl ?? parsedAttachment.imageUrl ?? parsedAttachment.thumbnailUrl ?? parsedAttachment.downloadUrl,
+      finalUri: uriToDisplay,
+      isLocalFile,
+      attachment: parsedAttachment,
     });
+
 
     const handleSave = async () => {
         try {
@@ -117,12 +182,12 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
                             <>
                                 {isVideo ? (
                                     <Video
-                                        source={{ uri }}
+                                        source={{ uri: uriToDisplay }}
                                         style={styles.media}
                                         useNativeControls
                                         resizeMode={ResizeMode.CONTAIN}
                                         shouldPlay={false}
-                                        key={uri}
+                                        key={uriToDisplay}
                                         onError={(e) => {
                                             console.log('Video load error:', e);
                                             setMediaError(true);
@@ -130,15 +195,26 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
                                     />
                                 ) : (
                                     <Image
-                                        source={{ uri }}
+                                        source={
+                                            mediaError
+                                                ? require('@/assets/placeholder-gray.png')
+                                                : { uri: uriToDisplay }
+                                        }
                                         style={styles.media}
                                         resizeMode="contain"
-                                        key={uri}
+                                        key={uriToDisplay}
+                                        onLoadStart={() => {
+                                            console.log('Media load started', uriToDisplay);
+                                        }}
+                                        onLoad={() => {
+                                            console.log('Media loaded successfully', uriToDisplay);
+                                        }}
                                         onError={(e) => {
-                                            console.log('Media load error:', e.nativeEvent.error, uri);
+                                            console.log('Media load error:', e.nativeEvent.error, uriToDisplay);
                                             setMediaError(true);
                                         }}
                                     />
+
                                 )}
                             </>
                         )}
@@ -149,9 +225,17 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
                     <ThemedText style={styles.fileName}>
                         {parsedAttachment.fileName || 'Media file'}
                     </ThemedText>
-                    <ThemedText style={styles.fileSize}>
-                        {((parsedAttachment.fileSize || parsedAttachment.size || 0) / 1024 / 1024).toFixed(2)} MB
-                    </ThemedText>
+                    {(() => {
+                        const rawSize = parsedAttachment.fileSize ?? parsedAttachment.size;
+                        if (typeof rawSize === 'number' && rawSize > 0) {
+                            return (
+                                <ThemedText style={styles.fileSize}>
+                                    {(rawSize / 1024 / 1024).toFixed(2)} MB
+                                </ThemedText>
+                            );
+                        }
+                        return null;
+                    })()}
                 </View>
             </View>
         </Modal>
@@ -179,22 +263,31 @@ const styles = StyleSheet.create({
     },
     mediaContainer: {
         flex: 1,
+        width: '100%',
         justifyContent: 'center',
         alignItems: 'center',
-        maxHeight: height * 0.8,
+        paddingHorizontal: width * 0.03,
+        paddingTop: 60,
+        paddingBottom: 100,
     },
     mediaWrapper: {
-        maxWidth: width * 0.9,
-        maxHeight: height * 0.7,
+        flex: 1,
+        width: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+        borderRadius: 10,
+        backgroundColor: 'black',
     },
     media: {
         width: '100%',
         height: '100%',
         borderRadius: 10,
+        backgroundColor: 'black',
     },
     infoContainer: {
         position: 'absolute',
-        top: 100,
+        bottom: 20,
         left: 20,
         right: 20,
         backgroundColor: 'rgba(0,0,0,0.7)',

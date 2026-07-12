@@ -1,7 +1,7 @@
 // app/login.tsx
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
@@ -14,6 +14,7 @@ import { signInWithGoogle } from '@/utils/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { CustomAlert } from '@/utils/alert';
 
 
 export default function LoginScreen() {
@@ -98,13 +99,13 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email) {
-      Alert.alert('Error', 'Please enter your email address');
+      CustomAlert.error('Error', 'Please enter your email address');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      CustomAlert.error('Error', 'Please enter a valid email address');
       return;
     }
 
@@ -116,11 +117,15 @@ export default function LoginScreen() {
         const errorMessage = error.message?.toLowerCase() || '';
 
         if (errorMessage.includes('email') || errorMessage.includes('not found') || errorMessage.includes('invalid email')) {
-          Alert.alert(
-            'Login Failed',
-            'No account found with this email. Please sign up first.',
-            [{ text: 'Sign Up', onPress: () => router.push('/signup') }, { text: 'OK', style: 'cancel' }]
-          );
+          CustomAlert.show({
+            type: 'error',
+            title: 'Login Failed',
+            message: 'No account found with this email. Please sign up first.',
+            buttons: [
+              { text: 'Sign Up', onPress: () => router.push('/signup') },
+              { text: 'OK', style: 'cancel' },
+            ],
+          });
           setIsLoading(false);
           return;
         }
@@ -137,16 +142,12 @@ export default function LoginScreen() {
       const errorName = error?.name || '';
 
       if (errorName === 'AuthApiError' || (error as any)?.constructor?.name === 'AuthApiError') {
-        Alert.alert(
-          'Login Failed',
-          'Unable to send magic link. Please try again later.',
-          [{ text: 'OK' }]
-        );
+        CustomAlert.error('Login Failed', 'Unable to send magic link. Please try again later.');
         return;
       }
 
       console.log('Login issue, handling gracefully');
-      Alert.alert('Login Failed', 'Something went wrong. Please try again later.');
+      CustomAlert.error('Login Failed', 'Something went wrong. Please try again later.');
     }
   };
 
@@ -191,7 +192,7 @@ export default function LoginScreen() {
     } catch (error: any) {
       console.error('Google login error:', error);
       setIsLoading(false);
-      Alert.alert('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+      CustomAlert.error('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
     }
   };
 

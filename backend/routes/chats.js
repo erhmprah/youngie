@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
+const pushService = require('../services/push-notification');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -180,7 +181,8 @@ router.get('/user/:userId', auth, async (req, res) => {
     if (!user) return res.status(404).json({ msg: 'User not found' });
 
     const chats = await Chat.find({
-      participants: req.params.userId
+      participants: req.params.userId,
+      deletedFor: { $not: { $elemMatch: { user: req.params.userId } } }
     })
     .populate('participants', 'username profilePhoto isActive lastSeen')
     .populate('relatedCommunity', 'name image')
@@ -311,9 +313,15 @@ router.get('/:chatId', auth, async (req, res) => {
         const isParticipant = chat.participants.some(p => p._id.toString() === req.userId);
         const isAdmin = chat.admin && chat.admin.toString() === req.userId;
         const hasPendingInvitation = chat.pendingMembers.some(p => p && p.toString() === req.userId);
+        
+        const isDeletedForMe = chat.deletedFor && chat.deletedFor.some(d => d.user && d.user.toString() === req.userId);
 
         if (!isParticipant && !isAdmin && !hasPendingInvitation) {
               return res.status(403).json({ msg: 'Not authorized' });
+        }
+        
+        if (isDeletedForMe) {
+            return res.status(404).json({ msg: 'Chat deleted' });
         }
 
         // Populate pending members only for admins
@@ -331,6 +339,9 @@ router.get('/:chatId', auth, async (req, res) => {
                 messagesFilter.createdAt = { $gt: clearEntry.clearedAt };
             }
         }
+
+        // Exclude messages deleted for current user
+        messagesFilter.$nor = [{ deletedFor: { $elemMatch: { user: req.userId } } }];
 
         const messages = await Message.find(messagesFilter)
             .populate('sender', 'username profilePhoto')
@@ -424,7 +435,7 @@ router.post('/:chatId/messages', auth, async (req, res) => {
       chat: chatId,
       sender: req.userId,
       content,
-      replyTo: replyTo || undefined,
+      replyTo: mongoose.Types.ObjectId.isValid(replyTo) ? replyTo : undefined,
       isAnonymous: isAnonymous || false,
       readBy: [req.userId],
       attachment: attachment || undefined,
@@ -439,7 +450,7 @@ router.post('/:chatId/messages', auth, async (req, res) => {
 
     await newMessage.populate('sender', 'username profilePhoto');
     if (replyTo) {
-      await newMessage.populate('replyTo', 'content sender');
+      await newMessage.populate('replyTo', 'content sender attachment');
       await Message.populate(newMessage.replyTo, {
         path: 'sender',
         select: 'username'
@@ -620,6 +631,7 @@ router.post('/:chatId/members', auth, async (req, res) => {
       relatedChat: chat._id,
     });
     await notification.save();
+    pushService.sendChatInvitationNotification(userId, null, chat._id, chat.name, req.userId).catch(() => {});
 
     // Emit notification to the invited user
     if (req.io) {
@@ -754,54 +766,98 @@ router.delete('/:chatId/messages/:messageId', auth, async (req, res) => {
     const chat = await Chat.findById(req.params.chatId);
     if (!chat) return res.status(404).json({ msg: 'Chat not found' });
 
-    // Allow sender or admin to delete
-    if (message.sender.toString() !== req.userId && chat.admin && chat.admin.toString() !== req.userId) {
+    const isSender = message.sender.toString() === req.userId;
+    const isAdmin = chat.admin && chat.admin.toString() === req.userId;
+
+    // Authorization: sender or admin
+    if (!isSender && !isAdmin) {
       return res.status(403).json({ msg: 'Not authorized to delete this message' });
     }
 
-    await Message.findByIdAndDelete(req.params.messageId);
+    const deleteType = req.query.type || 'me';
 
-    // Notify all participants
-    if (req.io) {
-      chat.participants.filter(id => id).forEach(participantId => {
-        req.io.to(participantId.toString()).emit('messageDeleted', {
-          messageId: req.params.messageId,
-          chatId: req.params.chatId
+    if (deleteType === 'everyone') {
+      if (!isSender) {
+        return res.status(403).json({ msg: 'Only sender can delete for everyone' });
+      }
+
+      if (chat.isGroupChat) {
+        if (!isAdmin) {
+          return res.status(403).json({ msg: 'Only admin can delete for everyone in group' });
+        }
+        await Message.findByIdAndDelete(req.params.messageId);
+      } else {
+        const otherParticipant = chat.participants.find(p => p.toString() !== req.userId);
+        if (otherParticipant && message.readBy.some(id => id.toString() === otherParticipant.toString())) {
+          return res.status(400).json({ msg: 'Cannot delete for everyone: message has been read' });
+        }
+        await Message.findByIdAndDelete(req.params.messageId);
+      }
+
+      if (req.io) {
+        chat.participants.filter(id => id).forEach(participantId => {
+          req.io.to(participantId.toString()).emit('messageDeleted', {
+            messageId: req.params.messageId,
+            chatId: req.params.chatId
+          });
         });
-      });
+      }
+
+      return res.json({ msg: 'Message deleted for everyone' });
     }
 
-    res.json({ msg: 'Message deleted' });
+    // Default: soft delete for current user
+    await Message.findByIdAndUpdate(req.params.messageId, {
+      $addToSet: { deletedFor: { user: req.userId, deletedAt: new Date() } }
+    });
+
+    res.json({ msg: 'Message deleted for you' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete chat (admin only)
+// Delete chat for current user only (soft delete)
 router.delete('/:chatId', auth, async (req, res) => {
   try {
     const chat = await Chat.findById(req.params.chatId);
 
     if (!chat) return res.status(404).json({ msg: 'Chat not found' });
-    if (!chat.isGroupChat) return res.status(400).json({ msg: 'Cannot delete direct messages' });
-    if (chat.admin.toString() !== req.userId) return res.status(403).json({ msg: 'Only admin can delete chat' });
 
-    // Delete all messages in the chat
-    await Message.deleteMany({ chat: req.params.chatId });
+    const isParticipant = chat.participants.some(id => id.toString() === req.userId);
 
-    // Delete the chat
-    await Chat.findByIdAndDelete(req.params.chatId);
-
-    // Notify all participants that the chat was deleted
-    if (req.io) {
-      chat.participants.filter(id => id).forEach(participantId => {
-        req.io.to(participantId.toString()).emit('chatDeleted', {
-          chatId: req.params.chatId
-        });
-      });
+    if (chat.isGroupChat) {
+      if (chat.admin.toString() !== req.userId) return res.status(403).json({ msg: 'Only admin can delete group chat' });
+    } else {
+      if (!isParticipant) return res.status(403).json({ msg: 'Only participants can delete direct messages' });
     }
 
-    res.json({ msg: 'Chat deleted successfully' });
+    // Soft delete: add current user to deletedFor
+    await Chat.findByIdAndUpdate(req.params.chatId, {
+      $addToSet: { deletedFor: { user: req.userId, deletedAt: new Date() } }
+    });
+
+    res.json({ msg: 'Chat deleted for you' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Restore deleted chat for current user
+router.post('/:chatId/restore', auth, async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.chatId);
+
+    if (!chat) return res.status(404).json({ msg: 'Chat not found' });
+
+    const isParticipant = chat.participants.some(id => id.toString() === req.userId);
+    if (!isParticipant) return res.status(403).json({ msg: 'Not a participant' });
+
+    await Chat.findByIdAndUpdate(req.params.chatId, {
+      $pull: { deletedFor: { user: req.userId } }
+    });
+
+    res.json({ msg: 'Chat restored' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
