@@ -90,7 +90,6 @@ export default function ResetPasswordScreen() {
       // For deep links, we need to get the URL directly
       try {
         const initialUrl = await Linking.getInitialURL();
-        const linkingUrlResult = await Linking.openURL().catch(() => null);
         console.log('Reset password initial URL:', initialUrl);
         console.log('All URL params:', Object.fromEntries(new URL(initialUrl || 'http://x').searchParams));
         

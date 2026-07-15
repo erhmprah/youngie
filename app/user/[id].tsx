@@ -78,6 +78,15 @@ export default function UserProfileScreen() {
 
   const fetchProfile = useCallback(async () => {
     if (!id || !currentUser?._id) return;
+
+    if (id === 'anonymous') {
+      setIsLoading(false);
+      Alert.alert('Anonymous User', 'This profile is anonymous and cannot be viewed.', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const [userRes, myProfileRes] = await Promise.all([
@@ -85,14 +94,24 @@ export default function UserProfileScreen() {
         userAPI.getProfile(currentUser._id)
       ]);
 
-      setProfile(userRes.data);
+      const targetData = userRes.data;
+      if (!targetData) {
+        setProfile(null);
+        setIsLoading(false);
+        Alert.alert('Profile Not Found', 'This profile is no longer available.', [
+          { text: 'OK', onPress: () => router.back() }
+        ]);
+        return;
+      }
+
+      setProfile(targetData);
       setStats({
-        posts: userRes.data.posts?.length || 0,
-        friends: userRes.data.friends?.length || 0
+        posts: targetData.posts?.length || 0,
+        friends: targetData.friends?.length || 0
       });
 
       // Determine connection status
-      const targetId = userRes.data._id;
+      const targetId = targetData._id;
       const myData = myProfileRes.data;
 
       if (targetId === currentUser._id) {
@@ -142,8 +161,8 @@ export default function UserProfileScreen() {
     if (!id) return;
     setLoadingAlbum(true);
     try {
-      const response = await userAPI.getAlbum(id as string);
-      setAlbum(response.data || []);
+      const response = await userAPI.getAlbum(id as string, 1, 30);
+      setAlbum(response.data.data || []);
     } catch (error) {
       console.error('Error fetching album:', error);
       setAlbum([]);
@@ -245,8 +264,8 @@ export default function UserProfileScreen() {
   const handleMessage = async () => {
     if (!currentUser?._id || !profile) return;
     try {
-        const response = await chatAPI.getUserChats(currentUser._id);
-        const chats = response.data;
+        const response = await chatAPI.getUserChats(currentUser._id, 1, 50);
+        const chats = response.data.data || [];
         const existingChat = chats.find((c: any) => 
             !c.isGroupChat && c.participants.some((p: any) => p._id === profile._id)
         );

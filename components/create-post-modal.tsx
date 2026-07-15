@@ -201,7 +201,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                  CustomAlert.error('Error', 'Poll must have at least 2 options.');
                  return;
              }
-             finalPollOptions = validOptions.map(opt => ({ text: opt }));
+              finalPollOptions = validOptions.map(opt => ({ text: opt, votes: [] }));
         }
 
         setIsLoading(true);
@@ -232,7 +232,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
             // Create post with uploaded media URLs
             await postAPI.createPost({
                 content: content.trim() || undefined,
-                images: imageUrls.length > 0 ? imageUrls : undefined,
+                image: imageUrls.length > 0 ? imageUrls[0] : undefined,
                 video: videoUrl,
                 isPublic,
                 isAnonymous,

@@ -10,6 +10,12 @@ let currentUserId: string | null = null;
 // Track if we've already set up the AppState listener
 let appStateListenerSetup = false;
 
+// Keep-alive heartbeat interval - keeps the user marked online while the app
+// is open but idle (no messages being sent). Must run more often than the
+// server's ONLINE_TIMEOUT (5 minutes) so users don't get marked offline.
+const HEARTBEAT_INTERVAL = 2 * 60 * 1000; // 2 minutes
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
 // Handle app coming to foreground - refresh online status
 const handleAppStateChange = (nextAppState: AppStateStatus) => {
   if (nextAppState === 'active' && socket && currentUserId && socket.connected) {
@@ -39,6 +45,16 @@ export const initSocket = (userId: string): Socket => {
     socket?.emit('user-online', { userId });
   });
 
+  // Start the keep-alive heartbeat so the user stays "online" while idle.
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+  }
+  heartbeatInterval = setInterval(() => {
+    if (socket && socket.connected && currentUserId) {
+      socket.emit('heartbeat', { userId: currentUserId });
+    }
+  }, HEARTBEAT_INTERVAL);
+
   socket.on('disconnect', () => {
     console.log('✗ Socket disconnected');
   });
@@ -61,6 +77,10 @@ export const getSocket = (): Socket | null => {
 }
 
 export const disconnectSocket = () => {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
   if (socket) {
     socket.disconnect();
     socket = null;
@@ -79,6 +99,10 @@ export const leaveChat = (chatId: string) => {
 
 export const sendMessage = (chatId: string, senderId: string, content: string, replyTo?: string, isAnonymous?: boolean, attachment?: any, tempId?: string) => {
   socket?.emit('new-message', { chatId, senderId, content, replyTo, isAnonymous, attachment, tempId });
+};
+
+export const sendCallLog = (chatId: string, data: { callerId: string; callType?: 'voice' | 'video'; callStatus: 'missed' | 'declined' | 'completed' | 'cancelled'; callDuration?: number }) => {
+  socket?.emit('call-log', { chatId, ...data });
 };
 
 export const getCurrentUserId = (): string | null => currentUserId;

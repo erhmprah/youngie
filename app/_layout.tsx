@@ -1,26 +1,49 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import 'react-native-reanimated';
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState } from 'react-native';
 
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
-import { CacheProvider } from '@/contexts/CacheContext';
-import { AlertProvider } from '@/contexts/AlertContext';
+type TimeoutHandle = ReturnType<typeof setTimeout>;
+
+function safeJsonStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+import { AppState } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import AuthLoadingScreen from '@/components/auth-loading-screen';
 import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
 import AlertContainer from '@/components/ui/AlertContainer';
-import { initSocket, disconnectSocket, onVoiceCallOffer, offVoiceCallOffer } from '@/utils/socket';
-import { setupGlobalErrorHandlers, getErrorLog } from '@/utils/global-error-handler';
-import CallService from '@/utils/call-service';
+import { AlertProvider } from '@/contexts/AlertContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { CacheProvider } from '@/contexts/CacheContext';
+import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import AuthLoadingScreen from '@/components/auth-loading-screen';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import CallService from '@/utils/call-service';
+import { getErrorLog, setupGlobalErrorHandlers } from '@/utils/global-error-handler';
+import { disconnectSocket, initSocket, offVoiceCallEnd, offVoiceCallOffer, onVoiceCallEnd, onVoiceCallOffer } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 // Conditionally import expo-notifications
 let Notifications: any = null;
@@ -45,7 +68,8 @@ function RootLayoutNav() {
     token: pushToken, 
     error: pushError, 
     registerPushToken, 
-    reRegisterOnLogin 
+    reRegisterOnLogin,
+    setupNotificationChannels,
   } = usePushNotifications();
   
   // Track previous sign-in state for detecting login
@@ -62,27 +86,49 @@ function RootLayoutNav() {
     };
   }, [theme, primaryColor]);
 
+  type NotificationData = {
+    type?: string;
+    callId?: string;
+    chatId?: string;
+    userId?: string;
+    postId?: string;
+    caller?: {
+      username?: string;
+      profilePhoto?: string;
+      [key: string]: unknown;
+    };
+    offer?: unknown;
+  };
+
   useEffect(() => {
     let notificationResponseSubscription: any = null;
-    let timer: NodeJS.Timeout;
+    let timer: TimeoutHandle;
     
     // Delay setting up notification listener until app is ready
     timer = setTimeout(() => {
       if (Notifications) {
         // Set up notification response listener
-notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
+        notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
           if (!isAppReadyRef.current) return;
           
-          const data = response.notification.request.content.data as any;
-          
-          switch (data.type) {
+          const data = response?.notification?.request?.content?.data as NotificationData | undefined;
+
+          if (!data) return;
+
+          const notificationType = data.type;
+
+          switch (notificationType) {
             case 'incoming-call':
+              if (!CallService.isCallActive(data.callId)) {
+                return;
+              }
+              const caller = data.caller || {};
               router.push({
                 pathname: '/chat/voice-call',
                 params: {
-                  chatId: data.chatId,
-                  name: data.caller?.username || 'User',
-                  image: data.caller?.profilePhoto,
+                  chatId: data.chatId || '',
+                  name: caller.username || 'User',
+                  image: caller.profilePhoto,
                   offer: data.offer ? JSON.stringify(data.offer) : undefined,
                 }
               });
@@ -92,7 +138,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
               if (data.chatId) {
                 router.push({
                   pathname: '/chat/[id]',
-                  params: { id: data.chatId }
+                  params: { id: data.chatId as string }
                 });
               }
               break;
@@ -100,7 +146,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
               if (data.userId) {
                 router.push({
                   pathname: '/user/[id]',
-                  params: { id: data.userId }
+                  params: { id: data.userId as string }
                 });
               }
               break;
@@ -109,7 +155,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
               if (data.postId) {
                 router.push({
                   pathname: '/post/[id]',
-                  params: { id: data.postId }
+                  params: { id: data.postId as string }
                 });
               }
               break;
@@ -118,7 +164,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
               if (data.postId) {
                 router.push({
                   pathname: '/post/[id]',
-                  params: { id: data.postId }
+                  params: { id: data.postId as string }
                 });
               }
               break;
@@ -126,12 +172,12 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
               if (data.postId) {
                 router.push({
                   pathname: '/post/[id]',
-                  params: { id: data.postId }
+                  params: { id: data.postId as string }
                 });
               } else if (data.chatId) {
                 router.push({
                   pathname: '/chat/[id]',
-                  params: { id: data.chatId }
+                  params: { id: data.chatId as string }
                 });
               }
               break;
@@ -139,7 +185,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
               if (data.userId) {
                 router.push({
                   pathname: '/user/[id]',
-                  params: { id: data.userId }
+                  params: { id: data.userId as string }
                 });
               }
               break;
@@ -152,11 +198,15 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
       }
     }, 1000);
 
-    // Socket initialization for voice calls
-    if (isSignedIn && user?._id) {
-      const socket = initSocket(user._id);
+      // Socket initialization for voice calls
+      if (isSignedIn && user?._id) {
+        const socket = initSocket(user._id);
 
-      onVoiceCallOffer(({ offer, caller, chatId }) => {
+        onVoiceCallEnd(() => {
+          CallService.onEndCall({ callUUID: (CallService as any).currentCallId });
+        });
+
+        onVoiceCallOffer(({ offer, caller, chatId }) => {
         if (AppState.currentState === 'background' || AppState.currentState === 'inactive') {
           // Generate a random UUID for the call
           const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -187,6 +237,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
       }
       if (timer) clearTimeout(timer);
       offVoiceCallOffer();
+      offVoiceCallEnd();
       disconnectSocket();
     };
   }, [isSignedIn, user?._id]);
@@ -241,6 +292,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
     if (prevSignedInRef.current === false && isSignedIn) {
       // User just logged in - register push notifications
       console.log('🔔 User logged in, registering push notifications...');
+      setupNotificationChannels();
       reRegisterOnLogin();
     }
     
@@ -250,6 +302,7 @@ notificationResponseSubscription = Notifications.addNotificationResponseReceived
     // Initial registration if already signed in
     if (isSignedIn && !prevSignedInRef.current) {
       console.log('🔔 Initial push notification registration...');
+      setupNotificationChannels();
       registerPushToken();
     }
   }, [isSignedIn, registerPushToken, reRegisterOnLogin]);

@@ -371,15 +371,17 @@ const notificationHelpers = {
   /**
    * Send a like notification
    */
-  async sendLikeNotification(recipientId, sender, postId, senderId) {
+  async sendLikeNotification(recipientId, sender, postId, senderId, isAnonymous = false) {
     const senderUser = await resolveSender(sender, senderId);
     if (!senderUser) return { success: false, error: 'Sender not found' };
+    const displayName = isAnonymous ? 'Someone' : senderUser.username;
+    const dataSenderId = isAnonymous ? 'anonymous' : senderUser._id;
     return sendPushNotification(recipientId, {
       title: 'New Like',
-      body: `${senderUser.username} liked your post`,
+      body: `${displayName} liked your post`,
       type: 'like',
       data: {
-        senderId: senderUser._id,
+        senderId: dataSenderId,
         postId
       }
     });
@@ -388,15 +390,17 @@ const notificationHelpers = {
   /**
    * Send a comment notification
    */
-  async sendCommentNotification(recipientId, sender, postId, commentId, senderId) {
+  async sendCommentNotification(recipientId, sender, postId, commentId, senderId, isAnonymous = false) {
     const senderUser = await resolveSender(sender, senderId);
     if (!senderUser) return { success: false, error: 'Sender not found' };
+    const displayName = isAnonymous ? 'Someone' : senderUser.username;
+    const dataSenderId = isAnonymous ? 'anonymous' : senderUser._id;
     return sendPushNotification(recipientId, {
       title: 'New Comment',
-      body: `${senderUser.username} commented on your post`,
+      body: `${displayName} commented on your post`,
       type: 'comment',
       data: {
-        senderId: senderUser._id,
+        senderId: dataSenderId,
         postId,
         commentId
       }
@@ -492,9 +496,12 @@ const notificationHelpers = {
   /**
    * Send a tag notification
    */
-  async sendTagNotification(recipientId, sender, context, senderId, relatedPostId, relatedStoryId) {
+  async sendTagNotification(recipientId, sender, context, senderId, relatedPostId, relatedStoryId, isAnonymous = false) {
     const senderUser = await resolveSender(sender, senderId);
     if (!senderUser) return { success: false, error: 'Sender not found' };
+    const masked = isAnonymous && context === 'post';
+    const displayName = masked ? 'Someone' : senderUser.username;
+    const dataSenderId = masked ? 'anonymous' : senderUser._id;
     const messages = {
       post: `tagged you in a post`,
       comment: `tagged you in a comment`,
@@ -502,10 +509,10 @@ const notificationHelpers = {
     };
     return sendPushNotification(recipientId, {
       title: 'New Tag',
-      body: `${senderUser.username} ${messages[context] || 'tagged you'}`,
+      body: `${displayName} ${messages[context] || 'tagged you'}`,
       type: 'tag',
       data: {
-        senderId: senderUser._id,
+        senderId: dataSenderId,
         context,
         relatedPostId,
         relatedStoryId
@@ -516,15 +523,18 @@ const notificationHelpers = {
   /**
    * Send a reaction notification
    */
-  async sendReactionNotification(recipientId, sender, reactionType, context, senderId, relatedPostId, relatedStoryId, relatedCommentId) {
+  async sendReactionNotification(recipientId, sender, reactionType, context, senderId, relatedPostId, relatedStoryId, relatedCommentId, isAnonymous = false) {
     const senderUser = await resolveSender(sender, senderId);
     if (!senderUser) return { success: false, error: 'Sender not found' };
+    const masked = isAnonymous && context === 'post';
+    const displayName = masked ? 'Someone' : senderUser.username;
+    const dataSenderId = masked ? 'anonymous' : senderUser._id;
     return sendPushNotification(recipientId, {
       title: 'New Reaction',
-      body: `${senderUser.username} reacted to your ${context}`,
+      body: `${displayName} reacted to your ${context}`,
       type: `react_${context}`,
       data: {
-        senderId: senderUser._id,
+        senderId: dataSenderId,
         reactionType,
         context,
         relatedPostId,
@@ -623,15 +633,17 @@ const notificationHelpers = {
   /**
    * Send a comment reply notification
    */
-  async sendCommentReplyNotification(recipientId, sender, postId, commentId, replyId, senderId) {
+  async sendCommentReplyNotification(recipientId, sender, postId, commentId, replyId, senderId, isAnonymous = false) {
     const senderUser = await resolveSender(sender, senderId);
     if (!senderUser) return { success: false, error: 'Sender not found' };
+    const displayName = isAnonymous ? 'Someone' : senderUser.username;
+    const dataSenderId = isAnonymous ? 'anonymous' : senderUser._id;
     return sendPushNotification(recipientId, {
       title: 'New Reply',
-      body: `${senderUser.username} replied to your comment`,
+      body: `${displayName} replied to your comment`,
       type: 'comment_reply',
       data: {
-        senderId: senderUser._id,
+        senderId: dataSenderId,
         postId,
         commentId,
         replyId

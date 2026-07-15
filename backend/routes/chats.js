@@ -5,6 +5,7 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { parsePaginationParams, buildPaginatedResponse } = require('../utils/pagination');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -24,10 +25,15 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+const withUploadLimit = (uploadMiddleware, limitMB) => (req, res, next) => {
+    req.uploadLimitMB = limitMB;
+    uploadMiddleware(req, res, next);
+};
 
 // Upload attachment
-router.post('/upload-attachment', auth, upload.single('file'), async (req, res) => {
+router.post('/upload-attachment', auth, withUploadLimit(upload.single('file'), 50), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ msg: 'No file uploaded' });
 
@@ -180,13 +186,20 @@ router.get('/user/:userId', auth, async (req, res) => {
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ msg: 'User not found' });
 
-    const chats = await Chat.find({
+    const chatQuery = {
       participants: req.params.userId,
       deletedFor: { $not: { $elemMatch: { user: req.params.userId } } }
-    })
+    };
+
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await Chat.countDocuments(chatQuery);
+
+    const chats = await Chat.find(chatQuery)
     .populate('participants', 'username profilePhoto isActive lastSeen')
     .populate('relatedCommunity', 'name image')
-    .sort({ updatedAt: -1 });
+    .sort({ updatedAt: -1 })
+    .skip(skip)
+    .limit(limit);
 
     // Filter out chats with blocked users
     const filteredChats = chats.filter(chat =>
@@ -242,7 +255,7 @@ router.get('/user/:userId', auth, async (req, res) => {
     
     chatsWithLastMessage.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
-    res.json(chatsWithLastMessage);
+    res.json(buildPaginatedResponse(chatsWithLastMessage, total, { page, limit, skip, hasNextPage: skip + chatsWithLastMessage.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -343,17 +356,25 @@ router.get('/:chatId', auth, async (req, res) => {
         // Exclude messages deleted for current user
         messagesFilter.$nor = [{ deletedFor: { $elemMatch: { user: req.userId } } }];
 
+        const { page, limit, skip } = parsePaginationParams(req.query);
+        const totalMessages = await Message.countDocuments(messagesFilter);
+
+        // Fetch the most recent page, newest first, then reverse for chronological display
         const messages = await Message.find(messagesFilter)
             .populate('sender', 'username profilePhoto')
             .populate('readBy', '_id')
             .populate('replyTo', 'content sender')
-            .sort({ createdAt: 1 });
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
 
         // Populate the sender of replyTo
         await Message.populate(messages, {
             path: 'replyTo.sender',
             select: 'username'
         });
+
+        messages.reverse();
 
         const chatObj = chat.toObject();
 
@@ -404,6 +425,14 @@ router.get('/:chatId', auth, async (req, res) => {
             });
         }
 
+        chatObj.messagesPagination = {
+          page,
+          limit,
+          total: totalMessages,
+          hasNextPage: skip + messages.length < totalMessages,
+          hasPrevPage: page > 1,
+        };
+
         res.json(chatObj);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -448,6 +477,39 @@ router.post('/:chatId/messages', auth, async (req, res) => {
     chat.updatedAt = new Date();
     await chat.save();
 
+    // If a recipient had deleted this chat for themselves, revive it for them
+    // but only reveal messages sent AFTER their deletion time (older messages
+    // stay gone). We remove them from deletedFor (so the chat reappears) and
+    // set clearedHistory.clearedAt to their deletion timestamp.
+    if (chat.deletedFor && chat.deletedFor.length > 0) {
+      const revivedEntries = chat.deletedFor.filter(
+        entry => entry.user && entry.user.toString() !== req.userId
+      );
+      if (revivedEntries.length > 0) {
+        const revivedUserIds = revivedEntries.map(entry => entry.user);
+        const clearedEntries = revivedEntries.map(entry => ({
+          user: entry.user,
+          clearedAt: entry.deletedAt || new Date(),
+        }));
+
+        // Two separate updates: MongoDB rejects $pull and $push on the same
+        // path in one operation ("would create a conflict at 'clearedHistory'").
+        await Chat.updateOne(
+          { _id: chat._id },
+          {
+            $pull: {
+              deletedFor: { user: { $in: revivedUserIds } },
+              clearedHistory: { user: { $in: revivedUserIds } },
+            },
+          }
+        );
+        await Chat.updateOne(
+          { _id: chat._id },
+          { $push: { clearedHistory: { $each: clearedEntries } } }
+        );
+      }
+    }
+
     await newMessage.populate('sender', 'username profilePhoto');
     if (replyTo) {
       await newMessage.populate('replyTo', 'content sender attachment');
@@ -456,6 +518,14 @@ router.post('/:chatId/messages', auth, async (req, res) => {
         select: 'username'
       });
     }
+
+    const messageBody = content || (attachment ? `Sent a ${attachment.type || 'file'}` : 'Message');
+
+    // Send push notifications to other participants for offline delivery
+    const otherParticipants = chat.participants.filter(id => id && id.toString() !== req.userId);
+    otherParticipants.forEach(participantId => {
+      pushService.sendMessageNotification(participantId.toString(), null, chatId, messageBody, req.userId).catch(() => {});
+    });
 
     // Emit socket event for real-time updates
     if (req.io) {

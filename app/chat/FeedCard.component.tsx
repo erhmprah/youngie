@@ -4,16 +4,14 @@ import { EditPostModal } from '@/components/edit-post-modal';
 import { LikesModal } from '@/components/likes-modal';
 import { MediaPreviewModal } from '@/components/media-preview-modal';
 import { PollView } from '@/components/poll-view';
-import { ReactionModal } from '@/components/reaction-modal';
-import { ReactionPicker, ReactionType } from '@/components/reaction-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { borderRadius, spacing, typography } from '@/constants/design-tokens';
+import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
-import { getImageUrl, postAPI, userAPI } from '@/utils/api';
+import { getImageUrl, postAPI, userAPI, communityAPI } from '@/utils/api';
 import { getSocket } from '@/utils/socket';
 import { getRelativeTime } from '@/utils/helpers';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,28 +20,11 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
 
-const REACTION_ICONS: Record<ReactionType, keyof typeof Ionicons.glyphMap> = {
-    like: 'thumbs-up',
-    heart: 'heart',
-    laugh: 'happy',
-    wow: 'star',
-    sad: 'sad',
-    fire: 'flame',
-};
-
-const REACTION_COLORS: Record<ReactionType, string> = {
-    like: '#4A90E2',
-    heart: '#E0245E',
-    laugh: '#F7B500',
-    wow: '#9013FE',
-    sad: '#F5A623',
-    fire: '#FF5722',
-};
-
 interface FeedPost {
     _id: string;
     author: {
         _id: string;
+        id: string;
         username: string;
         profilePhoto?: string;
         isOnline?: boolean;
@@ -56,7 +37,6 @@ interface FeedPost {
     createdAt: string;
     updatedAt: string;
     likes: { _id: string; username: string; profilePhoto?: string }[];
-    reactions?: { user: { _id: string; username: string }; type: ReactionType; createdAt: string }[];
     isFavorited?: boolean;
     comments: any[];
     tags?: { _id: string; username: string }[];
@@ -76,15 +56,14 @@ interface FeedCardProps {
     onComment?: (post: FeedPost) => void;
     onFavorite?: (postId: string) => void;
     shouldPlay?: boolean;
+    communityId?: string;
 }
 
-export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay }: FeedCardProps) => {
+export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId }: FeedCardProps) => {
     const { user } = useAuth();
     const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
-    const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
-    const [reactionModalVisible, setReactionModalVisible] = useState(false);
     const [likesModalVisible, setLikesModalVisible] = useState(false);
     const [commentsModalVisible, setCommentsModalVisible] = useState(false);
     const textColor = useThemeColor('text');
@@ -92,9 +71,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const errorColor = useThemeColor('error');
     const primaryColor = useThemeColor('primary');
     const backgroundColor = useThemeColor('background');
+    const surfaceColor = useThemeColor('surface');
+    const borderColor = useThemeColor('border');
     const isOwner = post.author._id === currentUserId;
+    const isAnonPost = !!post.isAnonymous;
     const isLiked = post.likes.some(l => l._id === currentUserId);
-    const userReaction = post.reactions?.find(r => r.user._id === currentUserId);
     const [isFavorited, setIsFavorited] = useState(post.isFavorited ?? false);
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const lastTap = useRef<number | null>(null);
@@ -207,38 +188,24 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         }
     };
 
-    const handleLikePressIn = () => {
-        longPressTimer.current = setTimeout(() => {
-            setReactionPickerVisible(true);
-        }, 500);
-    };
-
-    const handleLikePressOut = () => {
-        if (longPressTimer.current) {
-            clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
-        }
-    };
-
     const handleLikePress = () => {
-        if (longPressTimer.current) {
-            clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
-            return;
-        }
-        // Tap: toggle like
-        if (userReaction) {
-            // Remove reaction if already reacted
-            handleReactionSelect(userReaction.type);
-        } else {
-            onLike?.(post._id);
-        }
+        onLike?.(post._id);
     };
 
     const handleFavoritePress = async () => {
         setIsFavorited(prev => !prev);
         if (onFavorite) {
             onFavorite(post._id);
+        } else if (communityId) {
+            try {
+                if (!isFavorited) {
+                    await communityAPI.favoriteFeed(communityId, post._id);
+                } else {
+                    await communityAPI.unfavoriteFeed(communityId, post._id);
+                }
+            } catch {
+                setIsFavorited(prev => !prev);
+            }
         } else {
             try {
                 if (!isFavorited) {
@@ -303,6 +270,10 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
     const handleMute = async () => {
         setOptionsVisible(false);
+        if (isAnonPost) {
+            CustomAlert.info('Anonymous Post', 'You cannot mute the author of an anonymous post.');
+            return;
+        }
         CustomAlert.show({
             type: 'confirm',
             title: 'Mute User',
@@ -328,6 +299,17 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
     const handleSaveEdit = async (content: string, media?: { uri: string; type: 'image' | 'video' }) => {
         try {
+            if (communityId) {
+                const updateData: { content: string; images?: string[] } = { content };
+                if (media && media.type === 'image') {
+                    updateData.images = [media.uri];
+                }
+                const response = await communityAPI.updateFeed(communityId, post._id, updateData);
+                onUpdate?.(response.data);
+                CustomAlert.success('Success', 'Post updated successfully');
+                return;
+            }
+
             const updateData: {
                 content: string;
                 media?: { url: string; type: 'image' | 'video' }[];
@@ -348,6 +330,9 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     };
 
     const handleShare = async () => {
+        if (communityId) {
+            return;
+        }
         if (post.isAnonymous) {
             CustomAlert.warning('Cannot Share', 'Sharing anonymous posts is not allowed.');
             return;
@@ -394,45 +379,15 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         });
     };
 
-    const handleReactionSelect = async (reaction: ReactionType) => {
-        try {
-            // Check if user already has this reaction
-            const hasSameReaction = post.reactions?.some(r => r.user._id === currentUserId && r.type === reaction);
-            
-            if (hasSameReaction) {
-                // Remove reaction if user is clicking the same reaction type again
-                await postAPI.reactPost(post._id, { reactionType: 'remove' });
-                const updatedPost = {
-                    ...post,
-                    reactions: (post.reactions || []).filter(r => r.user._id !== currentUserId)
-                };
-                onUpdate?.(updatedPost);
-            } else {
-                // Add new reaction (and remove any existing reaction)
-                await postAPI.reactPost(post._id, { reactionType: reaction });
-                const updatedPost = {
-                    ...post,
-                    reactions: [
-                        ...(post.reactions || []).filter(r => r.user._id !== currentUserId),
-                        { user: { _id: currentUserId, username: user?.username || '' }, type: reaction, createdAt: new Date().toISOString() }
-                    ]
-                };
-                onUpdate?.(updatedPost);
-            }
-        } catch {
-            console.error('Reaction failed');
-        }
-        setReactionPickerVisible(false);
-    };
-
     return (
-        <ThemedView style={styles.card}>
+        <ThemedView style={[styles.card, { backgroundColor: surfaceColor, borderColor }]}>
             <View style={styles.header}>
                 <View style={styles.userInfo}>
                     <TouchableOpacity 
                         style={styles.authorRow}
+                        disabled={isAnonPost}
                         onPress={() => {
-                            if (post.author._id !== currentUserId) {
+                            if (!isAnonPost && post.author._id !== currentUserId) {
                                 router.push(`/user/${post.author._id}`);
                             }
                         }}
@@ -497,7 +452,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <Image
 source={{ uri: getImageUrl(item.url) || '' }}
-                                            style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
+                                            style={styles.mediaFrame}
                                             resizeMode="cover"
                                             fadeDuration={0}
                                             progressiveRenderingEnabled={true}
@@ -509,7 +464,7 @@ source={{ uri: getImageUrl(item.url) || '' }}
                                         <Video
                                             ref={videoRef}
                                             source={{ uri: getImageUrl(item.url) || '' }}
-                                            style={{ width: availableWidth, height: availableWidth }}
+                                            style={styles.mediaFrame}
                                             resizeMode={ResizeMode.COVER}
                                             shouldPlay={shouldPlay}
                                             isLooping={true}
@@ -542,7 +497,7 @@ source={{ uri: getImageUrl(item.url) || '' }}
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item, 'image')}>
                                         <Image
 source={{ uri: getImageUrl(item) }}
-                                            style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
+                                            style={styles.mediaFrame}
                                             resizeMode="cover"
                                             fadeDuration={0}
                                             progressiveRenderingEnabled={true}
@@ -567,21 +522,21 @@ source={{ uri: getImageUrl(item) }}
                         )}
                     </View>
                 ) : post.image ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image, 'image')}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image || '', 'image')} style={{ width: availableWidth, height: availableWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
                         <Image
-                            source={{ uri: getImageUrl(post.image) }}
-                            style={{ width: availableWidth, height: availableWidth, backgroundColor: '#E0E0E0' }}
+                            source={{ uri: getImageUrl(post.image || '') }}
+                            style={styles.mediaFrame}
                             resizeMode="cover"
                             fadeDuration={0}
                             progressiveRenderingEnabled={true}
                         />
                     </TouchableOpacity>
                 ) : post.video ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video, 'video')}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')}>
                         <Video
                             ref={videoRef}
                             source={{ uri: getImageUrl(post.video) || '' }}
-                            style={[styles.postMedia, { width: availableWidth, height: availableWidth }]}
+                            style={[styles.postMedia, styles.mediaFrame, { width: availableWidth, height: availableWidth }]}
                             resizeMode={ResizeMode.COVER}
                             shouldPlay={shouldPlay}
                             isLooping={true}
@@ -596,23 +551,13 @@ source={{ uri: getImageUrl(item) }}
                         <TouchableOpacity
                             style={styles.actionBtn}
                             onPress={handleLikePress}
-                            onPressIn={handleLikePressIn}
-                            onPressOut={handleLikePressOut}
                         >
-                            {userReaction ? (
-                                <Ionicons 
-                                    name={REACTION_ICONS[userReaction.type]} 
-                                    size={24} 
-                                    color={REACTION_COLORS[userReaction.type]} 
-                                />
-                            ) : (
-                                <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
-                            )}
+                            <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
                         </TouchableOpacity>
-                        {(post.likes.length > 0 || (post.reactions && post.reactions.length > 0)) && (
+                        {post.likes.length > 0 && (
                             <TouchableOpacity onPress={() => setLikesModalVisible(true)}>
                                 <ThemedText style={[styles.actionCount, { color: textColor }]}>
-                                    {(post.likes.length + (post.reactions?.length || 0)).toLocaleString()}
+                                    {post.likes.length.toLocaleString()}
                                 </ThemedText>
                             </TouchableOpacity>
                         )}
@@ -629,6 +574,7 @@ source={{ uri: getImageUrl(item) }}
                             </TouchableOpacity>
                         )}
                     </View>
+                    {!communityId && (
                     <View style={styles.actionWithCount}>
                         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
                             <IconSymbol name="paperplane.fill" size={24} color={textColor} />
@@ -641,20 +587,12 @@ source={{ uri: getImageUrl(item) }}
                             </TouchableOpacity>
                         )}
                     </View>
+                    )}
                 </View>
                 <TouchableOpacity style={styles.actionBtn} onPress={handleFavoritePress}>
                     <IconSymbol name={isFavorited ? "bookmark.fill" : "bookmark"} size={24} color={isFavorited ? primaryColor : textColor} />
                 </TouchableOpacity>
             </View>
-
-            {reactionPickerVisible && (
-                <View style={styles.reactionPickerContainer}>
-                    <ReactionPicker
-                        onSelect={handleReactionSelect}
-                        onClose={() => setReactionPickerVisible(false)}
-                    />
-                </View>
-            )}
 
             <View style={styles.socialStats}>
                 {typeof post.shares === 'number' && post.shares > 0 && (
@@ -685,18 +623,13 @@ source={{ uri: getImageUrl(item) }}
                 visible={likesModalVisible}
                 onClose={() => setLikesModalVisible(false)}
                 likes={post.likes}
-                reactions={post.reactions}
             />
             
             <CommentModal
                 visible={commentsModalVisible}
                 onClose={() => setCommentsModalVisible(false)}
                 post={post}
-            />
-            <ReactionModal
-                visible={reactionModalVisible}
-                onClose={() => setReactionModalVisible(false)}
-                reactions={post.reactions || []}
+                communityContext={communityId ? { communityId } : undefined}
             />
 
             <MediaPreviewModal
@@ -713,9 +646,10 @@ FeedCard.displayName = 'FeedCard';
 
 const styles = StyleSheet.create({
     card: {
-        padding: spacing.md,
-        marginBottom: spacing.sm,
-        borderRadius: borderRadius.md,
+        padding: spacing.lg,
+        marginBottom: spacing.md,
+        borderRadius: borderRadius.xl,
+        ...shadows.md,
     },
     header: {
         flexDirection: 'row',
@@ -777,6 +711,14 @@ const styles = StyleSheet.create({
         backgroundColor: '#E0E0E0',
         marginBottom: spacing.md,
         alignItems: 'center',
+        borderRadius: borderRadius.lg,
+        overflow: 'hidden',
+    },
+    mediaFrame: {
+        width: '100%',
+        height: '100%',
+        borderRadius: borderRadius.lg,
+        backgroundColor: '#E0E0E0',
     },
     actionBar: {
         flexDirection: 'row',
@@ -809,14 +751,6 @@ const styles = StyleSheet.create({
         borderRadius: 5,
         backgroundColor: '#4CAF50',
         borderWidth: 2,
-    },
-    reactionPickerContainer: {
-        position: 'absolute',
-        top: -60,
-        left: 0,
-        right: 0,
-        alignItems: 'center',
-        zIndex: 1000,
     },
     imageCounter: {
         position: 'absolute',

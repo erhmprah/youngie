@@ -1,11 +1,10 @@
 import React from 'react';
-import { Modal, StyleSheet, View, TouchableOpacity, FlatList, ScrollView, Image } from 'react-native';
+import { Modal, StyleSheet, View, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { Ionicons } from '@expo/vector-icons';
-import { ReactionType } from './reaction-picker';
 import { getImageUrl } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,34 +15,13 @@ interface Like {
     profilePhoto?: string;
 }
 
-interface Reaction {
-    user: {
-        _id: string;
-        username: string;
-        profilePhoto?: string;
-    };
-    type: ReactionType;
-    createdAt: string;
-}
-
 interface LikesModalProps {
     visible: boolean;
     onClose: () => void;
     likes: Like[];
-    reactions?: Reaction[];
 }
 
-const REACTION_ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
-    like: { name: 'thumbs-up', color: '#4A90E2' },
-    heart: { name: 'heart', color: '#E0245E' },
-    laugh: { name: 'happy', color: '#F7B500' },
-    wow: { name: 'star', color: '#9013FE' },
-    sad: { name: 'sad', color: '#F5A623' },
-    fire: { name: 'flame', color: '#FF5722' },
-    default: { name: 'heart', color: '#E0245E' }
-};
-
-export function LikesModal({ visible, onClose, likes, reactions = [] }: LikesModalProps) {
+export function LikesModal({ visible, onClose, likes }: LikesModalProps) {
     const { user } = useAuth();
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
@@ -51,29 +29,7 @@ export function LikesModal({ visible, onClose, likes, reactions = [] }: LikesMod
     const surfaceColor = useThemeColor('surface');
     const router = useRouter();
 
-    // Create a map to track users who have already interacted (either liked or reacted)
-    const userInteractionMap = new Map();
-    
-    // Add likes first
-    (likes || []).forEach(user => {
-        if (user && user._id) {
-            userInteractionMap.set(user._id, { user, type: 'default', _id: `like-${user._id}` });
-        }
-    });
-    
-    // Add reactions, replacing any existing interactions from the same user
-    (reactions || []).forEach(reaction => {
-        if (reaction.user && reaction.user._id) {
-            userInteractionMap.set(reaction.user._id, { 
-                user: reaction.user, 
-                type: reaction.type, 
-                _id: `reaction-${reaction.user._id}-${reaction.type}` 
-            });
-        }
-    });
-    
-    // Convert map to array
-    const allInteractions = Array.from(userInteractionMap.values());
+    const interactions = likes || [];
 
     return (
         <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
@@ -84,40 +40,38 @@ export function LikesModal({ visible, onClose, likes, reactions = [] }: LikesMod
                             <Ionicons name="close" size={24} color={textColor} />
                         </TouchableOpacity>
                         <ThemedText style={[styles.title, { color: textColor }]}>
-                            Likes & Reactions ({allInteractions.length})
+                            Likes ({interactions.length})
                         </ThemedText>
                         <View style={{ width: 24 }} />
                     </View>
 
                     <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                        {allInteractions.length > 0 ? (
-                            allInteractions.map((item) => {
-                                if (!item.user || typeof item.user !== 'object') return null;
-                                const iconConfig = REACTION_ICONS[item.type] || REACTION_ICONS.default;
-                                
+                        {interactions.length > 0 ? (
+                            interactions.map((item) => {
+                                if (!item || typeof item !== 'object') return null;
+
                                 return (
                                 <TouchableOpacity 
                                     key={item._id} 
                                     style={styles.userRow}
                                     onPress={() => {
-                                        if (item.user._id === user?._id) return;
+                                        if (item._id === user?._id || item._id === 'anonymous') return;
                                         onClose();
-                                        router.push(`/user/${item.user._id}`);
+                                        router.push(`/user/${item._id}`);
                                     }}
                                 >
                                     <View style={styles.userInfo}>
-                                        {item.user.profilePhoto ? (
-                                            <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.avatar} />
+                                        {item.profilePhoto ? (
+                                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.avatar} />
                                         ) : (
                                             <View style={[styles.avatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                                                 <Ionicons name="person" size={16} color={lightTextColor} />
                                             </View>
                                         )}
                                         <ThemedText style={[styles.username, { color: textColor }]}>
-                                            {item.user.username}
+                                            {item.username}
                                         </ThemedText>
                                     </View>
-                                    <Ionicons name={iconConfig.name} size={16} color={iconConfig.color} style={styles.likeIcon} />
                                 </TouchableOpacity>
                             )})
                         ) : (
@@ -152,7 +106,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0,0,0,0.1)',
+        borderBottomColor: 'rgba(0,0.1)',
     },
     closeButton: {
         padding: spacing.xs,
@@ -182,15 +136,9 @@ const styles = StyleSheet.create({
         height: 32,
         borderRadius: 16,
     },
-    likeIcon: {
-        marginRight: spacing.xs,
-    },
     username: {
         fontSize: typography.sizes.body1,
         fontFamily: typography.families.medium,
-    },
-    timestamp: {
-        fontSize: typography.sizes.caption,
     },
     emptyState: {
         flex: 1,
@@ -201,18 +149,5 @@ const styles = StyleSheet.create({
     emptyText: {
         fontSize: typography.sizes.body1,
         textAlign: 'center',
-    },
-    reactionGroup: {
-        marginTop: spacing.md,
-    },
-    reactionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: spacing.sm,
-        gap: spacing.sm,
-    },
-    reactionLabel: {
-        fontSize: typography.sizes.body1,
-        fontFamily: typography.families.bold,
     },
 });

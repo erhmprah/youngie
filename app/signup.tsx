@@ -1,20 +1,19 @@
 // app/signup.tsx
 
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { signInWithMagicLink, supabase } from '@/utils/supabase';
-import { signInWithGoogle } from '@/utils/google-signin';
+import { borderRadius, spacing, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI } from '@/utils/api';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
+import { authAPI } from '@/utils/api';
+import { signInWithGoogle } from '@/utils/google-signin';
+import { signInWithMagicLink, supabase } from '@/utils/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -180,7 +179,7 @@ export default function SignupScreen() {
         >
           <View style={styles.container}>
             <View style={styles.header}>
-              <Image source={require('@/assets/images/youngie_icon.png')} style={{ width: 56, height: 56 }} resizeMode="contain" />
+              <Image source={require('@/assets/images/youngie_icon.png')} style={{ width: 90, height: 90}} resizeMode="contain" />
               <ThemedText type="heading1" style={styles.titleText}>Create Account</ThemedText>
               <ThemedText type="body1" style={[styles.subtitleText, { color: lightTextColor }]}>Join the community and meet new people</ThemedText>
             </View>

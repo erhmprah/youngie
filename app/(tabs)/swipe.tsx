@@ -271,8 +271,8 @@ export default function SwipeScreen() {
 
     const fetchUserAlbum = async (userId: string) => {
         try {
-            const response = await userAPI.getAlbum(userId);
-            setAlbums(prev => ({ ...prev, [userId]: response.data || [] }));
+            const response = await userAPI.getAlbum(userId, 1, 30);
+            setAlbums(prev => ({ ...prev, [userId]: response.data.data || [] }));
         } catch (error: any) {
             if (error.response?.status === 401) {
                 try {

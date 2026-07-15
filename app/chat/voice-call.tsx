@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, NativeModules }
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from 'react-native-webrtc';
-import { getSocket, joinChat, sendVoiceCallOffer, sendVoiceCallAnswer, sendVoiceCallIceCandidate, sendVoiceCallEnd, sendMessage, onVoiceCallAnswer, onVoiceCallIceCandidate, onVoiceCallEnd, offVoiceCallAnswer, offVoiceCallIceCandidate, offVoiceCallEnd } from '@/utils/socket';
+import { getSocket, joinChat, sendVoiceCallOffer, sendVoiceCallAnswer, sendVoiceCallIceCandidate, sendVoiceCallEnd, sendCallLog, onVoiceCallAnswer, onVoiceCallIceCandidate, onVoiceCallEnd, offVoiceCallAnswer, offVoiceCallIceCandidate, offVoiceCallEnd } from '@/utils/socket';
 import InCallManager from 'react-native-incall-manager';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -28,6 +28,9 @@ export default function VoiceCallScreen() {
   const answerProcessedRef = useRef(false);
   const callTimeoutRef = useRef<number | null>(null);
   const inCallManagerStarted = useRef(false);
+  const callConnectedRef = useRef(false);
+  const callDurationRef = useRef(0);
+  const callLogSentRef = useRef(false);
 
   const primaryColor = useThemeColor('primary');
   const backgroundColor = useThemeColor('background');
@@ -35,10 +38,14 @@ export default function VoiceCallScreen() {
   const errorColor = useThemeColor('error');
 
   useEffect(() => {
-    let durationInterval: NodeJS.Timeout | null = null;
+    let durationInterval: ReturnType<typeof setInterval> | null = null;
     if (callStatus === 'In call') {
       durationInterval = setInterval(() => {
-        setCallDuration(prevDuration => prevDuration + 1);
+        setCallDuration(prevDuration => {
+          const next = prevDuration + 1;
+          callDurationRef.current = next;
+          return next;
+        });
       }, 1000);
     }
     return () => {
@@ -87,12 +94,14 @@ export default function VoiceCallScreen() {
             setLocalStream(stream);
             stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
+            // @ts-ignore
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
                     sendVoiceCallIceCandidate(chatId as string, event.candidate);
                 }
             };
 
+            // @ts-ignore
             pc.ontrack = (event) => {
                 setRemoteStream(event.streams[0]);
             };
@@ -106,8 +115,9 @@ export default function VoiceCallScreen() {
                 
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                sendVoiceCallAnswer(chatId as string, answer);
-                setCallStatus('In call');
+                 sendVoiceCallAnswer(chatId as string, answer);
+                 callConnectedRef.current = true;
+                 setCallStatus('In call');
 
             } else { // Caller
                 setCallStatus('Ringing...');
@@ -120,16 +130,10 @@ export default function VoiceCallScreen() {
                     profilePhoto: user?.profilePhoto
                 });
 
-                // Set timeout for missed call
+                 // Set timeout for missed call
                 callTimeoutRef.current = setTimeout(async () => {
                     if (callStatus === 'Ringing...') {
                         hangUp('missed');
-                        // Send missed call message
-                        try {
-                            await chatAPI.sendMessage(chatId as string, { content: 'Missed voice call' });
-                            sendMessage(chatId as string, user?._id || '', 'Missed voice call', undefined, false);
-                        } catch (error) {
-                        }
                     }
                 }, 60000);
             }
@@ -162,8 +166,9 @@ export default function VoiceCallScreen() {
                     callTimeoutRef.current = null;
                 }
                 try {
-                    await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-                    setCallStatus('In call');
+                 await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+                 callConnectedRef.current = true;
+                 setCallStatus('In call');
                 } catch (error) {
                 }
             }
@@ -201,6 +206,32 @@ export default function VoiceCallScreen() {
     if (callTimeoutRef.current) {
         clearTimeout(callTimeoutRef.current);
         callTimeoutRef.current = null;
+    }
+
+    // Log the call in the chat thread (only the caller is the source of truth,
+    // and only once). Skip on a real connection failure.
+    if (!offerString && !callLogSentRef.current && status !== 'failed') {
+      callLogSentRef.current = true;
+      let callStatusValue: 'missed' | 'declined' | 'completed' | 'cancelled';
+      if (callConnectedRef.current) {
+        callStatusValue = 'completed';
+      } else if (status === 'missed') {
+        callStatusValue = 'missed';
+      } else if (status === 'cancelled') {
+        callStatusValue = 'cancelled';
+      } else {
+        callStatusValue = 'declined';
+      }
+      sendCallLog(chatId as string, {
+        callerId: user?._id || '',
+        callType: 'voice',
+        callStatus: callStatusValue,
+        callDuration: callDurationRef.current,
+      });
+    }
+
+    if (localStream) {
+        localStream.getAudioTracks().forEach((track: any) => track.stop());
     }
 
     if (localStream) {
@@ -265,7 +296,7 @@ export default function VoiceCallScreen() {
         <TouchableOpacity onPress={toggleMute} style={[styles.controlButton, { backgroundColor: isMuted ? errorColor : '#ffffff44' }]}>
           <IconSymbol name={isMuted ? "mic.slash.fill" : "mic.fill"} size={32} color={textColor} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => hangUp('declined')} style={[styles.controlButton, { backgroundColor: errorColor }]}>
+        <TouchableOpacity onPress={() => hangUp('cancelled')} style={[styles.controlButton, { backgroundColor: errorColor }]}>
           <IconSymbol name="phone.down.fill" size={32} color="white" />
         </TouchableOpacity>
         <TouchableOpacity onPress={toggleSpeaker} style={[styles.controlButton, { backgroundColor: '#ffffff44' }]}>

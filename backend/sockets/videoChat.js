@@ -51,6 +51,25 @@ module.exports = (io) => {
       activeChats.delete(socket.id);
     });
 
+    // Handle chat messages between matched peers
+    socket.on('send_message', (data) => {
+      try {
+        const peerId = activeChats.get(socket.id);
+        if (!peerId) {
+          socket.emit('socket_error', { message: 'Not in an active chat' });
+          return;
+        }
+
+        if (!data || typeof data.message !== 'string' || data.message.trim() === '') {
+          return;
+        }
+
+        io.to(peerId).emit('receive_message', { message: data.message.trim() });
+      } catch (error) {
+        console.error(`Error relaying message from ${socket.id}:`, error.message);
+      }
+    });
+
     // Handle socket-level errors - this is the proper way to catch errors
     socket.on('error', (error) => {
       console.error(`Socket error for ${socket.id}:`, error.message || error);

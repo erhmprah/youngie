@@ -74,8 +74,9 @@ export const cachedUserAPI = {
     }
     
     const response = await userAPI.searchUsers(query);
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
-    return { data: response.data, fromCache: false };
+    const searchUserData = response.data.data || [];
+    await cacheService.set(cacheKey, searchUserData, CACHE_TTL.SHORT);
+    return { data: searchUserData, fromCache: false };
   },
 };
 
@@ -135,8 +136,9 @@ export const cachedPostAPI = {
     }
     
     const response = await postAPI.getTrendingPosts();
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.FEED);
-    return { data: response.data, fromCache: false };
+    const trendingData = response.data.data || [];
+    await cacheService.set(cacheKey, trendingData, CACHE_TTL.FEED);
+    return { data: trendingData, fromCache: false };
   },
   
   /**
@@ -151,8 +153,9 @@ export const cachedPostAPI = {
     }
     
     const response = await postAPI.getFavoritePosts();
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
-    return { data: response.data, fromCache: false };
+    const favoriteData = response.data.data || [];
+    await cacheService.set(cacheKey, favoriteData, CACHE_TTL.SHORT);
+    return { data: favoriteData, fromCache: false };
   },
   
   /**
@@ -190,8 +193,9 @@ export const cachedNotificationAPI = {
     }
     
     const response = await notificationAPI.getNotifications();
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
-    return { data: response.data, fromCache: false };
+    const notificationData = response.data.data || [];
+    await cacheService.set(cacheKey, notificationData, CACHE_TTL.SHORT);
+    return { data: notificationData, fromCache: false };
   },
   
   /**
@@ -245,8 +249,9 @@ export const cachedChatAPI = {
     }
     
     const response = await chatAPI.getUserChats(userId);
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
-    return { data: response.data, fromCache: false };
+    const chatsData = response.data.data || [];
+    await cacheService.set(cacheKey, chatsData, CACHE_TTL.SHORT);
+    return { data: chatsData, fromCache: false };
   },
   
   /**
@@ -290,8 +295,9 @@ export const cachedCommunityAPI = {
     }
     
     const response = await communityAPI.getAll();
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.LONG);
-    return { data: response.data, fromCache: false };
+    const communitiesData = response.data.data || [];
+    await cacheService.set(cacheKey, communitiesData, CACHE_TTL.LONG);
+    return { data: communitiesData, fromCache: false };
   },
   
   /**
@@ -322,8 +328,9 @@ export const cachedCommunityAPI = {
     }
     
     const response = await communityAPI.search(query);
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
-    return { data: response.data, fromCache: false };
+    const searchData = response.data.data || [];
+    await cacheService.set(cacheKey, searchData, CACHE_TTL.SHORT);
+    return { data: searchData, fromCache: false };
   },
 };
 
@@ -341,8 +348,9 @@ export const cachedStoryAPI = {
     }
     
     const response = await storyAPI.getStories();
-    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
-    return { data: response.data, fromCache: false };
+    const storiesData = response.data.data || [];
+    await cacheService.set(cacheKey, storiesData, CACHE_TTL.SHORT);
+    return { data: storiesData, fromCache: false };
   },
   
   /**

@@ -166,14 +166,14 @@ export default function TestingScreen() {
 
   async function testSearchUsers() {
     const response = await userAPI.searchUsers('a');
-    return `Found ${response.data?.length || 0} users matching 'a'`;
+    return `Found ${response.data?.data?.length || 0} users matching 'a'`;
   }
 
   async function testFriendRequest() {
     if (!user?._id) throw new Error('No user ID');
     const usersRes = await userAPI.searchUsers('a');
-    if (!usersRes.data?.length) throw new Error('No users found');
-    const targetUser = usersRes.data.find((u: any) => u._id !== user._id);
+    if (!usersRes.data?.data?.length) throw new Error('No users found');
+    const targetUser = usersRes.data.data.find((u: any) => u._id !== user._id);
     if (!targetUser) throw new Error('No other users found');
     await userAPI.sendFriendRequest(user._id, targetUser._id);
     return `Sent friend request to: ${targetUser.username}`;
@@ -182,14 +182,14 @@ export default function TestingScreen() {
   async function testGetChats() {
     if (!user?._id) throw new Error('No user ID');
     const response = await chatAPI.getUserChats(user._id);
-    return `Found ${response.data?.length || 0} chats`;
+    return `Found ${response.data?.data?.length || 0} chats`;
   }
 
   async function testGetChatMessages() {
     if (!user?._id) throw new Error('No user ID');
     const chatsRes = await chatAPI.getUserChats(user._id);
-    if (!chatsRes.data?.length) throw new Error('No chats found');
-    const chatId = chatsRes.data[0]._id;
+    if (!chatsRes.data?.data?.length) throw new Error('No chats found');
+    const chatId = chatsRes.data.data[0]._id;
     const response = await chatAPI.getChat(chatId);
     return `Found ${response.data?.messages?.length || 0} messages in chat`;
   }
@@ -197,8 +197,8 @@ export default function TestingScreen() {
   async function testSendMessage() {
     if (!user?._id) throw new Error('No user ID');
     const chatsRes = await chatAPI.getUserChats(user._id);
-    if (!chatsRes.data?.length) throw new Error('No chats found');
-    const chatId = chatsRes.data[0]._id;
+    if (!chatsRes.data?.data?.length) throw new Error('No chats found');
+    const chatId = chatsRes.data.data[0]._id;
     await chatAPI.sendMessage(chatId, {
       content: `Test message at ${new Date().toISOString()}`,
     });
@@ -215,7 +215,7 @@ export default function TestingScreen() {
 
   async function testGetStories() {
     const response = await storyAPI.getStories();
-    return `Found ${response.data?.length || 0} story groups`;
+    return `Found ${response.data?.data?.length || 0} story groups`;
   }
 
   async function testCreateStory() {
@@ -227,13 +227,13 @@ export default function TestingScreen() {
 
   async function testGetNotifications() {
     const response = await notificationAPI.getNotifications();
-    return `Found ${response.data?.length || 0} notifications`;
+    return `Found ${response.data?.data?.length || 0} notifications`;
   }
 
   async function testMarkAsRead() {
     const response = await notificationAPI.getNotifications();
-    if (!response.data?.length) throw new Error('No notifications to mark');
-    const notifId = response.data[0]._id;
+    if (!response.data?.data?.length) throw new Error('No notifications to mark');
+    const notifId = response.data.data[0]._id;
     await notificationAPI.markAsRead(notifId);
     return `Marked notification as read: ${notifId}`;
   }

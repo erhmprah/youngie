@@ -18,17 +18,24 @@ export default function FavoritesScreen() {
     const [posts, setPosts] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const primaryColor = useThemeColor('primary');
     const textColor = useThemeColor('text');
 
-    const fetchFavorites = async () => {
+    const fetchFavorites = async (pageNum: number = 1, loadMore: boolean = false) => {
         try {
-            const response = await postAPI.getFavoritePosts();
-            setPosts(response.data);
+            const response = await postAPI.getFavoritePosts(pageNum, 20);
+            const newPosts = response.data.data;
+            setPosts(prev => loadMore ? [...prev, ...newPosts] : newPosts);
+            setHasMore(response.data.pagination?.hasNextPage || false);
+            setPage(pageNum);
         } catch (error: any) {
         } finally {
             setIsLoading(false);
             setRefreshing(false);
+            setLoadingMore(false);
         }
     };
 
@@ -38,7 +45,13 @@ export default function FavoritesScreen() {
 
     const handleRefresh = () => {
         setRefreshing(true);
-        fetchFavorites();
+        fetchFavorites(1);
+    };
+
+    const loadMore = () => {
+        if (loadingMore || !hasMore) return;
+        setLoadingMore(true);
+        fetchFavorites(page + 1, true);
     };
 
     const handleUnfavorite = async (postId: string) => {
@@ -105,6 +118,8 @@ export default function FavoritesScreen() {
                             />
                         )}
                         contentContainerStyle={styles.listContent}
+                        onEndReached={loadMore}
+                        onEndReachedThreshold={0.3}
                         refreshControl={
                             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />
                         }

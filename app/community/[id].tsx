@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, FlatList, Platform, Modal, TextInput } from 'react-native';
+import { StyleSheet, View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, FlatList, Modal, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,7 +13,7 @@ import { spacing, borderRadius, typography, shadows } from '@/constants/design-t
 import { communityAPI, getImageUrl } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { CreateEventModal } from '@/components/create-event-modal';
-import { getRelativeTime } from '@/utils/helpers';
+import { FeedCard } from '@/app/chat/FeedCard.component';
 import { CustomAlert } from '@/utils/alert';
 
 interface CommunityEvent {
@@ -31,7 +31,9 @@ interface CommunityFeed {
   author: { _id: string; username: string; profilePhoto?: string };
   content?: string;
   images?: string[];
-  likes: Array<{ _id: string; username: string; profilePhoto?: string }>;
+  likes: { _id: string; username: string; profilePhoto?: string }[];
+  comments?: any[];
+  isFavorited?: boolean;
   createdAt: string;
 }
 
@@ -68,14 +70,18 @@ export default function CommunityScreen() {
     if (!id) return;
     setIsLoading(true);
     try {
-      // Assuming these API endpoints exist or will be implemented
-      const [commResponse, eventsResponse] = await Promise.all([
-        communityAPI.getCommunity(id as string),
-        communityAPI.getEvents ? communityAPI.getEvents(id as string) : Promise.resolve({ data: [] })
-      ]);
-      
+      const commResponse = await communityAPI.getCommunity(id as string);
       setCommunity(commResponse.data);
-      setEvents(eventsResponse.data || []);
+      try {
+        const eventsResponse = communityAPI.getEvents
+          ? await communityAPI.getEvents(id as string)
+          : { data: [] };
+        setEvents(eventsResponse.data || []);
+      } catch (eventErr) {
+        // Events are non-critical; don't block the community from rendering
+        console.warn('Could not load community events', eventErr);
+        setEvents([]);
+      }
     } catch (error) {
       Alert.alert('Error', 'Could not load community details');
     } finally {
@@ -195,7 +201,29 @@ export default function CommunityScreen() {
     }
   };
 
-  const handleDeleteFeed = (feed: CommunityFeed) => {
+  const handleLikeFeed = async (feedId: string) => {
+    const feed = feeds.find(f => f._id === feedId);
+    if (!feed) return;
+    const isLiked = feed.likes.some(l => String(l._id) === String(user?._id));
+    setFeeds(prev => prev.map(f => {
+      if (f._id !== feedId) return f;
+      return {
+        ...f,
+        likes: isLiked
+          ? f.likes.filter(l => String(l._id) !== String(user?._id))
+          : [...f.likes, { _id: user!._id, username: user!.username, profilePhoto: user!.profilePhoto }],
+      };
+    }));
+    try {
+      await communityAPI.likeFeed(id as string, feedId);
+    } catch (error) {
+      fetchFeed(1);
+    }
+  };
+
+  const handleDeleteFeed = (feedId: string) => {
+    const feed = feeds.find(f => f._id === feedId);
+    if (!feed) return;
     const isAuthor = String(feed.author._id) === String(user?._id);
     // Members can delete their own feed; admin can delete any feed
     if (!isAuthor && !isAdmin) return;
@@ -205,8 +233,8 @@ export default function CommunityScreen() {
       'Are you sure you want to delete this feed post?',
       async () => {
         try {
-          await communityAPI.deleteFeed(id as string, feed._id);
-          setFeeds(prev => prev.filter(f => f._id !== feed._id));
+          await communityAPI.deleteFeed(id as string, feedId);
+          setFeeds(prev => prev.filter(f => f._id !== feedId));
         } catch (error) {
           CustomAlert.error('Error', 'Failed to delete feed post.');
         }
@@ -214,77 +242,46 @@ export default function CommunityScreen() {
     );
   };
 
-  const handleToggleLike = async (feed: CommunityFeed) => {
-    if (!canPostFeed) return;
-    const optimisticLiked = !feed.likes.some(l => String(l._id) === String(user?._id));
-    setFeeds(prev => prev.map(f => {
-      if (f._id !== feed._id) return f;
-      const likes = optimisticLiked
-        ? [...f.likes, { _id: user!._id, username: user!.username, profilePhoto: user!.profilePhoto }]
-        : f.likes.filter(l => String(l._id) !== String(user?._id));
-      return { ...f, likes };
-    }));
+  const handleReportFeed = async (feedId: string) => {
     try {
-      await communityAPI.likeFeed(id as string, feed._id);
-    } catch (error) {
-      fetchFeed(1);
+      await communityAPI.reportFeed(id as string, feedId);
+      CustomAlert.success('Reported', 'Thanks for letting us know. We will review this post.');
+    } catch {
+      CustomAlert.error('Error', 'Failed to report post');
     }
   };
 
-  const renderFeedItem = ({ item }: { item: CommunityFeed }) => {
-    const isAuthor = String(item.author._id) === String(user?._id);
-    const liked = item.likes.some(l => String(l._id) === String(user?._id));
-    return (
-      <View style={[styles.feedCard, { backgroundColor: surfaceColor, borderColor }]}>
-        <View style={styles.feedHeader}>
-          {item.author.profilePhoto ? (
-            <Image source={{ uri: getImageUrl(item.author.profilePhoto) }} style={styles.feedAvatar} />
-          ) : (
-            <View style={[styles.feedAvatarPlaceholder, { backgroundColor: primaryColor + '20' }]}>
-              <IconSymbol name="person.fill" size={16} color={primaryColor} />
-            </View>
-          )}
-          <View style={styles.feedAuthorInfo}>
-            <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{item.author.username}</ThemedText>
-            <ThemedText type="caption" style={{ color: lightTextColor }}>{getRelativeTime(item.createdAt)}</ThemedText>
-          </View>
-          {(isAuthor || isAdmin) && (
-            <TouchableOpacity onPress={() => handleDeleteFeed(item)} style={styles.feedDeleteButton}>
-              <IconSymbol name="trash" size={18} color={lightTextColor} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {item.content ? (
-          <ThemedText type="body1" style={{ color: textColor, marginBottom: item.images?.length ? spacing.md : 0 }}>
-            {item.content}
-          </ThemedText>
-        ) : null}
-
-        {item.images && item.images.length > 0 && (
-          <View style={[
-            styles.feedImages,
-            item.images.length === 1 ? styles.feedImagesSingle : {},
-          ]}>
-            {item.images.map((img, idx) => (
-              <Image
-                key={idx}
-                source={{ uri: getImageUrl(img) }}
-                style={item.images!.length === 1 ? styles.feedImageSingle : styles.feedImage}
-              />
-            ))}
-          </View>
-        )}
-
-        <TouchableOpacity style={styles.feedLikeRow} onPress={() => handleToggleLike(item)}>
-          <IconSymbol name={liked ? 'heart.fill' : 'heart'} size={18} color={liked ? '#FF3B30' : lightTextColor} />
-          <ThemedText type="caption" style={{ color: lightTextColor, marginLeft: spacing.xs }}>
-            {item.likes.length} {item.likes.length === 1 ? 'Like' : 'Likes'}
-          </ThemedText>
-        </TouchableOpacity>
-      </View>
-    );
+  const handleUpdateFeed = (updated: any) => {
+    setFeeds(prev => prev.map(f => (f._id === updated._id ? { ...f, ...updated } : f)));
   };
+
+  const handleFavoriteFeed = async (feedId: string) => {
+    try {
+      const feed = feeds.find(f => f._id === feedId);
+      const isFav = !!feed?.isFavorited;
+      if (isFav) {
+        await communityAPI.unfavoriteFeed(id as string, feedId);
+      } else {
+        await communityAPI.favoriteFeed(id as string, feedId);
+      }
+      setFeeds(prev => prev.map(f => (f._id === feedId ? { ...f, isFavorited: !isFav } : f)));
+    } catch {
+      CustomAlert.error('Error', 'Failed to update favorite');
+    }
+  };
+
+  const renderFeedItem = ({ item }: { item: CommunityFeed }) => (
+    <FeedCard
+      post={item as any}
+      currentUserId={user?._id || ''}
+      communityId={id as string}
+      onLike={handleLikeFeed}
+      onDelete={handleDeleteFeed}
+      onReport={handleReportFeed}
+      onUpdate={handleUpdateFeed}
+      onFavorite={handleFavoriteFeed}
+    />
+  );
 
 
   const initiateAddToCalendar = async (event: CommunityEvent) => {

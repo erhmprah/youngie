@@ -47,8 +47,8 @@ export default function PrivacySettingsScreen() {
         setIsPrivate(value); // Optimistic update
         setIsSaving(true);
         try {
-            await userAPI.updateProfile(user._id, { isPrivate: value });
-            updateUser({ isPrivate: value });
+            await userAPI.updateProfile(user._id, { isPrivate: value } as any);
+            updateUser({ isPrivate: value } as any);
         } catch (error) {
             setIsPrivate(!value); // Revert
             Alert.alert('Error', 'Failed to update settings');

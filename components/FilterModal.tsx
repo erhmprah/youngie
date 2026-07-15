@@ -188,18 +188,18 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
       if (locationData) {
         setLatitude(locationData.coords.latitude);
         setLongitude(locationData.coords.longitude);
-      }
 
-      let address = await Location.reverseGeocodeAsync({
-        latitude: locationData.coords.latitude,
-        longitude: locationData.coords.longitude,
-      });
-      if (address.length > 0) {
-        const addr = address[0];
-        const loc = `${addr.city || addr.region || ''}, ${addr.country || ''}`.trim();
-        setLocation(loc || 'Unknown Location');
-      } else {
-        setLocation('Unknown Location');
+        let address = await Location.reverseGeocodeAsync({
+          latitude: locationData.coords.latitude,
+          longitude: locationData.coords.longitude,
+        });
+        if (address.length > 0) {
+          const addr = address[0];
+          const loc = `${addr.city || addr.region || ''}, ${addr.country || ''}`.trim();
+          setLocation(loc || 'Unknown Location');
+        } else {
+          setLocation('Unknown Location');
+        }
       }
     } catch (error: any) {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -517,7 +517,6 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: borderRadius.md,
     zIndex: 1000,
     marginTop: -2,
-    elevation: 10,
     ...shadows.md,
   },
   suggestionItem: {

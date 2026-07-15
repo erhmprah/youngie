@@ -7,6 +7,8 @@ const AlbumPhoto = require('../models/AlbumPhoto');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const { parsePaginationParams, buildPaginatedResponse } = require('../utils/pagination');
+const { upsertAggregatedNotification, decrementAggregatedNotification } = require('../utils/notification-aggregator');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
 const pushService = require('../services/push-notification');
 
@@ -28,10 +30,62 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ storage, fileFilter });
+const ANONYMOUS_AUTHOR = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null, avatar: null };
+
+// Fully masks identifying info for anonymous posts so that the author,
+// tagged users, likers, reactors and commenters cannot be revealed in the
+// anonymous feed, likes modal or real-time socket updates.
+function maskAnonymousPost(post) {
+  const p = typeof post.toObject === 'function' ? post.toObject() : { ...post };
+
+  if (!p.isAnonymous) return p;
+
+  // Hide the post author
+  p.author = { ...ANONYMOUS_AUTHOR };
+
+  // Hide users tagged in an anonymous post
+  if (p.tags) p.tags = [];
+
+  // Mask likers / reactors (keep counts, hide identity)
+  if (Array.isArray(p.likes)) {
+    p.likes = p.likes.map(() => ({ ...ANONYMOUS_AUTHOR }));
+  }
+  if (Array.isArray(p.reactions)) {
+    p.reactions = p.reactions.map(r => ({
+      ...r,
+      user: { ...ANONYMOUS_AUTHOR },
+    }));
+  }
+
+  // Mask all comment authors (and their tags/reactions) on anonymous posts
+  if (Array.isArray(p.comments)) {
+    p.comments = p.comments.map(c => {
+      const comment = { ...c };
+      comment.author = { ...ANONYMOUS_AUTHOR };
+      if (comment.tags) comment.tags = [];
+      if (Array.isArray(comment.reactions)) {
+        comment.reactions = comment.reactions.map(r => ({
+          ...r,
+          user: { _id: 'anonymous', username: 'Anonymous' },
+        }));
+      }
+      return comment;
+    });
+  }
+
+  return p;
+}
+
+const uploadImage = multer({ storage, fileFilter, limits: { fileSize: 20 * 1024 * 1024 } });
+const uploadVideo = multer({ storage, fileFilter, limits: { fileSize: 100 * 1024 * 1024 } });
+
+const withUploadLimit = (uploadMiddleware, limitMB) => (req, res, next) => {
+    req.uploadLimitMB = limitMB;
+    uploadMiddleware(req, res, next);
+};
 
 // Upload post image
-router.post('/upload-image', auth, upload.single('image'), async (req, res) => {
+router.post('/upload-image', auth, withUploadLimit(uploadImage.single('image'), 20), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ msg: 'No file uploaded' });
@@ -110,7 +164,7 @@ router.post('/upload-image-base64', auth, async (req, res) => {
 });
 
 // Upload post video
-router.post('/upload-video', auth, upload.single('video'), async (req, res) => {
+router.post('/upload-video', auth, withUploadLimit(uploadVideo.single('video'), 100), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ msg: 'No file uploaded' });
@@ -284,10 +338,8 @@ router.get('/', auth, async (req, res) => {
     const posts = await Post.find(query)
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
-      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .populate('tags', 'username')
       .populate('comments.author', 'username avatar profilePhoto')
-      .populate('comments.reactions.user', 'username')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -296,18 +348,7 @@ router.get('/', auth, async (req, res) => {
 
     // Mask anonymous posts/comments
     const maskedPosts = posts.map(doc => {
-      const post = doc.toObject();
-      if (post.isAnonymous) {
-        post.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-      }
-      if (post.comments) {
-        post.comments = post.comments.map(comment => {
-          if (comment.isAnonymous) {
-            comment.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-          }
-          return comment;
-        });
-      }
+      const post = maskAnonymousPost(doc);
       post.isFavorited = userFavorites.includes(post._id.toString());
       return post;
     });
@@ -342,7 +383,6 @@ router.get('/user/:userId', auth, async (req, res) => {
     const posts = await Post.find({ author: req.params.userId })
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
-      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .populate('tags', 'username')
       .populate('comments.author', 'username avatar profilePhoto')
       .sort({ createdAt: -1 })
@@ -352,7 +392,8 @@ router.get('/user/:userId', auth, async (req, res) => {
     const totalPosts = await Post.countDocuments({ author: req.params.userId });
 
     const postsWithFav = posts.map(doc => {
-      const post = doc.toObject();
+      const isOwnProfile = doc.author && doc.author.toString() === req.userId;
+      const post = isOwnProfile ? doc.toObject() : maskAnonymousPost(doc);
       post.isFavorited = userFavorites.includes(post._id.toString());
       return post;
     });
@@ -432,16 +473,16 @@ router.post('/', auth, async (req, res) => {
 
       tags.filter(taggedUserId => taggedUserId !== req.userId)
         .forEach(taggedUserId => {
-          pushService.sendTagNotification(taggedUserId, null, 'post', req.userId, post._id).catch(() => {});
+          pushService.sendTagNotification(taggedUserId, null, 'post', req.userId, post._id, post.isAnonymous).catch(() => {});
         });
     }
 
     // Emit socket event so followers' feeds update in real time
     if (req.io) {
-      req.io.emit('post:created', post);
+      req.io.emit('post:created', maskAnonymousPost(post));
     }
 
-    res.json(post);
+    res.json(maskAnonymousPost(post));
   } catch (error) {
     console.error('❌ Create Post Error:', error);
     res.status(500).json({ error: error.message });
@@ -463,33 +504,24 @@ router.get('/favorites', auth, async (req, res) => {
     }
     const favoriteIds = favorites.filter(id => id && mongoose.Types.ObjectId.isValid(id));
 
-    const posts = await Post.find({ _id: { $in: favoriteIds } })
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = favoriteIds.length;
+    const pagedFavoriteIds = favoriteIds.slice(skip, skip + limit);
+
+    const posts = await Post.find({ _id: { $in: pagedFavoriteIds } })
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
-      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .populate('tags', 'username')
       .populate('comments.author', 'username avatar profilePhoto')
-      .populate('comments.reactions.user', 'username')
       .sort({ createdAt: -1 });
 
     // Mask anonymous posts
     const maskedPosts = posts.map(doc => {
-      const post = doc.toObject();
-      if (post.isAnonymous) {
-        post.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-      }
-      if (post.comments) {
-        post.comments = post.comments.map(comment => {
-          if (comment.isAnonymous) {
-            comment.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-          }
-          return comment;
-        });
-      }
+      const post = maskAnonymousPost(doc);
       post.isFavorited = true; // By definition, these are favorited
       return post;
     });
-    res.json(maskedPosts);
+    res.json(buildPaginatedResponse(maskedPosts, total, { page, limit, skip, hasNextPage: skip + maskedPosts.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     console.error('Error fetching favorites:', error);
     res.status(500).json({ error: error.message });
@@ -568,13 +600,17 @@ router.get('/trending/hot', auth, async (req, res) => {
       queryConditions.push({ isPublic: true });
     }
 
-    const posts = await Post.find({ $or: queryConditions })
+    const query = { $or: queryConditions };
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await Post.countDocuments(query);
+
+    const posts = await Post.find(query)
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
       .populate('tags', 'username')
-      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .sort({ likes: -1, createdAt: -1 })
-      .limit(20);
+      .skip(skip)
+      .limit(limit);
 
     const maskedPosts = posts.map(doc => {
       const post = doc.toObject();
@@ -582,7 +618,7 @@ router.get('/trending/hot', auth, async (req, res) => {
       return post;
     });
 
-    res.json(maskedPosts);
+    res.json(buildPaginatedResponse(maskedPosts, total, { page, limit, skip, hasNextPage: skip + maskedPosts.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -624,13 +660,16 @@ router.get('/search', auth, async (req, res) => {
       query.$or = postConditions;
     }
 
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await Post.countDocuments(query);
+
     const posts = await Post.find(query)
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
-      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .populate('tags', 'username')
       .sort({ createdAt: -1 })
-      .limit(20);
+      .skip(skip)
+      .limit(limit);
 
     const maskedPosts = posts.map(doc => {
       const post = doc.toObject();
@@ -638,7 +677,7 @@ router.get('/search', auth, async (req, res) => {
       return post;
     });
 
-    res.json(maskedPosts);
+    res.json(buildPaginatedResponse(maskedPosts, total, { page, limit, skip, hasNextPage: skip + maskedPosts.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     console.error('Error searching posts:', error);
     res.status(500).json({ error: error.message });
@@ -654,7 +693,6 @@ router.get('/:postId', auth, async (req, res) => {
     const post = await Post.findById(req.params.postId)
       .populate('author', 'username avatar profilePhoto bio')
       .populate('likes', '_id username avatar profilePhoto')
-      .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .populate('tags', 'username')
       .populate('comments.author', 'username avatar profilePhoto');
 
@@ -662,18 +700,7 @@ router.get('/:postId', auth, async (req, res) => {
       return res.status(404).json({ msg: 'Post not found' });
     }
 
-    const postObj = post.toObject();
-    if (postObj.isAnonymous) {
-      postObj.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-    }
-    if (postObj.comments) {
-      postObj.comments = postObj.comments.map(comment => {
-        if (comment.isAnonymous) {
-          comment.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-        }
-        return comment;
-      });
-    }
+    const postObj = maskAnonymousPost(post);
     postObj.isFavorited = userFavorites.includes(postObj._id.toString());
 
     res.json(postObj);
@@ -707,8 +734,13 @@ router.get('/:postId/likes', auth, async (req, res) => {
 
     const totalLikes = countResult.length > 0 ? countResult[0].count : 0;
 
+    // For anonymous posts, hide the identities of users who liked
+    const likes = post.isAnonymous
+      ? post.likes.map(() => ({ _id: 'anonymous', username: 'Anonymous', profilePhoto: null, avatar: null }))
+      : post.likes;
+
     res.json({
-      likes: post.likes,
+      likes,
       total: totalLikes,
       page,
       totalPages: Math.ceil(totalLikes / limit),
@@ -734,72 +766,45 @@ router.post('/:postId/like', auth, async (req, res) => {
       // Like the post
       post.likes.push(new mongoose.Types.ObjectId(userId));
 
-      // Create notifications for post author and tagged users
-      const notificationPromises = [];
-
-      // Notify post author if not liking own post
+      // Create aggregated notifications for post author and tagged users.
+      // Each (recipient, post, type) collapses into a single notification; a
+      // push is only fired for the first like on a post to avoid flooding.
       if (post.author.toString() !== userId) {
-        const existingAuthor = await Notification.findOne({
+        const { isNew } = await upsertAggregatedNotification({
           recipient: post.author,
           sender: userId,
           type: 'like',
+          message: 'liked your post',
           relatedPost: post._id,
         });
-        if (!existingAuthor) {
-          notificationPromises.push(Notification.create({
-            recipient: post.author,
-            sender: userId,
-            type: 'like',
-            message: 'liked your post',
-            relatedPost: post._id,
-          }));
+        if (isNew) {
+          pushService.sendLikeNotification(post.author, null, post._id, userId, post.isAnonymous).catch(() => {});
         }
-      }
-
-      // Notify tagged users if they exist and aren't the liker
-      if (post.tags && Array.isArray(post.tags) && post.tags.length > 0) {
-        const taggedNotifications = post.tags
-          .filter(taggedUserId => taggedUserId.toString() !== userId)
-          .map(taggedUserId => {
-            return Notification.findOne({
-              recipient: taggedUserId,
-              sender: userId,
-              type: 'like',
-              relatedPost: post._id,
-            }).then(existing => {
-              if (!existing) {
-                return Notification.create({
-                  recipient: taggedUserId,
-                  sender: userId,
-                  type: 'like',
-                  message: 'liked a post you\'re tagged in',
-                  relatedPost: post._id,
-                });
-              }
-            });
-          });
-        notificationPromises.push(...taggedNotifications);
-      }
-
-      await Promise.all(notificationPromises);
-
-      if (post.author.toString() !== userId) {
-        pushService.sendLikeNotification(post.author, null, post._id, userId).catch(() => {});
       }
 
       if (post.tags && Array.isArray(post.tags) && post.tags.length > 0) {
         post.tags
           .filter(taggedUserId => taggedUserId.toString() !== userId)
           .forEach(taggedUserId => {
-            pushService.sendLikeNotification(taggedUserId, null, post._id, userId).catch(() => {});
+            upsertAggregatedNotification({
+              recipient: taggedUserId,
+              sender: userId,
+              type: 'like',
+              message: 'liked a post you\'re tagged in',
+              relatedPost: post._id,
+            }).then(({ isNew }) => {
+              if (isNew) {
+                pushService.sendLikeNotification(taggedUserId, null, post._id, userId, post.isAnonymous).catch(() => {});
+              }
+            }).catch(() => {});
           });
       }
     } else {
       // Unlike the post
       post.likes.splice(likeIndex, 1);
-      // Remove the like notification if it exists
+      // Decrement the aggregated like notification (removes it at count 0)
       try {
-        await Notification.findOneAndDelete({
+        await decrementAggregatedNotification({
           recipient: post.author,
           sender: userId,
           type: 'like',
@@ -815,67 +820,14 @@ router.post('/:postId/like', auth, async (req, res) => {
     await post.populate('author', 'username avatar profilePhoto bio');
     await post.populate('likes', '_id username avatar profilePhoto');
     await post.populate('tags', 'username');
-    await post.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
 
     // Emit socket event for real-time updates
     if (req.io) {
-      req.io.emit('post:updated', post);
+      req.io.emit('post:updated', maskAnonymousPost(post));
     }
 
     const liked = post.likes.findIndex(id => id.toString() === userId) !== -1;
-    res.json({ post, liked, likesCount: post.likes.length });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// React to a post
-router.post('/:postId/react', auth, async (req, res) => {
-  try {
-    const { reactionType = 'like' } = req.body;
-    const post = await Post.findById(req.params.postId);
-    
-    if (!post) {
-      return res.status(404).json({ msg: 'Post not found' });
-    }
-
-    const userId = req.userId;
-
-    // Remove any existing reaction from this user
-    post.reactions = post.reactions.filter(r => r.user.toString() !== userId);
-
-    // Add new reaction if not removing
-    if (reactionType !== 'remove') {
-      post.reactions.push({
-        user: userId,
-        type: reactionType,
-        createdAt: new Date()
-      });
-
-      // Create notification if not reacting to own post
-      if (post.author.toString() !== userId) {
-        await Notification.create({
-          recipient: post.author,
-          sender: userId,
-          type: 'react_post',
-          message: `reacted to your post with ${reactionType}`,
-          relatedPost: post._id,
-        });
-        pushService.sendReactionNotification(post.author, null, reactionType, 'post', userId, post._id).catch(() => {});
-      }
-    }
-
-    await post.save();
-    await post.populate('author', 'username avatar profilePhoto bio');
-    await post.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
-    await post.populate('likes', '_id username avatar profilePhoto'); // Keep likes populated for backward compat
-
-    // Emit socket event for real-time updates
-    if (req.io) {
-      req.io.emit('post:updated', post);
-    }
-
-    res.json(post);
+    res.json({ post: maskAnonymousPost(post), liked, likesCount: post.likes.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -915,34 +867,40 @@ router.post('/:postId/comment', auth, async (req, res) => {
 
     post.comments.push(newComment);
 
-    // Create notifications for post author, post tagged users, and comment tagged users
+    // Create notifications for post author, post tagged users, and comment tagged users.
+    // Comment notifications for a post are aggregated (one notification per
+    // recipient+post); a push is only sent for the first comment on a post.
     const commentNotificationPromises = [];
+    const createdNotifications = [];
 
     // Notify post author if not commenting on own post
     if (post.author.toString() !== req.userId) {
-      commentNotificationPromises.push(Notification.create({
-        recipient: post.author,
-        sender: req.userId,
-        type: 'comment',
-        message: 'commented on your post',
-        relatedPost: post._id,
-      }));
+      commentNotificationPromises.push(
+        upsertAggregatedNotification({
+          recipient: post.author,
+          sender: req.userId,
+          type: 'comment',
+          message: 'commented on your post',
+          relatedPost: post._id,
+        }).then(result => { createdNotifications.push(result); return result; })
+      );
     }
 
     // Notify users tagged in the post if they exist and aren't the commenter
     if (post.tags && Array.isArray(post.tags) && post.tags.length > 0) {
-      const postTaggedNotifications = post.tags
+      post.tags
         .filter(taggedUserId => taggedUserId.toString() !== req.userId)
-        .map(taggedUserId => {
-          return Notification.create({
-            recipient: taggedUserId,
-            sender: req.userId,
-            type: 'comment',
-            message: 'commented on a post you\'re tagged in',
-            relatedPost: post._id,
-          });
+        .forEach(taggedUserId => {
+          commentNotificationPromises.push(
+            upsertAggregatedNotification({
+              recipient: taggedUserId,
+              sender: req.userId,
+              type: 'comment',
+              message: 'commented on a post you\'re tagged in',
+              relatedPost: post._id,
+            }).then(result => { createdNotifications.push(result); return result; })
+          );
         });
-      commentNotificationPromises.push(...postTaggedNotifications);
     }
 
     // Notify users tagged in the comment if they exist and aren't the commenter
@@ -975,11 +933,11 @@ router.post('/:postId/comment', auth, async (req, res) => {
       }
     }
 
-    const createdNotifications = await Promise.all(commentNotificationPromises);
+    await Promise.all(commentNotificationPromises);
 
-    // Emit socket events for real-time notifications
+    // Emit socket events for real-time notifications (only newly created ones)
     if (req.io && createdNotifications.length > 0) {
-      createdNotifications.forEach(notification => {
+      createdNotifications.forEach(({ notification }) => {
         if (notification && notification.recipient) {
           req.io.to(notification.recipient.toString()).emit('notification:new', notification);
         }
@@ -990,31 +948,29 @@ router.post('/:postId/comment', auth, async (req, res) => {
     await post.save();
     console.log('✓ Post saved, populating...');
 
-    // Send push notifications for comment-related events
-    if (post.author.toString() !== req.userId) {
-      pushService.sendCommentNotification(post.author, null, post._id, null, req.userId).catch(() => {});
-    }
-
-    if (post.tags && Array.isArray(post.tags) && post.tags.length > 0) {
-      post.tags
-        .filter(taggedUserId => taggedUserId.toString() !== req.userId)
-        .forEach(taggedUserId => {
-          pushService.sendCommentNotification(taggedUserId, null, post._id, null, req.userId).catch(() => {});
-        });
-    }
+    // Send push notifications only for the first comment on a post (isNew),
+    // so a popular post doesn't flood the author/tagged users with pushes.
+    // Tag-in-comment and reply notifications below remain individual.
+    createdNotifications
+      .filter(r => r.isNew)
+      .forEach(({ notification }) => {
+        pushService.sendCommentNotification(
+          notification.recipient, null, post._id, null, req.userId, post.isAnonymous
+        ).catch(() => {});
+      });
 
     if (tags && Array.isArray(tags) && tags.length > 0) {
       tags
         .filter(taggedUserId => taggedUserId.toString() !== req.userId)
         .forEach(taggedUserId => {
-          pushService.sendTagNotification(taggedUserId, null, 'comment', req.userId, post._id).catch(() => {});
+          pushService.sendTagNotification(taggedUserId, null, 'comment', req.userId, post._id, post.isAnonymous).catch(() => {});
         });
     }
 
     if (parent) {
       const parentComment = post.comments.id(parent);
       if (parentComment && parentComment.author.toString() !== req.userId) {
-        pushService.sendCommentReplyNotification(parentComment.author, null, post._id, parent, null, req.userId).catch(() => {});
+        pushService.sendCommentReplyNotification(parentComment.author, null, post._id, parent, null, req.userId, post.isAnonymous).catch(() => {});
       }
     }
 
@@ -1022,81 +978,17 @@ router.post('/:postId/comment', auth, async (req, res) => {
     await post.populate('comments.author', 'username avatar profilePhoto');
     await post.populate('likes', '_id username avatar profilePhoto');
     await post.populate('tags', 'username');
-    await post.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
-    await post.populate('comments.reactions.user', 'username');
 
     // Emit socket event for real-time updates
     if (req.io) {
-      req.io.emit('post:updated', post);
+      req.io.emit('post:updated', maskAnonymousPost(post));
     }
 
     console.log('✓ Comment added successfully');
 
-    const postObj = post.toObject();
-    if (postObj.isAnonymous) {
-      postObj.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-    }
-    if (postObj.comments) {
-      postObj.comments = postObj.comments.map(comment => {
-        if (comment.isAnonymous) {
-          comment.author = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null };
-        }
-        return comment;
-      });
-    }
-    res.json(postObj);
+    res.json(maskAnonymousPost(post));
   } catch (error) {
     console.error('❌ Add Comment Error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// React to a comment
-router.post('/:postId/comment/:commentId/react', auth, async (req, res) => {
-  try {
-    const { reactionType = 'like' } = req.body;
-
-    const post = await Post.findById(req.params.postId);
-    if (!post) {
-      return res.status(404).json({ msg: 'Post not found' });
-    }
-
-    const comment = post.comments.id(req.params.commentId);
-    if (!comment) {
-      return res.status(404).json({ msg: 'Comment not found' });
-    }
-
-    const userId = req.userId;
-
-    // Remove any existing reaction from this user
-    comment.reactions = comment.reactions.filter(r => r.user.toString() !== userId);
-
-    // Add new reaction if not removing
-    if (reactionType !== 'remove') {
-      comment.reactions.push({
-        user: userId,
-        type: reactionType,
-      });
-
-      // Create notification if not reacting to own comment
-      if (comment.author.toString() !== userId) {
-        await Notification.create({
-          recipient: comment.author,
-          sender: userId,
-          type: 'react_comment',
-          message: `reacted to your comment with ${reactionType}`,
-          relatedPost: post._id,
-        });
-        pushService.sendReactionNotification(comment.author, null, reactionType, 'comment', userId, post._id, null, req.params.commentId).catch(() => {});
-      }
-    }
-
-    await post.save();
-    await post.populate('comments.author', 'username avatar profilePhoto');
-    await post.populate('comments.reactions.user', 'username');
-
-    res.json(post);
-  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -1216,15 +1108,8 @@ router.delete('/:postId/comment/:commentId', auth, async (req, res) => {
     await post.populate('comments.author', 'username avatar profilePhoto');
     await post.populate('likes', '_id username avatar profilePhoto');
     await post.populate('tags', 'username');
-    await post.populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false });
-    await post.populate('comments.reactions.user', 'username');
 
-    // Emit socket event for real-time updates
-    if (req.io) {
-      req.io.emit('post:updated', post);
-    }
-
-    res.json(post);
+    res.json(maskAnonymousPost(post));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1443,8 +1328,15 @@ router.post('/album', auth, async (req, res) => {
 // Get user album
 router.get('/album/user/:userId', auth, async (req, res) => {
   try {
-    const photos = await AlbumPhoto.find({ user: req.params.userId }).sort({ createdAt: -1 });
-    res.json(photos);
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await AlbumPhoto.countDocuments({ user: req.params.userId });
+
+    const photos = await AlbumPhoto.find({ user: req.params.userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json(buildPaginatedResponse(photos, total, { page, limit, skip, hasNextPage: skip + photos.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1504,7 +1396,7 @@ router.post('/:postId/vote-poll', auth, async (req, res) => {
     await post.populate('tags', 'username');
     await post.populate('comments.author', 'username avatar profilePhoto');
 
-    res.json(post);
+    res.json(maskAnonymousPost(post));
   } catch (error) {
     console.error('Error voting on poll:', error);
     res.status(500).json({ error: error.message });

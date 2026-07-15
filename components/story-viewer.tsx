@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 
 interface User {
     _id: string;
+    id: string;
     username: string;
     profilePhoto?: string;
 }
@@ -240,7 +241,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         setShowReactions(false);
         try {
             // Check if user already has this reaction
-            const hasSameReaction = story.reactions?.some(r => r.user._id === currentUserId && r.type === type);
+            const hasSameReaction = story.reactions?.some(r => r.user._id === (user?._id || '') && r.type === type);
             
             if (hasSameReaction) {
                 // Remove reaction if user is clicking the same reaction type again

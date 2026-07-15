@@ -23,6 +23,41 @@ const CommunityFeedSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   }],
+  reports: [{
+    reporter: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    reason: {
+      type: String,
+      default: '',
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  }],
+  comments: [{
+    author: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    parent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CommunityFeed.comments',
+      default: null,
+    },
+    content: {
+      type: String,
+      trim: true,
+      required: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  }],
   createdAt: {
     type: Date,
     default: Date.now,

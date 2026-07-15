@@ -294,7 +294,7 @@ function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?
   }
 
   // Build alert buttons
-  const buttons = [];
+  const buttons: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }> = [];
 
   // Add retry button for network errors
   if (isNetworkError && onRetry) {
@@ -526,7 +526,7 @@ export const userAPI = {
     }
     return response.json();
   },
-  searchUsers: (query: string) => api.get('/users/search/query', { params: { q: query } }),
+  searchUsers: (query: string, page?: number, limit?: number) => api.get('/users/search/query', { params: { q: query, page, limit } }),
   getNearbyUsers: (filters?: any) => api.get('/users/nearby/all', { params: filters }),
   sendFriendRequest: (userId: string, targetUserId: string) =>
     api.post(`/users/${userId}/friend-request/${targetUserId}`),
@@ -540,7 +540,7 @@ export const userAPI = {
     api.post(`/users/${userId}/friends/${friendId}`),
   unfriend: (userId: string, friendId: string) =>
     api.delete(`/users/${userId}/friends/${friendId}`),
-  getAlbum: (userId: string) => api.get(`/posts/album/user/${userId}`),
+  getAlbum: (userId: string, page?: number, limit?: number) => api.get(`/posts/album/user/${userId}`, { params: { page, limit } }),
   uploadAlbumPhoto: async (userId: string, data: { imageData: string; filename: string }) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/posts/album`, {
@@ -576,7 +576,7 @@ export const userAPI = {
 };
 
 export const notificationAPI = {
-  getNotifications: () => api.get('/notifications'),
+  getNotifications: (page?: number, limit?: number) => api.get('/notifications', { params: { page, limit } }),
   markAsRead: (notificationId: string) => api.put(`/notifications/${notificationId}/read`),
   markAllAsRead: () => api.put('/notifications/read-all'),
   clearAll: () => api.delete('/notifications'),
@@ -591,8 +591,8 @@ export const notificationAPI = {
 };
 
 export const chatAPI = {
-  getUserChats: (userId: string) => api.get(`/chats/user/${userId}`),
-  getChat: (chatId: string) => api.get(`/chats/${chatId}`),
+  getUserChats: (userId: string, page?: number, limit?: number) => api.get(`/chats/user/${userId}`, { params: { page, limit } }),
+  getChat: (chatId: string, page?: number, limit?: number) => api.get(`/chats/${chatId}`, { params: { page, limit } }),
   createChat: (data: any) => api.post('/chats', data),
   sendMessage: (chatId: string, data: { content?: string; isAnonymous?: boolean; replyTo?: string; attachment?: any; pollOptions?: { text: string }[] }) =>
     api.post(`/chats/${chatId}/messages`, data),
@@ -651,7 +651,7 @@ export const postAPI = {
   getPosts: (isAnonymous?: boolean, page?: number, limit?: number) => api.get('/posts', { params: { isAnonymous, page, limit } }),
   getUserPosts: (userId: string, page?: number, limit?: number) => api.get(`/posts/user/${userId}`, { params: { page, limit } }),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
-  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string }) =>
+  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.post('/posts', data),
   updatePost: (postId: string, data: { content?: string; image?: string; video?: string }) =>
     api.put(`/posts/${postId}`, data),
@@ -663,20 +663,16 @@ export const postAPI = {
     api.post(`/posts/${postId}/like`, {}),
   unlikePost: (postId: string) =>
     api.post(`/posts/${postId}/like`, {}),
-  reactPost: (postId: string, data: { reactionType: string }) =>
-    api.post(`/posts/${postId}/react`, data),
   addComment: (postId: string, data: { content?: string; parent?: string; isAnonymous?: boolean; tags?: string[] }) =>
     api.post(`/posts/${postId}/comment`, data),
   likeComment: (postId: string, commentId: string) =>
     api.post(`/posts/${postId}/comment/${commentId}/like`, {}),
-  reactComment: (postId: string, commentId: string, data: { reactionType: string }) =>
-    api.post(`/posts/${postId}/comment/${commentId}/react`, data),
   deleteComment: (postId: string, commentId: string) =>
     api.delete(`/posts/${postId}/comment/${commentId}`),
-  getTrendingPosts: () => api.get('/posts/trending/hot'),
+  getTrendingPosts: (page?: number, limit?: number) => api.get('/posts/trending/hot', { params: { page, limit } }),
   favoritePost: (postId: string) => api.post(`/posts/${postId}/favorite`, {}),
   unfavoritePost: (postId: string) => api.delete(`/posts/${postId}/favorite`),
-  getFavoritePosts: () => api.get('/posts/favorites'),
+  getFavoritePosts: (page?: number, limit?: number) => api.get('/posts/favorites', { params: { page, limit } }),
   sharePost: (postId: string) => api.post(`/posts/${postId}/share`, {}),
   uploadPostImage: async (formData: FormData) => {
     const token = await AsyncStorage.getItem('authToken');
@@ -737,12 +733,12 @@ export const postAPI = {
     return response.json();
   },
 
-  searchPosts: (query: string) => api.get('/posts/search', { params: { q: query } }),
+  searchPosts: (query: string, page?: number, limit?: number) => api.get('/posts/search', { params: { q: query, page, limit } }),
   votePoll: (postId: string, optionIndex: number) => api.post(`/posts/${postId}/vote-poll`, { optionIndex }),
 };
 
 export const storyAPI = {
-  getStories: () => api.get('/stories'),
+  getStories: (page?: number, limit?: number) => api.get('/stories', { params: { page, limit } }),
   getUserStories: (userId: string) => api.get(`/stories/user/${userId}`),
   getStory: (storyId: string) => api.get(`/stories/${storyId}`),
   createStory: (data: { content?: string; image?: string; video?: string; tags?: string[]; pollOptions?: { text: string }[] }) =>
@@ -776,8 +772,10 @@ export const storyAPI = {
 };
 
 export const communityAPI = {
-  getAll: () => api.get('/communities'),
-  search: (query: string) => api.get('/communities/search', { params: { q: query } }),
+  getAll: (page?: number, limit?: number) => api.get('/communities', { params: { page, limit } }),
+  getJoinedFeed: (page?: number, limit?: number) =>
+    api.get('/communities/feed/joined', { params: { page, limit } }),
+  search: (query: string, page?: number, limit?: number) => api.get('/communities/search', { params: { q: query, page, limit } }),
   getCommunity: (communityId: string) => api.get(`/communities/${communityId}`),
   create: (data: { name: string; description: string; image?: string; requiresApproval?: boolean; isAnonymous?: boolean }) =>
     api.post('/communities', data),
@@ -810,6 +808,21 @@ export const communityAPI = {
     api.delete(`/communities/${communityId}/feed/${feedId}`),
   likeFeed: (communityId: string, feedId: string) =>
     api.post(`/communities/${communityId}/feed/${feedId}/like`, {}),
+  commentFeed: (communityId: string, feedId: string, data: { content?: string; parent?: string; isAnonymous?: boolean; tags?: string[] }) =>
+    api.post(`/communities/${communityId}/feed/${feedId}/comment`, data),
+  deleteCommentFeed: (communityId: string, feedId: string, commentId: string) =>
+    api.delete(`/communities/${communityId}/feed/${feedId}/comment/${commentId}`),
+  favoriteFeed: (communityId: string, feedId: string) =>
+    api.post(`/communities/${communityId}/feed/${feedId}/favorite`, {}),
+  unfavoriteFeed: (communityId: string, feedId: string) =>
+    api.delete(`/communities/${communityId}/feed/${feedId}/favorite`),
+  updateFeed: (communityId: string, feedId: string, data: { content?: string; images?: string[] }) =>
+    api.put(`/communities/${communityId}/feed/${feedId}`, data),
+  reportFeed: (communityId: string, feedId: string, reason?: string) =>
+    api.post(`/communities/${communityId}/feed/${feedId}/report`, { reason }),
+  getEvents: (communityId: string) => api.get(`/communities/${communityId}/events`),
+  createEvent: (communityId: string, data: { title: string; description: string; date: string; type: string }) =>
+    api.post(`/communities/${communityId}/events`, data),
 };
 
 // Helper function to get full image URL

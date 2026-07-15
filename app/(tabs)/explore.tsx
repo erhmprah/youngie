@@ -134,7 +134,7 @@ export default function ExploreScreen() {
       const communitiesResponse = results[2];
       const profileResponse = results[3];
 
-      setTrendingPosts(trendingResponse.data || []);
+      setTrendingPosts(trendingResponse.data.data || []);
 
       let discoverData = discoverResponse.data?.users || [];
       if (activeFilters.minAge) {
@@ -160,7 +160,7 @@ export default function ExploreScreen() {
       }
       setDiscoverUsers(discoverData.slice(0, 4)); // Limit to 4 for display
 
-      const allCommunities = communitiesResponse.data || [];
+      const allCommunities = communitiesResponse.data.data || [];
 
       // 1. My Communities (Member or Creator)
       const myComms = allCommunities.filter((community: any) => {
@@ -211,10 +211,10 @@ export default function ExploreScreen() {
         postAPI.searchPosts(query)
       ]);
 
-       setSearchResults({
-         users: userResponse.data || [],
-         posts: postResponse.data || []
-       });
+        setSearchResults({
+          users: userResponse.data.data || [],
+          posts: postResponse.data.data || []
+        });
     } catch (error) {
       showErrorAlert(error);
     } finally {

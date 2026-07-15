@@ -1,6 +1,6 @@
 // app/(tabs)/chat.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, FlatList, TouchableOpacity, ActivityIndicator, Alert, Image, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -48,10 +48,15 @@ export default function ChatScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const [chats, setChats] = useState<Chat[]>([]);
+    const chatsRef = useRef<Chat[]>([]);
+    useEffect(() => { chatsRef.current = chats; }, [chats]);
     const [isLoading, setIsLoading] = useState(true);
     const [isFriendModalVisible, setIsFriendModalVisible] = useState(false);
     const [activeTab, setActiveTab] = useState<'direct' | 'groups'>('direct');
     const [refreshing, setRefreshing] = useState(false);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
 
     const EmptyComponent = () => (
         <View style={{ padding: spacing.lg }}>
@@ -78,8 +83,10 @@ export default function ChatScreen() {
                 setIsLoading(true);
             }
             if (user?._id) {
-                const response = await chatAPI.getUserChats(user._id);
-                setChats(response.data || []);
+                const response = await chatAPI.getUserChats(user._id, 1, 20);
+                setChats(response.data.data || []);
+                setHasMore(response.data.pagination?.hasNextPage || false);
+                setPage(1);
             } else {
                 setChats([]);
             }
@@ -96,6 +103,21 @@ export default function ChatScreen() {
             }
         }
     }, [user?._id]);
+
+    const loadMoreChats = useCallback(async () => {
+        if (loadingMore || !hasMore || !user?._id) return;
+        setLoadingMore(true);
+        try {
+            const nextPage = page + 1;
+            const response = await chatAPI.getUserChats(user._id, nextPage, 20);
+            setChats(prev => [...prev, ...(response.data.data || [])]);
+            setHasMore(response.data.pagination?.hasNextPage || false);
+            setPage(nextPage);
+        } catch (error: any) {
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [user?._id, page, hasMore, loadingMore]);
 
     useFocusEffect(
         useCallback(() => {
@@ -156,6 +178,13 @@ export default function ChatScreen() {
         const socket = getSocket();
 
         const handleChatUpdated = (newMessage: any) => {
+            // If the chat isn't in the list (e.g. it was deleted and is now
+            // revived by this incoming message), refresh so it reappears.
+            if (!chatsRef.current.some(chat => chat._id === newMessage.chat)) {
+                fetchChats();
+                return;
+            }
+
             setChats(prev => prev.map(chat => {
                 if (chat._id === newMessage.chat) {
                     const isMyMessage = newMessage.sender._id === user?._id;
@@ -163,7 +192,6 @@ export default function ChatScreen() {
                         ...chat,
                         lastMessage: newMessage.content,
                         updatedAt: newMessage.createdAt,
-                        // If it was a new chat that just arrived via socket, ensure participants are set if needed
                         unreadCount: isMyMessage ? (chat.unreadCount || 0) : (chat.unreadCount || 0) + 1
                     };
                 }
@@ -329,6 +357,8 @@ export default function ChatScreen() {
                         keyExtractor={item => item._id}
                         contentContainerStyle={styles.listContainer}
                         ListEmptyComponent={EmptyComponent}
+                        onEndReached={loadMoreChats}
+                        onEndReachedThreshold={0.3}
                         refreshControl={
                             <RefreshControl
                                 refreshing={refreshing}

@@ -29,6 +29,24 @@ const MessageSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  messageType: {
+    type: String,
+    enum: ['text', 'call'],
+    default: 'text'
+  },
+  callType: {
+    type: String,
+    enum: ['voice', 'video'],
+    default: 'voice'
+  },
+  callStatus: {
+    type: String,
+    enum: ['missed', 'declined', 'completed', 'cancelled']
+  },
+  callDuration: {
+    type: Number,
+    default: 0
+  },
   readBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

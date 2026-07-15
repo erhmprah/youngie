@@ -41,7 +41,7 @@ class CallService {
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#FF231F7C',
-          sound: 'default',
+          sound: 'ringtone',
           showBadge: true,
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         });
@@ -77,7 +77,7 @@ class CallService {
             offer: this.currentOffer,
             type: 'incoming-call'
           },
-          sound: 'default',
+          sound: 'ringtone',
           priority: Notifications.AndroidNotificationPriority.MAX,
           sticky: true,
         },
@@ -114,6 +114,11 @@ class CallService {
     this.currentCaller = null;
     this.currentOffer = null;
     // You might want to emit a socket event here to reject the call if it wasn't answered
+  };
+
+  isCallActive = (callId?: string): boolean => {
+    if (!callId) return false;
+    return this.currentCallId === callId;
   };
 }
 

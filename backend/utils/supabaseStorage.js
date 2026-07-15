@@ -26,9 +26,6 @@ if (supabase) {
   console.warn('❌ Supabase client not initialized - will use local storage fallback');
 }
 
-const BUCKET_NAME = 'uploads';
-
-// Map folder names to bucket names
 const BUCKET_MAP = {
   posts: 'posts',
   profiles: 'profile-photos',
@@ -40,11 +37,41 @@ const BUCKET_MAP = {
   general: 'uploads'
 };
 
+const BUCKET_SIZE_LIMITS = {
+  posts: '100MB',
+  stories: '100MB',
+  chats: '50MB',
+  profiles: '10MB',
+  covers: '10MB',
+  communities: '50MB',
+  album: '50MB',
+  general: '50MB'
+};
+
+const BUCKET_MIME_TYPES = {
+  posts: ['image/*', 'video/*'],
+  stories: ['image/*', 'video/*'],
+  chats: ['image/*', 'video/*', 'audio/*'],
+  profiles: ['image/*'],
+  covers: ['image/*'],
+  communities: ['image/*', 'video/*'],
+  album: ['image/*', 'video/*'],
+  general: ['image/*', 'video/*']
+};
+
 function getBucketForFolder(folder) {
   return BUCKET_MAP[folder] || BUCKET_MAP.general;
 }
 
-async function ensureBucketExists(bucketName) {
+function getBucketSizeLimit(folder) {
+  return BUCKET_SIZE_LIMITS[folder] || BUCKET_SIZE_LIMITS.general;
+}
+
+function getBucketAllowedMimeTypes(folder) {
+  return BUCKET_MIME_TYPES[folder] || BUCKET_MIME_TYPES.general;
+}
+
+async function ensureBucketExists(bucketName, folder) {
   if (!supabase) return false;
   
   try {
@@ -63,8 +90,8 @@ async function ensureBucketExists(bucketName) {
       
       const { error: createError } = await supabase.storage.createBucket(bucketName, {
         public: true,
-        fileSizeLimit: '50MB',
-        allowedMimeTypes: ['image/*', 'video/*']
+        fileSizeLimit: getBucketSizeLimit(folder),
+        allowedMimeTypes: getBucketAllowedMimeTypes(folder)
       });
       
       if (createError) {
@@ -91,7 +118,7 @@ async function uploadFile(buffer, fileName, mimeType, folder = 'general') {
   const bucketName = getBucketForFolder(folder);
   
   try {
-    const bucketReady = await ensureBucketExists(bucketName);
+    const bucketReady = await ensureBucketExists(bucketName, folder);
     if (!bucketReady) {
       throw new Error(`Storage bucket ${bucketName} not available`);
     }

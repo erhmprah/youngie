@@ -169,12 +169,12 @@ export default function ProfileScreen() {
 
                         <View style={styles.statsContainer}>
                             <View style={styles.statItem}>
-                                <ThemedText type="subtitle" style={{ fontWeight: 'bold' }}>{stats.postsCount}</ThemedText>
+                                <ThemedText type="body1" style={{ fontWeight: 'bold' }}>{stats.postsCount}</ThemedText>
                                 <ThemedText style={styles.statLabel}>Posts</ThemedText>
                             </View>
                             <View style={[styles.statDivider, { backgroundColor: borderColor }]} />
                             <View style={styles.statItem}>
-                                <ThemedText type="subtitle" style={{ fontWeight: 'bold' }}>{stats.friendsCount}</ThemedText>
+                                <ThemedText type="body1" style={{ fontWeight: 'bold' }}>{stats.friendsCount}</ThemedText>
                                 <ThemedText style={styles.statLabel}>Friends</ThemedText>
                             </View>
                         </View>

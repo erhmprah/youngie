@@ -14,7 +14,7 @@ export function NotificationBell() {
   const router = useRouter();
   const [unreadCount, setUnreadCount] = useState(0);
   const colorScheme = useColorScheme();
-  const colors = getColors(colorScheme);
+  const colors = getColors(colorScheme as 'light' | 'dark');
   const styles = dynamicStyles(colors);
 
   const fetchUnreadCount = useCallback(async () => {

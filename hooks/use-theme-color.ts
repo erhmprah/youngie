@@ -8,7 +8,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 export type ColorName = keyof ReturnType<typeof getColors>;
 
 export function useThemeColor(colorName: ColorName) {
-  const theme = useColorScheme() ?? 'light';
+  const theme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const { colorScheme } = useTheme();
   const colors = getColors(theme, colorScheme);
 

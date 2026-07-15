@@ -3,6 +3,7 @@ const router = express.Router();
 const Story = require('../models/Story');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { parsePaginationParams, buildPaginatedResponse } = require('../utils/pagination');
 const multer = require('multer');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
 const pushService = require('../services/push-notification');
@@ -25,7 +26,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ storage, fileFilter });
+const upload = multer({ storage, fileFilter, limits: { fileSize: 100 * 1024 * 1024 } });
 
 // Get stories for feed (from users you follow + your own)
 router.get('/', auth, async (req, res) => {
@@ -38,16 +39,21 @@ router.get('/', auth, async (req, res) => {
     const mutedAuthors = (user.mutedStoryAuthors || []).map(id => id.toString());
     const filteredFollowingIds = followingIds.filter(id => !mutedAuthors.includes(id.toString()));
 
-    const stories = await Story.find({
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const storyQuery = {
       author: { $in: filteredFollowingIds },
       expiresAt: { $gt: new Date() }, // Not expired
-    })
+    };
+    const total = await Story.countDocuments(storyQuery);
+
+    const stories = await Story.find(storyQuery)
       .populate('author', 'username avatar profilePhoto')
       .populate('viewers.user', 'username avatar profilePhoto')
       .populate('tags', 'username')
       .populate({ path: 'reactions.user', select: 'username avatar profilePhoto', strictPopulate: false })
       .sort({ createdAt: -1 })
-      .limit(50);
+      .skip(skip)
+      .limit(limit);
 
     // Group stories by author
     const groupedStories = stories.reduce((acc, story) => {
@@ -74,7 +80,7 @@ router.get('/', auth, async (req, res) => {
       }),
     }));
 
-    res.json(result);
+    res.json(buildPaginatedResponse(result, total, { page, limit, skip, hasNextPage: skip + result.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

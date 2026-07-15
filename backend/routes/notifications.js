@@ -2,14 +2,33 @@ const express = require('express');
 const router = express.Router();
 const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
+const { parsePaginationParams, buildPaginatedResponse } = require('../utils/pagination');
 const pushService = require('../services/push-notification');
+
+const ANONYMOUS_SENDER = { _id: 'anonymous', username: 'Anonymous', profilePhoto: null, avatar: null };
+
+// Masks the sender of a notification when it relates to an anonymous post
+// so the commenter/liker's identity is not revealed.
+function maskNotificationSender(notifObj) {
+  if (notifObj.relatedPost && notifObj.relatedPost.isAnonymous) {
+    if (notifObj.sender) notifObj.sender = { ...ANONYMOUS_SENDER };
+    if (Array.isArray(notifObj.senders)) {
+      notifObj.senders = notifObj.senders.map(() => ({ ...ANONYMOUS_SENDER }));
+    }
+  }
+  return notifObj;
+}
 
 // Get user's notifications
 router.get('/', auth, async (req, res) => {
   try {
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await Notification.countDocuments({ recipient: req.userId });
+
     const notifications = await Notification.find({ recipient: req.userId })
       .populate('sender', 'username avatar profilePhoto')
-      .populate('relatedPost', 'content')
+      .populate('senders', 'username avatar profilePhoto')
+      .populate('relatedPost', 'content isAnonymous')
       .populate({
         path: 'relatedStory',
         populate: [
@@ -19,41 +38,70 @@ router.get('/', auth, async (req, res) => {
         ]
       })
       .sort({ createdAt: -1 })
-      .limit(100);
+      .skip(skip)
+      .limit(limit);
 
     const groupedNotifications = [];
-    const likeGroups = {}; // Map of postId -> notification object
+    // Collapse like/comment notifications that target the same post into a
+    // single aggregated entry (works for both new aggregated docs and any
+    // legacy per-event docs still in the database).
+    const groups = {};
+
+    const dedupeSenders = (arr) => {
+      const seen = new Set();
+      return (arr || []).filter(s => {
+        const id = s && s._id ? s._id.toString() : (s ? s.toString() : null);
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    };
 
     notifications.forEach(notification => {
       const notifObj = notification.toObject();
       if (!notifObj.sender) return;
 
-      if (notifObj.type === 'like' && notifObj.relatedPost) {
-        const postId = notifObj.relatedPost._id.toString();
-        
-        if (likeGroups[postId]) {
-          // Existing group found - update the most recent notification
-          const group = likeGroups[postId];
-          group.groupCount = (group.groupCount || 1) + 1;
-          // group.senders is initialized in the else block below
-          group.senders.push(notifObj.sender);
-          
-          // Update message to reflect grouping
-          const othersCount = group.groupCount - 1;
-          group.message = `and ${othersCount} other${othersCount === 1 ? '' : 's'} liked your post`;
-        } else {
-          // New group - this is the most recent like for this post
-          notifObj.groupCount = 1;
-          notifObj.senders = [notifObj.sender];
-          likeGroups[postId] = notifObj;
-          groupedNotifications.push(notifObj);
+      const isAggregatable =
+        (notifObj.type === 'like' || notifObj.type === 'comment') && notifObj.relatedPost;
+
+      if (isAggregatable) {
+        const key = `${notifObj.type}:${notifObj.relatedPost._id.toString()}`;
+        if (groups[key]) {
+          const group = groups[key];
+          group.count = (group.count || 1) + (notifObj.count || 1);
+          const existingSenders = group.senders || [group.sender];
+          const incoming = notifObj.senders && notifObj.senders.length
+            ? notifObj.senders
+            : [notifObj.sender];
+          group.senders = dedupeSenders([...existingSenders, ...incoming]).slice(0, 5);
+          // keep the most recent activity on top
+          if (new Date(notifObj.createdAt) > new Date(group.createdAt)) {
+            group.createdAt = notifObj.createdAt;
+            group.sender = notifObj.sender;
+            group.message = notifObj.message;
+            group._id = notifObj._id;
+          }
+          return;
         }
-      } else {
+        notifObj.count = notifObj.count || 1;
+        notifObj.senders = notifObj.senders && notifObj.senders.length
+          ? dedupeSenders(notifObj.senders)
+          : [notifObj.sender];
+        groups[key] = notifObj;
         groupedNotifications.push(notifObj);
+        return;
       }
+
+      notifObj.count = notifObj.count || 1;
+      notifObj.senders = notifObj.senders && notifObj.senders.length
+        ? dedupeSenders(notifObj.senders)
+        : [notifObj.sender];
+      groupedNotifications.push(notifObj);
     });
 
-    res.json(groupedNotifications);
+    groupedNotifications.forEach(maskNotificationSender);
+
+    res.json(buildPaginatedResponse(groupedNotifications, total, { page, limit, skip, hasNextPage: skip + groupedNotifications.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

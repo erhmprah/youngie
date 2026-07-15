@@ -7,12 +7,10 @@ import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { Ionicons } from '@expo/vector-icons';
-import { postAPI, userAPI, getImageUrl } from '@/utils/api';
+import { postAPI, userAPI, communityAPI, getImageUrl } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { getRelativeTime } from '@/utils/helpers';
 import { useDebounce } from '@/hooks/use-debounce';
-import * as Haptics from 'expo-haptics';
-import { ReactionPicker, ReactionType } from './reaction-picker';
 import { getSocket } from '@/utils/socket';
 import { useRouter } from 'expo-router';
 
@@ -25,7 +23,6 @@ interface Comment {
     };
     content: string;
     createdAt: string;
-    reactions?: { user: { _id: string; username: string }; type: string; sticker?: string }[];
     tags?: { _id: string; username: string }[];
     parent?: string;
 }
@@ -44,9 +41,10 @@ interface CommentModalProps {
         };
     } | null;
     initialAnonymous?: boolean;
+    communityContext?: { communityId: string };
 }
 
-export function CommentModal({ visible, onClose, post, initialAnonymous = false }: CommentModalProps) {
+export function CommentModal({ visible, onClose, post, initialAnonymous = false, communityContext }: CommentModalProps) {
     const { user } = useAuth();
     const [comment, setComment] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -61,8 +59,6 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
     const [friends, setFriends] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isLoadingFriends, setIsLoadingFriends] = useState(false);
-    const [showReactionPicker, setShowReactionPicker] = useState(false);
-    const [selectedCommentForReaction, setSelectedCommentForReaction] = useState<string | null>(null);
     const router = useRouter();
 
     const debouncedSearchQuery = useDebounce(searchQuery, 500);
@@ -177,16 +173,8 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
     const primaryColor = useThemeColor('primary');
     const lightTextColor = useThemeColor('lightText');
     const surfaceColor = useThemeColor('surface');
+    const borderColor = useThemeColor('border');
     const white = useThemeColor('white');
-
-    const getReactionIcon = (type: string) => {
-        switch (type) {
-            case 'heart': return 'heart';
-            case 'laugh': return 'happy-outline';
-            case 'sticker': return 'image-outline';
-            default: return 'thumbs-up-outline';
-        }
-    };
 
     const handleAddComment = async () => {
         if (!comment.trim()) return;
@@ -194,14 +182,28 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
         setIsLoading(true);
         try {
             if (post) {
-                const response = await postAPI.addComment(post._id, {
-                    content: comment,
-                    parent: replyingTo?._id,
-                    isAnonymous,
-                    tags: taggedUsers.length > 0 ? taggedUsers : undefined
-                });
-                // The API returns the updated post, so get comments from it
-                setComments(response.data.comments);
+                if (communityContext) {
+                    const response = await communityAPI.commentFeed(
+                        communityContext.communityId,
+                        post._id,
+                        {
+                            content: comment,
+                            parent: replyingTo?._id,
+                            isAnonymous,
+                            tags: taggedUsers.length > 0 ? taggedUsers : undefined,
+                        }
+                    );
+                    setComments(response.data.comments || []);
+                } else {
+                    const response = await postAPI.addComment(post._id, {
+                        content: comment,
+                        parent: replyingTo?._id,
+                        isAnonymous,
+                        tags: taggedUsers.length > 0 ? taggedUsers : undefined,
+                    });
+                    // The API returns the updated post, so get comments from it
+                    setComments(response.data.comments);
+                }
                 setComment('');
                 setReplyingTo(null);
                 setTaggedUsers([]);
@@ -211,18 +213,6 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
             Alert.alert('Error', 'Failed to add comment.');
         } finally {
             setIsLoading(false);
-        }
-    };
-
-    const handleReactComment = async (commentId: string, reactionType: ReactionType | 'sticker' | 'remove' = 'like', sticker?: string) => {
-        if (!post) return;
-        try {
-            const response = await postAPI.reactComment(post._id, commentId, { reactionType, sticker });
-            setComments(response.data.comments);
-            setShowReactionPicker(false);
-            setSelectedCommentForReaction(null);
-        } catch (error) {
-            console.error('Error reacting to comment:', error);
         }
     };
 
@@ -238,11 +228,24 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            const response = await postAPI.deleteComment(post._id, commentId);
-                            if (response.data?.comments) {
-                                setComments(response.data.comments);
-                            } else if (response.data) {
-                                setComments(prev => prev.filter(c => c._id !== commentId));
+                            if (communityContext) {
+                                const response = await communityAPI.deleteCommentFeed(
+                                    communityContext.communityId,
+                                    post._id,
+                                    commentId
+                                );
+                                if (response.data?.comments) {
+                                    setComments(response.data.comments);
+                                } else {
+                                    setComments(prev => prev.filter(c => c._id !== commentId));
+                                }
+                            } else {
+                                const response = await postAPI.deleteComment(post._id, commentId);
+                                if (response.data?.comments) {
+                                    setComments(response.data.comments);
+                                } else if (response.data) {
+                                    setComments(prev => prev.filter(c => c._id !== commentId));
+                                }
                             }
                         } catch (error: any) {
                             console.error('Error deleting comment:', error);
@@ -259,30 +262,14 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
         );
     };
 
-    const openReactionPicker = (commentId: string) => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setSelectedCommentForReaction(commentId);
-        setShowReactionPicker(true);
-    };
-
     const renderCommentContent = (item: Comment) => {
-        const userReaction = item.reactions?.find(r => r.user._id === user?._id);
-        const reactionCounts = item.reactions?.reduce((acc, r) => {
-            acc[r.type] = (acc[r.type] || 0) + 1;
-            return acc;
-        }, {} as Record<string, number>) || {};
-        const totalReactions = item.reactions?.length || 0;
         const isReply = !!item.parent;
         const canDelete = user?._id === item.author._id || user?._id === post?.author?._id;
-
-        const getReactionColor = (type: string) => {
-            return userReaction?.type === type ? primaryColor : lightTextColor;
-        };
 
         return (
             <View style={[styles.commentContainer, isReply && styles.replyContainer]}>
                 <TouchableOpacity onPress={() => {
-                    if (item.author._id !== user?._id) {
+                    if (item.author._id !== user?._id && item.author._id !== 'anonymous') {
                         onClose();
                         router.push(`/user/${item.author._id}`);
                     }
@@ -297,7 +284,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                 </TouchableOpacity>
                 <View style={{ flex: 1 }}>
                     <TouchableOpacity onPress={() => {
-                        if (item.author._id !== user?._id) {
+                        if (item.author._id !== user?._id && item.author._id !== 'anonymous') {
                             onClose();
                             router.push(`/user/${item.author._id}`);
                         }
@@ -322,12 +309,6 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                             {getRelativeTime(item.createdAt)}
                         </ThemedText>
 
-                        <TouchableOpacity onLongPress={() => openReactionPicker(item._id)} style={styles.actionButton}>
-                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption, fontFamily: typography.families.medium }}>
-                                {totalReactions} Reactions
-                            </ThemedText>
-                        </TouchableOpacity>
-
                         <TouchableOpacity onPress={() => setReplyingTo(item)} style={styles.actionButton}>
                             <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption, fontFamily: typography.families.medium }}>
                                 Reply
@@ -339,35 +320,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                             </TouchableOpacity>
                         )}
                     </View>
-
-                    {totalReactions > 0 && (
-                        <View style={styles.reactionsContainer}>
-                            {Object.entries(reactionCounts).map(([type, count]) => (
-                                <TouchableOpacity
-                                    key={type}
-                                    onPress={() => handleReactComment(item._id, userReaction?.type === type ? 'remove' : (type as ReactionType | 'sticker'))}
-                                    style={styles.reactionButton}
-                                >
-                                    <Ionicons
-                                        name={getReactionIcon(type)}
-                                        size={16}
-                                        color={getReactionColor(type)}
-                                    />
-                                    <ThemedText style={{ color: getReactionColor(type), fontSize: typography.sizes.caption }}>
-                                        {count}
-                                    </ThemedText>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
                 </View>
-                <TouchableOpacity onLongPress={() => openReactionPicker(item._id)} style={styles.likeIcon}>
-                    <Ionicons
-                        name={userReaction ? getReactionIcon(userReaction.type) : "thumbs-up-outline"}
-                        size={14}
-                        color={userReaction ? primaryColor : lightTextColor}
-                    />
-                </TouchableOpacity>
             </View>
         );
     };
@@ -422,9 +375,9 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                     ListEmptyComponent={<ThemedText style={{ textAlign: 'center', marginTop: spacing.xl, color: lightTextColor }}>No comments yet.</ThemedText>}
                 />
 
-                <View style={{ borderTopWidth: 1, borderTopColor: useThemeColor('border') }}>
+                <View style={{ borderTopWidth: 1, borderTopColor: borderColor }}>
                     {replyingTo && (
-                        <View style={[styles.replyBanner, { backgroundColor: useThemeColor('surface') }]}>
+                        <View style={[styles.replyBanner, { backgroundColor: surfaceColor }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                 <ThemedText style={{ fontSize: typography.sizes.caption, color: lightTextColor }}>
                                     Replying to{' '}
@@ -577,17 +530,6 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false 
                 </Modal>
 
 
-                {/* Reaction Picker Modal */}
-                <Modal visible={showReactionPicker} animationType="fade" transparent={true} onRequestClose={() => setShowReactionPicker(false)}>
-                    <TouchableWithoutFeedback onPress={() => setShowReactionPicker(false)}>
-                        <View style={styles.modalOverlay}>
-                            <ReactionPicker
-                                onSelect={(type) => selectedCommentForReaction && handleReactComment(selectedCommentForReaction, type)}
-                                onClose={() => setShowReactionPicker(false)}
-                            />
-                        </View>
-                    </TouchableWithoutFeedback>
-                </Modal>
             </ThemedView>
         </Modal>
     );
@@ -629,9 +571,6 @@ const styles = StyleSheet.create({
     },
     actionButton: {
         paddingVertical: 2,
-    },
-    likeIcon: {
-        paddingTop: spacing.xs,
     },
     replyBanner: {
         flexDirection: 'row',
@@ -722,19 +661,5 @@ const styles = StyleSheet.create({
     },
     commentTags: {
         marginTop: spacing.xs,
-    },
-    reactionsContainer: {
-        flexDirection: 'row',
-        gap: spacing.sm,
-        marginTop: spacing.xs,
-    },
-    reactionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.xs,
-        paddingVertical: spacing.xs,
-        paddingHorizontal: spacing.sm,
-        borderRadius: borderRadius.md,
-        backgroundColor: 'rgba(0,0,0,0.05)',
     },
 });

@@ -197,6 +197,7 @@ export const typography = {
     // Using system fonts for a native and professional look
     regular: 'System',
     medium: 'System-Medium',
+    semibold: 'System-Semibold',
     bold: 'System-Bold',
   },
   sizes: {
@@ -227,6 +228,7 @@ export const borderRadius = {
   md: 10,
   lg: 14,
   xl: 20,
+  full: 999,
   round: 999,
 };
 

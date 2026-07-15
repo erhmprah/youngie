@@ -197,6 +197,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
                         onMediaSelected={handleMediaSelected}
                         icon="camera"
                         size={24}
+                        showAudioOption={false}
                     />
                     <TouchableOpacity onPress={() => setShowPoll(!showPoll)} style={styles.actionButton}>
                         <IconSymbol name="chart.bar.fill" size={24} color={primaryColor} />

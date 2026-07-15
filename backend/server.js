@@ -282,6 +282,10 @@ if (CLUSTER_MODE && cluster.isMaster) {
   // Error Handling Middleware
   app.use((err, req, res, next) => {
     console.error(`Worker ${process.pid}:`, err);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      const limit = req.uploadLimitMB ? `${req.uploadLimitMB}MB` : 'the allowed limit';
+      return res.status(413).json({ msg: `File size exceeds limit. Maximum allowed size is ${limit}.`, code: 'LIMIT_FILE_SIZE' });
+    }
     res.status(500).json({ error: err.message, worker: process.pid });
   });
 

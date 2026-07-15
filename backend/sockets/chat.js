@@ -93,6 +93,9 @@ module.exports = function (io) {
       try {
         if (userId) {
           users[userId] = socket.id;
+          // Join the user's personal room so targeted events (chatUpdated,
+          // newChat, notification) reach them even when not in a chat room.
+          socket.join(userId.toString());
           updateUserActivity(userId);
           console.log(`User ${userId} is online with socket ${socket.id}`);
           // Update user's status in the database
@@ -101,6 +104,19 @@ module.exports = function (io) {
         }
       } catch (error) {
         console.error(`Error in user-online for ${userId}:`, error.message);
+      }
+    });
+
+    // Keep-alive heartbeat - clients emit this periodically to stay "online"
+    // without needing to send messages. Prevents being marked offline while
+    // the app is open but idle.
+    socket.on('heartbeat', ({ userId }) => {
+      try {
+        if (userId && users[userId] === socket.id) {
+          updateUserActivity(userId);
+        }
+      } catch (error) {
+        console.error(`Error in heartbeat for ${userId}:`, error.message);
       }
     });
 
@@ -183,6 +199,43 @@ module.exports = function (io) {
             }
         });
 
+        // A new message revives the chat for any recipient who had deleted it,
+        // revealing only messages sent after their deletion time. Remove them
+        // from deletedFor (so the chat reappears) and set clearedHistory to
+        // their deletion timestamp.
+        if (chat.deletedFor && chat.deletedFor.length > 0) {
+          const revivedEntries = chat.deletedFor.filter(
+            entry => entry.user && entry.user.toString() !== senderId
+          );
+          if (revivedEntries.length > 0) {
+            const revivedUserIds = revivedEntries.map(entry => entry.user);
+            const clearedEntries = revivedEntries.map(entry => ({
+              user: entry.user,
+              clearedAt: entry.deletedAt || new Date(),
+            }));
+            // Two separate updates: MongoDB rejects $pull and $push on the
+            // same path in one operation.
+            Chat.updateOne(
+              { _id: chatId },
+              {
+                $pull: {
+                  deletedFor: { user: { $in: revivedUserIds } },
+                  clearedHistory: { user: { $in: revivedUserIds } },
+                },
+              }
+            ).catch(err => console.error('Failed to revive deleted chat (pull):', err));
+            Chat.updateOne(
+              { _id: chatId },
+              { $push: { clearedHistory: { $each: clearedEntries } } }
+            ).catch(err => console.error('Failed to revive deleted chat (push):', err));
+          }
+        }
+
+        // Notify participants so the revived chat reappears in their list
+        chat.participants.filter(id => id).forEach(participantId => {
+          io.to(participantId.toString()).emit('chatUpdated', broadcastMessage);
+        });
+
       } catch (error) {
         console.error('Error handling new message:', error);
         // Optionally emit an error event back to the sender
@@ -190,6 +243,63 @@ module.exports = function (io) {
       }
     });
     
+    // Create a call-log entry (missed / declined / completed / cancelled) so a
+    // voice call appears as a centered system message inside the chat thread.
+    socket.on('call-log', async ({ chatId, callerId, callType, callStatus, callDuration }) => {
+      try {
+        if (!chatId || !callerId || !callStatus) return;
+
+        const chat = await Chat.findById(chatId);
+        if (!chat) return;
+
+        // Only allow a participant of the chat to log the call
+        const isParticipant = chat.participants.some(id => id.toString() === callerId);
+        if (!isParticipant) return;
+
+        let label;
+        if (callStatus === 'completed') {
+          label = callType === 'video' ? 'Video call' : 'Voice call';
+        } else if (callStatus === 'missed') {
+          label = 'Missed voice call';
+        } else if (callStatus === 'declined') {
+          label = 'Declined voice call';
+        } else {
+          label = 'Cancelled voice call';
+        }
+
+        const newMessage = new Message({
+          chat: chatId,
+          sender: callerId,
+          content: label,
+          messageType: 'call',
+          callType: callType || 'voice',
+          callStatus,
+          callDuration: callDuration || 0,
+          readBy: [callerId],
+        });
+
+        await newMessage.save();
+
+        // Update chat updatedAt so it surfaces in the chat list
+        chat.updatedAt = new Date();
+        await chat.save();
+
+        await newMessage.populate('sender', 'username profilePhoto');
+
+        const broadcastMessage = newMessage.toObject();
+
+        // Broadcast to everyone in the chat room (real-time thread update)
+        io.to(chatId).emit('message-received', broadcastMessage);
+
+        // Notify participants so the chat list preview / ordering updates
+        chat.participants.filter(id => id).forEach(participantId => {
+          io.to(participantId.toString()).emit('chatUpdated', newMessage);
+        });
+      } catch (error) {
+        console.error('Error handling call-log:', error);
+      }
+    });
+
     // Handle typing indicators with error handling
     socket.on('typing', ({ chatId, username, userId }) => {
       try {
@@ -257,33 +367,14 @@ module.exports = function (io) {
      }
    });
 
-   socket.on('voice-call-end', ({ chatId }) => {
-     try {
-       if (chatId) {
-         socket.to(chatId).emit('voice-call-end');
-       }
-     } catch (error) {
-       console.error('Error in voice-call-end:', error.message);
-     }
-   });
-
-   // Handle user disconnecting
-   socket.on('disconnect', async (reason) => {
-     console.log(`✗ User disconnected: ${socket.id}, reason: ${reason}`);
-     for (const userId in users) {
-       if (users[userId] === socket.id) {
-         delete users[userId];
-         // Update user's status in the database
-         try {
-           const lastSeen = new Date();
-           await User.findByIdAndUpdate(userId, { isActive: false, lastSeen });
-           io.emit('user_status_change', { userId, isOnline: false, lastSeen });
-         } catch (error) {
-           console.error(`Error updating user ${userId} status on disconnect:`, error.message);
-         }
-         break;
-       }
-     }
-   });
+    socket.on('voice-call-end', ({ chatId }) => {
+      try {
+        if (chatId) {
+          socket.to(chatId).emit('voice-call-end');
+        }
+      } catch (error) {
+        console.error('Error in voice-call-end:', error.message);
+      }
+    });
   });
 };

@@ -6,6 +6,7 @@ const Notification = require('../models/Notification');
 const Chat = require('../models/Chat');
 const CommunityInvite = require('../models/CommunityInvite');
 const auth = require('../middleware/auth');
+const { parsePaginationParams, buildPaginatedResponse } = require('../utils/pagination');
 const communityFeedRoutes = require('./community-feed');
 const crypto = require('crypto');
 const { uploadFile, supabase: supabaseStorage } = require('../utils/supabaseStorage');
@@ -56,12 +57,17 @@ router.post('/upload-image-base64', auth, async (req, res) => {
 // Get all communities
 router.get('/', auth, async (req, res) => {
   try {
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await Community.countDocuments();
+
     let communities = await Community.find()
       .populate('creator', 'username avatar profilePhoto')
       .populate('members', 'username avatar profilePhoto')
       .populate('pendingMembers', 'username avatar profilePhoto')
       .populate('chat')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     // Self-healing: Create chats for communities that don't have one (Legacy data support)
     const updates = communities.map(async (comm) => {
@@ -81,7 +87,7 @@ router.get('/', auth, async (req, res) => {
     });
     await Promise.all(updates);
 
-    res.json(communities);
+    res.json(buildPaginatedResponse(communities, total, { page, limit, skip, hasNextPage: skip + communities.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -98,19 +104,71 @@ router.get('/search', auth, async (req, res) => {
 
     const escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    const communities = await Community.find({
+    const searchQuery = {
       $or: [
         { name: { $regex: escapedQuery, $options: 'i' } },
         { description: { $regex: escapedQuery, $options: 'i' } }
       ]
-    })
-    .populate('creator', 'username avatar profilePhoto')
-    .populate('members', 'username avatar profilePhoto')
-    .populate('chat')
-    .sort({ createdAt: -1 })
-    .limit(20);
+    };
 
-    res.json(communities);
+    const { page, limit, skip } = parsePaginationParams(req.query);
+    const total = await Community.countDocuments(searchQuery);
+
+    const communities = await Community.find(searchQuery)
+      .populate('creator', 'username avatar profilePhoto')
+      .populate('members', 'username avatar profilePhoto')
+      .populate('chat')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json(buildPaginatedResponse(communities, total, { page, limit, skip, hasNextPage: skip + communities.length < total, hasPrevPage: page > 1 }));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Aggregated feed of posts from communities the user has joined
+router.get('/feed/joined', auth, async (req, res) => {
+  try {
+    const CommunityFeed = require('../models/CommunityFeed');
+    const { page, limit, skip } = parsePaginationParams(req.query);
+
+    // Communities the user is a member of or created
+    const communities = await Community.find({
+      $or: [{ members: req.userId }, { creator: req.userId }],
+    }).select('_id');
+    const communityIds = communities.map((c) => c._id);
+
+    if (communityIds.length === 0) {
+      return res.json(buildPaginatedResponse([], 0, { page, limit, skip, hasNextPage: false, hasPrevPage: page > 1 }));
+    }
+
+    const query = { community: { $in: communityIds } };
+    const total = await CommunityFeed.countDocuments(query);
+
+    const User = require('../models/User');
+    const currentUser = await User.findById(req.userId).select('favorites');
+    const userFavorites = currentUser && currentUser.favorites
+      ? currentUser.favorites.map((id) => id.toString())
+      : [];
+
+    const feeds = await CommunityFeed.find(query)
+      .populate('author', 'username avatar profilePhoto')
+      .populate('likes', '_id username avatar profilePhoto')
+      .populate('community', 'name image')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Mark favorited state for the current user
+    const feedsWithFavorite = feeds.map((feed) => {
+      const f = feed.toObject();
+      f.isFavorited = userFavorites.includes(f._id.toString());
+      return f;
+    });
+
+    res.json(buildPaginatedResponse(feedsWithFavorite, total, { page, limit, skip, hasNextPage: skip + feeds.length < total, hasPrevPage: page > 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -633,5 +691,77 @@ router.delete('/:communityId', auth, async (req, res) => {
 
 // Community feed (posts within a community)
 router.use('/:communityId/feed', communityFeedRoutes);
+
+// Community events
+router.get('/:communityId/events', auth, async (req, res) => {
+  try {
+    const CommunityEvent = require('../models/CommunityEvent');
+    const { page, limit, skip } = parsePaginationParams(req.query);
+
+    const total = await CommunityEvent.countDocuments({ community: req.params.communityId });
+    const events = await CommunityEvent.find({ community: req.params.communityId })
+      .populate('creator', 'username avatar profilePhoto')
+      .sort({ date: 1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json(buildPaginatedResponse(events, total, { page, limit, skip, hasNextPage: skip + events.length < total, hasPrevPage: page > 1 }));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:communityId/events', auth, async (req, res) => {
+  try {
+    const CommunityEvent = require('../models/CommunityEvent');
+    const { title, description, date, type } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ msg: 'Event title is required' });
+    }
+    if (!date || isNaN(Date.parse(date))) {
+      return res.status(400).json({ msg: 'A valid event date is required' });
+    }
+
+    const event = new CommunityEvent({
+      community: req.params.communityId,
+      creator: req.userId,
+      title: title.trim(),
+      description: description || '',
+      date: new Date(date),
+      type: type || 'other',
+    });
+
+    await event.save();
+    await event.populate('creator', 'username avatar profilePhoto');
+
+    res.status(201).json(event);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/:communityId/events/:eventId', auth, async (req, res) => {
+  try {
+    const CommunityEvent = require('../models/CommunityEvent');
+    const event = await CommunityEvent.findById(req.params.eventId);
+    if (!event) {
+      return res.status(404).json({ msg: 'Event not found' });
+    }
+
+    const community = await Community.findById(req.params.communityId);
+    const isAdmin = community && community.creator && community.creator.toString() === req.userId;
+    const isCreator = event.creator && event.creator.toString() === req.userId;
+
+    if (!isAdmin && !isCreator) {
+      return res.status(403).json({ msg: 'Not authorized to delete this event' });
+    }
+
+    await CommunityEvent.findByIdAndDelete(req.params.eventId);
+    res.json({ msg: 'Event deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

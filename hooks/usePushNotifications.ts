@@ -268,6 +268,30 @@ export function usePushNotifications() {
      }
   }, [requestPermissions, registerTokenWithBackend]);
 
+  // Set up Android notification channels used by backend-pushed notifications.
+  // The backend sends push messages with channelId 'default' (see
+  // backend/services/push-notification.js). If this channel doesn't exist on
+  // Android, the OS silently drops the notification — which is why chat
+  // messages (and other backend pushes) never appear while local call
+  // notifications (using the 'incoming-calls' channel) do.
+  const setupNotificationChannels = useCallback(async (): Promise<void> => {
+    if (Platform.OS !== 'android' || !Notifications?.setNotificationChannelAsync) {
+      return;
+    }
+    try {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Notifications',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+        sound: 'default',
+        showBadge: true,
+      });
+    } catch (error) {
+      console.error('❌ Error setting up notification channels:', error);
+    }
+  }, []);
+
   // Unregister push token from backend (for logout)
   const unregisterPushToken = useCallback(async (): Promise<boolean> => {
     if (!state.token) {
@@ -333,6 +357,7 @@ export function usePushNotifications() {
     registerPushToken,
     unregisterPushToken,
     reRegisterOnLogin,
+    setupNotificationChannels,
   };
 }
 

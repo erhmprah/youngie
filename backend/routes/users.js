@@ -28,7 +28,12 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+const withUploadLimit = (uploadMiddleware, limitMB) => (req, res, next) => {
+    req.uploadLimitMB = limitMB;
+    uploadMiddleware(req, res, next);
+};
 
 // Get muted users list
 router.get('/muted', auth, async (req, res) => {
@@ -300,7 +305,7 @@ router.put('/:userId', auth, async (req, res) => {
 });
 
 // Upload profile photo
-router.post('/:userId/upload-profile-photo', auth, upload.single('profilePhoto'), async (req, res) => {
+router.post('/:userId/upload-profile-photo', auth, withUploadLimit(upload.single('profilePhoto'), 10), async (req, res) => {
   try {
     const user = await User.findById(req.params.userId);
     if (!user) {
@@ -402,7 +407,7 @@ router.post('/:userId/upload-profile-photo-base64', auth, async (req, res) => {
 });
 
 // Upload cover photo
-router.post('/:userId/upload-cover-photo', auth, upload.single('coverPhoto'), async (req, res) => {
+router.post('/:userId/upload-cover-photo', auth, withUploadLimit(upload.single('coverPhoto'), 10), async (req, res) => {
   try {
     const user = await User.findById(req.params.userId);
     if (!user) {

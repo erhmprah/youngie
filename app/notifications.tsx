@@ -14,21 +14,27 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { showErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
 
+interface NotificationSender {
+  _id: string;
+  username: string;
+  avatar?: string;
+  profilePhoto?: string;
+}
+
 interface Notification {
   _id: string;
-  sender: {
-    _id: string;
-    username: string;
-    avatar?: string;
-    profilePhoto?: string;
-  };
+  sender: NotificationSender;
   type: 'like' | 'comment' | 'follow' | 'match' | 'message' | 'community_join_request' | 'chat_invitation' | 'tag';
   message: string;
   isRead: boolean;
   createdAt: string;
   relatedCommunity?: string;
   relatedChat?: string;
-  relatedPost?: string;
+  // The API populates relatedPost, so it may arrive as an object
+  relatedPost?: string | { _id: string };
+  // Aggregation fields: likes/comments on the same post are collapsed
+  count?: number;
+  senders?: NotificationSender[];
 }
 
 const NotificationSkeleton = ({ colors }: { colors: ReturnType<typeof getColors> }) => (
@@ -46,6 +52,9 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme as 'light' | 'dark');
   const styles = dynamicStyles(colors);
@@ -59,12 +68,29 @@ export default function NotificationsScreen() {
   const fetchNotifications = async () => {
     setIsLoading(true);
     try {
-      const response = await notificationAPI.getNotifications();
-      setNotifications(response.data);
+      const response = await notificationAPI.getNotifications(1, 20);
+      setNotifications(response.data.data || []);
+      setHasMore(response.data.pagination?.hasNextPage || false);
+      setPage(1);
     } catch (error) {
       showErrorAlert(error, () => fetchNotifications());
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMoreNotifications = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const response = await notificationAPI.getNotifications(nextPage, 20);
+      setNotifications(prev => [...prev, ...(response.data.data || [])]);
+      setHasMore(response.data.pagination?.hasNextPage || false);
+      setPage(nextPage);
+    } catch (error) {
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -252,11 +278,21 @@ export default function NotificationsScreen() {
         notification.type === 'comment') &&
       notification.relatedPost
     ) {
+      // relatedPost may be populated as an object by the API; normalize to id.
+      const postId = typeof notification.relatedPost === 'string'
+        ? notification.relatedPost
+        : notification.relatedPost?._id;
+
+      if (!postId) return;
+
+      // Comment notifications should land on the post's comments section.
+      const focusComments = notification.type === 'comment';
+
       try {
-        const response = await postAPI.getPost(notification.relatedPost);
+        const response = await postAPI.getPost(postId);
 
         if (response?.data) {
-          router.push(`/?postId=${notification.relatedPost}`);
+          router.push(focusComments ? `/?postId=${postId}&focus=comments` : `/?postId=${postId}`);
         } else {
           CustomAlert.info(
             'Post Deleted',
@@ -284,7 +320,7 @@ export default function NotificationsScreen() {
             // ignore
           }
         } else {
-          router.push(`/?postId=${notification.relatedPost}`);
+          router.push(focusComments ? `/?postId=${postId}&focus=comments` : `/?postId=${postId}`);
         }
       }
 
@@ -345,6 +381,34 @@ export default function NotificationsScreen() {
     // For accepted/ignored, the message will already be updated by handleAcceptRequest/handleIgnoreRequest
     // So, we just need to make sure buttons don't show if it's not a pending request.
 
+    const count = item.count || 1;
+    const isAggregated = count > 1;
+    const displaySenders = (item.senders && item.senders.length ? item.senders : [item.sender]).slice(0, 3);
+    const extraSenders = Math.max(count - displaySenders.length, 0);
+    const primaryName = (item.senders && item.senders[0]?.username) || item.sender.username;
+    const others = count - 1;
+    const isAnonymousSender = item.sender._id === 'anonymous';
+
+    const renderAvatar = (sender: NotificationSender, index: number) => {
+      const source = sender.profilePhoto || sender.avatar;
+      return (
+        <View
+          key={sender._id + index}
+          style={[
+            styles.avatarContainer,
+            { backgroundColor: colors.surface },
+            index > 0 && styles.stackedAvatar,
+          ]}
+        >
+          {source ? (
+            <Image source={{ uri: getImageUrl(source) }} style={styles.avatar} />
+          ) : (
+            <Ionicons name="person" size={24} color={colors.lightText} />
+          )}
+        </View>
+      );
+    };
+
     return (
       <Swipeable
         renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item._id)}
@@ -357,30 +421,34 @@ export default function NotificationsScreen() {
           onPress={() => handleNotificationPress(item)}
           activeOpacity={0.7}
         >
-          <TouchableOpacity onPress={() => router.push(`/user/${item.sender._id}`)}>
-            <View style={[styles.avatarContainer, { backgroundColor: colors.surface }]}>
-              {item.sender.profilePhoto ? (
-                <Image
-                  source={{ uri: getImageUrl(item.sender.profilePhoto) }}
-                  style={styles.avatar}
-                />
-              ) : item.sender.avatar ? (
-                <Image
-                  source={{ uri: getImageUrl(item.sender.avatar) }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <Ionicons name="person" size={24} color={colors.lightText} />
+          <TouchableOpacity
+            disabled={isAnonymousSender}
+            onPress={() => {
+              if (!isAnonymousSender) {
+                router.push(`/user/${item.sender._id}`);
+              }
+            }}
+          >
+            <View style={styles.avatarStack}>
+              {displaySenders.map((sender, i) => renderAvatar(sender, i))}
+              {extraSenders > 0 && (
+                <View style={[styles.avatarContainer, styles.stackedAvatar, styles.avatarMore]}>
+                  <ThemedText style={styles.avatarMoreText}>+{extraSenders}</ThemedText>
+                </View>
               )}
             </View>
           </TouchableOpacity>
           <View style={styles.textContainer}>
             <ThemedText>
-              <ThemedText style={styles.sender}>{item.sender.username}</ThemedText> {item.message}
+              <ThemedText style={styles.sender}>
+                {isAggregated ? `${primaryName} and ${others} other${others === 1 ? '' : 's'} ` : `${primaryName} `}
+              </ThemedText>
+              {item.message}
             </ThemedText>
             <ThemedText style={styles.timestamp}>
               {new Date(item.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
             </ThemedText>
+
             
             {isPendingFriendRequest && (
               <View style={styles.actionButtons}>
@@ -497,6 +565,9 @@ export default function NotificationsScreen() {
             keyExtractor={(item) => item._id}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContainer}
+            onEndReached={loadMoreNotifications}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={loadingMore ? <ActivityIndicator style={{ padding: spacing.md }} color={colors.primary} /> : null}
             renderSectionHeader={({ section: { title } }) => (
               <ThemedText style={styles.sectionHeader}>{title}</ThemedText>
             )}
@@ -587,6 +658,26 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     marginRight: spacing.md, // Consistent spacing
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarStack: {
+    flexDirection: 'row',
+    marginRight: spacing.md,
+    alignItems: 'center',
+  },
+  stackedAvatar: {
+    marginLeft: -16,
+    borderWidth: 2,
+    borderColor: colors.background,
+  },
+  avatarMore: {
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarMoreText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: typography.weights.bold,
   },
   textContainer: {
     flex: 1,

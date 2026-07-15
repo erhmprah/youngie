@@ -181,8 +181,8 @@ Alert.alert = ((
     title,
     message,
     buttons: buttons?.map(b => ({
-      text: b.text,
-      onPress: b.onPress,
+      text: b.text || '',
+      onPress: b.onPress as (() => void) | undefined,
       style: b.style,
     })),
     dismissable: options?.cancelable !== false,

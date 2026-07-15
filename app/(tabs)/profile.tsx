@@ -99,7 +99,7 @@ export default function ProfileScreen() {
             ]);
             setFriends(userData.friends || []);
             setUserPosts(postsData);
-            setAlbum(albumResponse.data || []);
+            setAlbum(albumResponse.data?.data || []);
             setSentRequests(sentRequestsResponse.data || []);
             setReceivedRequests(receivedRequestsResponse.data || []);
         } catch (error: any) {
@@ -295,8 +295,8 @@ export default function ProfileScreen() {
     const handleMessage = async (friendId: string) => {
         if (!user?._id) return;
         try {
-            const response = await chatAPI.getUserChats(user._id);
-            const chats = response.data;
+            const response = await chatAPI.getUserChats(user._id, 1, 50);
+            const chats = response.data.data || [];
             // Check for existing 1-on-1 chat
             const existingChat = chats.find((c: any) => 
                 !c.isGroupChat && c.participants.some((p: any) => (p._id === friendId || p === friendId))

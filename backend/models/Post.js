@@ -19,20 +19,6 @@ const PostSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
-    reactions: [
-      {
-        user: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
-        },
-        type: {
-          type: String,
-          enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire'],
-          default: 'like',
-        },
-        createdAt: { type: Date, default: Date.now },
-      },
-    ],
     comments: [
       {
         author: {
@@ -40,23 +26,6 @@ const PostSchema = new mongoose.Schema(
           ref: 'User',
         },
         content: String,
-        reactions: [
-          {
-            user: {
-              type: mongoose.Schema.Types.ObjectId,
-              ref: 'User',
-            },
-            type: {
-              type: String,
-              enum: ['like', 'heart', 'laugh', 'wow', 'sad', 'fire'],
-              default: 'like',
-            },
-            createdAt: {
-              type: Date,
-              default: Date.now,
-            },
-          },
-        ],
         tags: [
           {
             type: mongoose.Schema.Types.ObjectId,
@@ -143,12 +112,6 @@ PostSchema.index({ 'reactions.type': 1 });
 PostSchema.index({ tags: 1 });
 PostSchema.index({ 'comments.category': 1 });
 PostSchema.index({ createdAt: -1 });
-
-// Unique index to enforce one reaction per user per post
-PostSchema.index({ _id: 1, 'reactions.user': 1 }, { unique: true, sparse: true });
-
-// Unique index to enforce one reaction per user per comment
-PostSchema.index({ _id: 1, 'comments._id': 1, 'comments.reactions.user': 1 }, { unique: true, sparse: true });
 
 // Text index for content search
 PostSchema.index({ content: 'text' });

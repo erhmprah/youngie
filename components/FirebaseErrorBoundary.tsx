@@ -68,7 +68,7 @@ const FirebaseErrorFallback: React.FC<{ error?: Error; onRetry: () => void }> = 
 
   const isOfflineError = error?.message?.includes('offline') ||
                         error?.message?.includes('network') ||
-                        error?.code === 'unavailable';
+                        (error as any)?.code === 'unavailable';
 
   return (
     <ThemedView style={[styles.container, { backgroundColor }]}>

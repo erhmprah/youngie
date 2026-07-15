@@ -7,6 +7,7 @@ import { supabase } from '@/utils/supabase';
 
 interface User {
    _id: string;
+   id: string;
    username: string;
    email: string;
    birthYear?: number;

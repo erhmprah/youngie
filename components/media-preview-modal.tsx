@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { IconSymbol } from './ui/icon-symbol';
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window')
 
 interface MediaPreviewModalProps {
     visible: boolean;
@@ -25,7 +25,7 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
     // Reset error state when attachment or visibility changes
     useEffect(() => {
         setMediaError(false);
-    }, [attachment, visible]);
+    }, [attachment, visible]);  
 
     if (!attachment) return null;
 

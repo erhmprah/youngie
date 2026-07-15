@@ -42,6 +42,8 @@ const VideoChatScreen: React.FC = () => {
   const peerIdRef = useRef<string | null>(null);
   const socket = useRef<Socket | null>(null);
   const localStreamRef = useRef<any>(null);
+  const remoteStreamRef = useRef<any>(null);
+  const pendingIceCandidates = useRef<any[]>([]);
   const router = useRouter();
   const { user } = useAuth();
 
@@ -52,6 +54,10 @@ const VideoChatScreen: React.FC = () => {
   const surfaceColor = useThemeColor('surface');
 
   const [webRTC, setWebRTC] = useState<any>(null);
+
+  const checkPermissionsRef = useRef<(...args: any[]) => Promise<void>>(async () => {});
+  const resetChatRef = useRef<(...args: any[]) => void>(() => {});
+  const findNextPeerRef = useRef<(...args: any[]) => void>(() => {});
 
   useEffect(() => {
     try {
@@ -78,26 +84,26 @@ const VideoChatScreen: React.FC = () => {
     localStreamRef.current = localStream;
   }, [localStream]);
 
-  const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, RTCView, mediaDevices } = webRTC || {};
+  const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, RTCView, mediaDevices, MediaStream } = webRTC || {};
 
   // Handle tab focus/blur to manage resources
   useFocusEffect(
     useCallback(() => {
-      checkPermissions();
+      checkPermissionsRef.current();
       
       return () => {
         // Cleanup when switching tabs
-        resetChat();
+        resetChatRef.current();
         if (socket.current) {
           socket.current.disconnect();
         }
         KeepAwake.deactivateKeepAwake().catch(() => {});
       };
-    }, [checkPermissions, resetChat])
+    }, [])
   );
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval> | null = null;
     if (isChatting) {
       interval = setInterval(() => {
         setChatDuration(prev => prev + 1);
@@ -105,7 +111,9 @@ const VideoChatScreen: React.FC = () => {
     } else {
       setChatDuration(0);
     }
-    return () => clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [isChatting]);
 
   const formatTime = (seconds: number) => {
@@ -152,6 +160,8 @@ const VideoChatScreen: React.FC = () => {
     }
   }, []);
 
+  checkPermissionsRef.current = checkPermissions;
+
   const createPeerConnection = useCallback(() => {
     if (!RTCPeerConnection) {
       return null;
@@ -179,7 +189,19 @@ const VideoChatScreen: React.FC = () => {
 
     // @ts-ignore
     pc.ontrack = (event) => {
-      setRemoteStream(event.streams[0]);
+      if (event.streams && event.streams[0]) {
+        remoteStreamRef.current = event.streams[0];
+      } else if (event.track) {
+        if (!remoteStreamRef.current && MediaStream) {
+          remoteStreamRef.current = new MediaStream();
+        }
+        if (remoteStreamRef.current) {
+          remoteStreamRef.current.addTrack(event.track);
+        }
+      }
+      if (remoteStreamRef.current) {
+        setRemoteStream(remoteStreamRef.current);
+      }
       setIsChatting(true);
     };
 
@@ -269,6 +291,8 @@ const VideoChatScreen: React.FC = () => {
       if (audioTrack) audioTrack.enabled = true;
     }
     setRemoteStream(null);
+    remoteStreamRef.current = null;
+    pendingIceCandidates.current = [];
     setIsConnecting(false);
     setIsChatting(false);
     setIsMuted(false);
@@ -282,7 +306,9 @@ const VideoChatScreen: React.FC = () => {
     KeepAwake.deactivateKeepAwake().catch(() => {});
   }, []);
 
-   const startVideoChat = useCallback(async () => {
+  resetChatRef.current = resetChat;
+
+  const startVideoChat = useCallback(async () => {
      if (!webRTCSupported) {
        CustomAlert.error('WebRTC Not Available', 'Please ensure you are running a development build with react-native-webrtc installed.');
        return;
@@ -313,6 +339,36 @@ const VideoChatScreen: React.FC = () => {
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
       });
+
+      // Add an ICE candidate safely: buffer it until the remote description
+      // has been applied (candidates often arrive before setRemoteDescription).
+      const addRemoteCandidate = async (candidate: any) => {
+        const pc = peerConnection.current;
+        if (!pc || !candidate) return;
+        if (!pc.remoteDescription || !pc.remoteDescription.type) {
+          pendingIceCandidates.current.push(candidate);
+          return;
+        }
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error('Error adding ICE candidate:', e);
+        }
+      };
+
+      // Flush any buffered candidates after the remote description is set.
+      const flushIceCandidates = async () => {
+        const pc = peerConnection.current;
+        if (!pc) return;
+        while (pendingIceCandidates.current.length > 0) {
+          const candidate = pendingIceCandidates.current.shift();
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.error('Error flushing ICE candidate:', e);
+          }
+        }
+      };
 
       socket.current.on('connect', () => {
         console.log('Video chat socket connected:', socket.current?.id);
@@ -447,6 +503,7 @@ const VideoChatScreen: React.FC = () => {
               return;
             }
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
+            await flushIceCandidates();
             const answer = await peerConnection.current.createAnswer();
             await peerConnection.current.setLocalDescription(answer);
             socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
@@ -465,6 +522,7 @@ const VideoChatScreen: React.FC = () => {
               if (peerConnection.current.signalingState === 'have-local-offer' ||
                   (peerConnection.current.signalingState === 'stable' && !peerConnection.current.remoteDescription)) {
                 await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+                await flushIceCandidates();
               }
             } catch (e) {
               console.error('Error setting remote description:', e);
@@ -476,11 +534,7 @@ const VideoChatScreen: React.FC = () => {
       });
 
       socket.current.on('ice_candidate', async (candidate: any) => {
-        try {
-          await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-          console.error('Error adding ICE candidate:', e);
-        }
+        await addRemoteCandidate(candidate);
       });
 
       socket.current.on('peer_disconnected', () => {
@@ -543,10 +597,10 @@ const VideoChatScreen: React.FC = () => {
         } catch {
           CustomAlert.error('Error', 'Failed to report user');
         }
-        findNextPeer();
+        findNextPeerRef.current();
       }
     );
-  }, [findNextPeer, user?._id, peerId]);
+  }, [user?._id, peerId]);
 
   const handleSendFriendRequest = useCallback(async () => {
     if (!user?._id || !peerId) return;
@@ -614,13 +668,9 @@ const VideoChatScreen: React.FC = () => {
     }
   }, [resetChat, startVideoChat]);
 
-  const pan = useRef(new Animated.ValueXY()).current;
+  findNextPeerRef.current = findNextPeer;
 
-  // Refs for PanResponder to access latest state
-  const findNextPeerRef = useRef(findNextPeer);
-  useEffect(() => {
-    findNextPeerRef.current = findNextPeer;
-  }, [findNextPeer]);
+  const pan = useRef(new Animated.ValueXY()).current;
 
   const isChattingRef = useRef(isChatting);
   useEffect(() => {
@@ -670,16 +720,18 @@ const VideoChatScreen: React.FC = () => {
     })
   ).current;
 
-   useEffect(() => {
-     let timeout: NodeJS.Timeout;
-     if (isConnecting) {
-       timeout = setTimeout(() => {
-         CustomAlert.warning('Timeout', 'No match found. Please try again.');
-         resetChat();
-       }, 30000);
-     }
-     return () => clearTimeout(timeout);
-   }, [isConnecting, resetChat]);
+    useEffect(() => {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      if (isConnecting) {
+        timeout = setTimeout(() => {
+          CustomAlert.warning('Timeout', 'No match found. Please try again.');
+          resetChat();
+        }, 30000);
+      }
+      return () => {
+        if (timeout) clearTimeout(timeout);
+      };
+    }, [isConnecting, resetChat]);
 
   if (!webRTCSupported) {
     return (
@@ -714,7 +766,7 @@ const VideoChatScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: (isChatting || isConnecting) ? 'transparent' : backgroundColor }]}>
       <View style={styles.videoWrapper}>
         <Animated.View 
           style={[StyleSheet.absoluteFill, { transform: [{ translateX: pan.x }] }]}
@@ -883,7 +935,7 @@ const VideoChatScreen: React.FC = () => {
           <View style={styles.activeControls}>
             <TouchableOpacity 
               style={[styles.controlButton, { backgroundColor: errorColor }]}
-              onPress={resetChat}
+              onPress={() => resetChat()}
             >
               <Ionicons name="call" size={24} color="white" />
               <ThemedText style={styles.controlButtonText}>End</ThemedText>

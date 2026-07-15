@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, View, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemedView } from './themed-view';
-import { ThemedText } from './themed-text';
-import { IconSymbol } from './ui/icon-symbol';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { userAPI, getImageUrl } from '@/utils/api';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
@@ -100,7 +100,7 @@ export function UserTaggingModal({ visible, onClose, onTagsSelected, initialSele
                         <TouchableOpacity onPress={onClose}>
                             <ThemedText style={{ color: lightTextColor }}>Cancel</ThemedText>
                         </TouchableOpacity>
-                        <ThemedText type="subtitle" style={{ fontWeight: 'bold' }}>Tag People</ThemedText>
+                        <ThemedText type="title" style={{ fontWeight: 'bold' }}>Tag People</ThemedText>
                         <TouchableOpacity onPress={handleDone}>
                             <ThemedText style={{ color: primaryColor, fontWeight: 'bold' }}>Done</ThemedText>
                         </TouchableOpacity>

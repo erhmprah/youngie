@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, Switch } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { ThemedView } from './themed-view';
-import { ThemedText } from './themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
-import { IconSymbol } from './ui/icon-symbol';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { communityAPI } from '@/utils/api';
 
 interface CreateCommunityModalProps {

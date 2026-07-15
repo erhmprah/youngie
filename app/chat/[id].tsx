@@ -53,9 +53,13 @@ interface Message {
      size: number;
      duration?: number;
    } | string;
-   isSending?: boolean;
-   sendError?: boolean;
-}
+    isSending?: boolean;
+    sendError?: boolean;
+    messageType?: 'text' | 'call';
+    callType?: 'voice' | 'video';
+    callStatus?: 'missed' | 'declined' | 'completed' | 'cancelled';
+    callDuration?: number;
+  }
 
 interface User {
    _id: string;
@@ -81,6 +85,9 @@ export default function ChatScreen() {
   const router = useRouter();
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagePage, setMessagePage] = useState(1);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -110,6 +117,7 @@ export default function ChatScreen() {
   const [audioStatus, setAudioStatus] = useState<Record<string, any>>({});
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightedMessageTimeout = useRef<number | null>(null);
+  const [nowTick, setNowTick] = useState<number>(Date.now());
 
   // Format last seen time to show relative time (e.g., "2 hours ago", "Yesterday")
   const formatLastSeen = (dateString: string) => {
@@ -178,6 +186,48 @@ export default function ChatScreen() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const formatCallDuration = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const renderCallLog = (item: Message) => {
+    const isMyMessage = item.sender._id === user?._id;
+    const incoming = !isMyMessage;
+    const status = item.callStatus;
+    const duration = item.callDuration || 0;
+
+    let label: string;
+    if (status === 'completed') {
+      label = (incoming ? 'Incoming voice call' : 'Outgoing voice call') + (duration > 0 ? ` · ${formatCallDuration(duration)}` : '');
+    } else if (status === 'missed') {
+      label = incoming ? 'Missed voice call' : 'Outgoing voice call';
+    } else if (status === 'declined') {
+      label = incoming ? 'You declined the call' : 'Call declined';
+    } else {
+      label = incoming ? 'Incoming voice call' : 'Cancelled voice call';
+    }
+
+    const isFailure = status === 'missed' || status === 'declined';
+    const iconName = isFailure ? 'phone.down.fill' : 'phone.fill';
+    const iconColor = isFailure ? errorColor : primaryColor;
+
+    return (
+      <View style={styles.callLogContainer}>
+        <View style={[styles.callLogPill, { backgroundColor: surfaceColor }]}>
+          <IconSymbol name={iconName} size={16} color={iconColor} />
+          <ThemedText style={[styles.callLogText, { color: isFailure ? errorColor : textColor }]}>
+            {label}
+          </ThemedText>
+          <ThemedText style={[styles.callLogTime, { color: lightTextColor }]}>
+            {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </ThemedText>
+        </View>
+      </View>
+    );
+  };
+
   const styles = createStyles({
     primaryColor,
     white,
@@ -192,9 +242,11 @@ export default function ChatScreen() {
   useEffect(() => {
     const fetchChat = async () => {
       try {
-        const response = await chatAPI.getChat(id as string);
+        const response = await chatAPI.getChat(id as string, 1, 20);
         setChat(response.data);
         setMessages(response.data.messages || []);
+        setMessagePage(1);
+        setHasMoreMessages(response.data.messagesPagination?.hasNextPage || false);
         chatAPI.markAsRead(id as string); // Mark as read when opening
       } catch (error) {
       } finally {
@@ -204,8 +256,8 @@ export default function ChatScreen() {
 
     const fetchUserChats = async () => {
       try {
-        const response = await chatAPI.getUserChats(user?._id || '');
-        setUserChats(response.data);
+        const response = await chatAPI.getUserChats(user?._id || '', 1, 20);
+        setUserChats(response.data.data || []);
       } catch (error) {
       }
     };
@@ -215,7 +267,6 @@ export default function ChatScreen() {
 
     // Join the chat room via socket
     joinChat(id as string);
-
     const handleNewMessage = (message: Message) => {
       if (message.chat === id) {
         setMessages(prevMessages => {
@@ -347,6 +398,29 @@ export default function ChatScreen() {
       }
     };
   }, [id]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlder || !hasMoreMessages) return;
+    setLoadingOlder(true);
+    try {
+      const nextPage = messagePage + 1;
+      const response = await chatAPI.getChat(id as string, nextPage, 20);
+      const older = response.data.messages || [];
+      setMessages(prev => [...older, ...prev]);
+      setMessagePage(nextPage);
+      setHasMoreMessages(response.data.messagesPagination?.hasNextPage || false);
+    } catch (error) {
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [id, messagePage, hasMoreMessages, loadingOlder]);
+
+  // Periodically re-render so the "last seen X minutes ago" text stays current
+  // while the user is viewing the chat.
+  useEffect(() => {
+    const interval = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -808,7 +882,7 @@ export default function ChatScreen() {
           setAudioStatus(prev => ({ ...prev, [messageId]: status }));
           if ((status as any).didJustFinish) {
             setPlayingAudio(null);
-            sound.setPositionAsync(0);
+            if (sound) sound.setPositionAsync(0);
           }
         });
       }
@@ -1054,6 +1128,12 @@ export default function ChatScreen() {
     const isMyMessage = item.sender._id === user?._id;
     const closeSwipe = () => swipeRefs.current.get(item._id)?.close();
 
+    // Render call events (missed / declined / completed / cancelled) as a
+    // centered system message inside the conversation thread.
+    if (item.messageType === 'call' && item.callStatus) {
+      return renderCallLog(item);
+    }
+
     // Handle anonymous display logic client-side for real-time messages
     const showAnonymous = item.isAnonymous && !isMyMessage;
     const displayName = showAnonymous ? 'Anonymous' : item.sender.username;
@@ -1196,6 +1276,8 @@ export default function ChatScreen() {
   const isDirectChat = chat && !chat.isGroupChat && chat.participants.length === 2;
   const isOnline = otherParticipant?.isOnline;
   const lastSeen = otherParticipant?.lastSeen;
+  // Reference nowTick so the relative "last seen" text refreshes in place.
+  void nowTick;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor }}>
@@ -1243,6 +1325,23 @@ export default function ChatScreen() {
             keyExtractor={(item) => item._id}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            ListHeaderComponent={
+              hasMoreMessages ? (
+                <TouchableOpacity
+                  style={styles.loadOlderContainer}
+                  disabled={loadingOlder}
+                  onPress={loadOlderMessages}
+                >
+                  {loadingOlder ? (
+                    <ActivityIndicator size="small" color={primaryColor} />
+                  ) : (
+                    <ThemedText style={{ color: primaryColor, textAlign: 'center' }}>
+                      Load earlier messages
+                    </ThemedText>
+                  )}
+                </TouchableOpacity>
+              ) : null
+            }
             // Performance optimization props
             initialNumToRender={20}
             maxToRenderPerBatch={10}
@@ -1565,6 +1664,7 @@ const createStyles = (colors: { primaryColor: string; white: string; surfaceColo
   voiceCallButton: { paddingLeft: spacing.md },
   settingsButton: { paddingLeft: spacing.md },
   listContent: { padding: spacing.md },
+  loadOlderContainer: { paddingVertical: spacing.sm, alignItems: 'center' },
   messageContainer: { flexDirection: 'row', marginBottom: spacing.md, maxWidth: '80%' },
   myMessageContainer: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
   otherMessageContainer: { alignSelf: 'flex-start' },
@@ -1805,5 +1905,26 @@ const createStyles = (colors: { primaryColor: string; white: string; surfaceColo
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  callLogContainer: {
+    alignItems: 'center',
+    marginVertical: spacing.sm,
+  },
+  callLogPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.round,
+    gap: spacing.xs,
+    maxWidth: '90%',
+  },
+  callLogText: {
+    fontSize: typography.sizes.caption,
+    fontFamily: typography.families.medium,
+  },
+  callLogTime: {
+    fontSize: 10,
+    opacity: 0.7,
   },
 });

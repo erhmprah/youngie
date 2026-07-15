@@ -12,7 +12,7 @@ export default function VerifyEmail() {
   const [isLoading, setIsLoading] = useState(false);
   
   const backgroundColor = useThemeColor('background');
-  const cardColor = useThemeColor('card');
+  const cardColor = useThemeColor('surface');
   const textColor = useThemeColor('text');
   const primaryColor = useThemeColor('primary');
   const lightTextColor = useThemeColor('lightText');
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: typography.sizes.body1,
-    fontWeight: typography.families.semibold,
+    fontFamily: typography.families.semibold,
   },
   divider: {
     flexDirection: 'row',
@@ -164,4 +164,4 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.body1,
     fontWeight: '600',
   },
-});
+} as any);
