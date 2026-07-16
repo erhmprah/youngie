@@ -77,7 +77,7 @@ interface StoryGroup {
 
 interface CommunityFeedPost {
     _id: string;
-    community: { _id: string; name: string; image?: string };
+    community: { _id: string; name: string; image?: string; isAnonymous?: boolean };
     author: { _id: string; username: string; avatar?: string; profilePhoto?: string };
     content?: string;
     images?: string[];
@@ -156,11 +156,28 @@ export default function FeedScreen() {
                 // Recent feed posts from communities the user has joined
                 const communityFeedData: CommunityFeedPost[] =
                     communityFeedResponse.data?.data || communityFeedResponse.data || [];
-                setCommunityPosts(
-                    (Array.isArray(communityFeedData) ? communityFeedData : []).filter(
-                        (p: any) => p && p._id && p.community
-                    )
+                const filteredCommunityPosts = (Array.isArray(communityFeedData) ? communityFeedData : []).filter(
+                    (p: any) => p && p._id && p.community
                 );
+                if (isIncognito) {
+                    const masked = filteredCommunityPosts
+                        .filter((p: any) => p.community && p.community.isAnonymous)
+                        .map((p: CommunityFeedPost) => {
+                            const maskedPost: CommunityFeedPost = {
+                                ...p,
+                                author: { _id: 'anonymous', username: 'Anonymous', avatar: undefined, profilePhoto: undefined },
+                                likes: (p.likes || []).map(() => ({ _id: 'anonymous' })),
+                                comments: (p.comments || []).map((c: any) => ({
+                                    ...c,
+                                    author: { _id: 'anonymous', username: 'Anonymous' },
+                                })),
+                            };
+                            return maskedPost;
+                        });
+                    setCommunityPosts(masked);
+                } else {
+                    setCommunityPosts(filteredCommunityPosts);
+                }
             } else {
                 setPosts(prev => [...prev, ...newPosts]);
             }
@@ -425,7 +442,10 @@ export default function FeedScreen() {
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0) {
-            setPlayingPostId(viewableItems[0].item._id);
+            const visibleItem = viewableItems[0].item;
+            if (visibleItem.kind === 'post') {
+                setPlayingPostId(visibleItem.data._id);
+            }
         }
     }, []);
 

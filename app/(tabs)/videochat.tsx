@@ -1,18 +1,18 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, StyleSheet, Text, Platform, Alert, Animated, PanResponder, Dimensions, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, FlatList, TextInput, PermissionsAndroid } from 'react-native';
-import { CustomAlert } from '@/utils/alert';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { SOCKET_URL, userAPI } from '@/utils/api';
-import { useCustomAlert } from '@/utils/alert';
-import { Ionicons } from '@expo/vector-icons';
-import { spacing, borderRadius, shadows, typography } from '@/constants/design-tokens';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as KeepAwake from 'expo-keep-awake';
-import { Socket, io } from 'socket.io-client';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { ThemedView } from '@/components/themed-view';
+import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { CustomAlert } from '@/utils/alert';
+import { SOCKET_URL, userAPI } from '@/utils/api';
+import { getICEServers } from '@/utils/externalServices';
+import { Ionicons } from '@expo/vector-icons';
+import * as KeepAwake from 'expo-keep-awake';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Dimensions, FlatList, KeyboardAvoidingView, PanResponder, PermissionsAndroid, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Socket, io } from 'socket.io-client';
 
 type Message = {
   id: string;
@@ -85,6 +85,24 @@ const VideoChatScreen: React.FC = () => {
   }, [localStream]);
 
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, RTCView, mediaDevices, MediaStream } = webRTC || {};
+
+  const attachRemoteStream = useCallback((stream: any) => {
+    if (!stream) {
+      console.log('❌ attachRemoteStream called with null/undefined stream');
+      return;
+    }
+
+    console.log('✅ attachRemoteStream called with stream:', {
+      id: stream?.id,
+      active: stream?.active,
+      videoTracks: stream?.getVideoTracks?.().length || 0,
+      audioTracks: stream?.getAudioTracks?.().length || 0,
+    });
+
+    remoteStreamRef.current = stream;
+    setRemoteStream(stream);
+    setIsChatting(true);
+  }, []);
 
   // Handle tab focus/blur to manage resources
   useFocusEffect(
@@ -162,22 +180,32 @@ const VideoChatScreen: React.FC = () => {
 
   checkPermissionsRef.current = checkPermissions;
 
-  const createPeerConnection = useCallback(() => {
+  const createPeerConnection = useCallback(async () => {
     if (!RTCPeerConnection) {
       return null;
     }
 
     let pc;
     try {
+      const iceServers = await getICEServers();
       pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-        ],
+        iceServers,
       });
     } catch (error) {
-      return null;
+      try {
+        pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
+            { urls: 'turn:global.relay.metered.ca:443', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
+            { urls: 'turn:global.relay.metered.ca:3478', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
+          ],
+        });
+      } catch (fallbackError) {
+        return null;
+      }
     }
 
     // @ts-ignore
@@ -189,20 +217,39 @@ const VideoChatScreen: React.FC = () => {
 
     // @ts-ignore
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        remoteStreamRef.current = event.streams[0];
-      } else if (event.track) {
+      console.log('🔊 ontrack event fired:', {
+        streamCount: event?.streams?.length || 0,
+        trackKind: event?.track?.kind,
+        trackEnabled: event?.track?.enabled,
+        hasStream: !!event?.streams?.[0],
+      });
+
+      const incomingStream = event?.streams?.[0] || event?.stream || null;
+
+      if (incomingStream) {
+        console.log('✅ Stream found in event.streams[0]');
+        attachRemoteStream(incomingStream);
+      } else if (event?.track) {
+        console.log('⚙️ No stream, building from track:', event?.track?.kind);
         if (!remoteStreamRef.current && MediaStream) {
           remoteStreamRef.current = new MediaStream();
+          console.log('📺 Created new MediaStream');
         }
-        if (remoteStreamRef.current) {
+        if (remoteStreamRef.current?.addTrack) {
           remoteStreamRef.current.addTrack(event.track);
+          console.log('📥 Added track to MediaStream');
+          attachRemoteStream(remoteStreamRef.current);
         }
+      } else {
+        console.log('❌ ontrack fired but no stream or track available');
       }
-      if (remoteStreamRef.current) {
-        setRemoteStream(remoteStreamRef.current);
+    };
+
+    // @ts-ignore
+    pc.onaddstream = (event) => {
+      if (event?.stream) {
+        attachRemoteStream(event.stream);
       }
-      setIsChatting(true);
     };
 
     // @ts-ignore
@@ -220,7 +267,7 @@ const VideoChatScreen: React.FC = () => {
     };
 
     return pc;
-  }, [isChatting, RTCPeerConnection]);
+  }, [attachRemoteStream, isChatting, RTCPeerConnection, MediaStream]);
 
   const initLocalStream = useCallback(async () => {
     if (!hasPermissions) {
@@ -449,12 +496,13 @@ const VideoChatScreen: React.FC = () => {
         }).start();
 
         setIsConnecting(false);
+        peerIdRef.current = peerId;
         setPeerId(peerId);
         setIsChatting(true);
         KeepAwake.activateKeepAwake().catch(() => {});
 
          if (initiator) {
-           peerConnection.current = createPeerConnection();
+           peerConnection.current = await createPeerConnection();
            if (!peerConnection.current) {
              CustomAlert.error('Error', 'Failed to create peer connection.');
              return;
@@ -462,13 +510,18 @@ const VideoChatScreen: React.FC = () => {
 
           stream.getTracks().forEach((track: any) => {
             try {
+              console.log('📤 Adding local track to peer connection:', track.kind);
               peerConnection.current?.addTrack(track, stream);
             } catch (e) {
+              console.error('❌ Error adding track:', e);
             }
           });
 
           try {
-            const offer = await peerConnection.current.createOffer();
+            const offer = await peerConnection.current.createOffer({
+              offerToReceiveAudio: true,
+              offerToReceiveVideo: true,
+            });
             await peerConnection.current.setLocalDescription(offer);
             socket.current?.emit('offer', offer, peerId);
           } catch (e) {
@@ -478,7 +531,10 @@ const VideoChatScreen: React.FC = () => {
 
       socket.current.on('offer', async (offer: any, remotePeerId?: string) => {
         try {
-          if (remotePeerId) setPeerId(remotePeerId);
+          if (remotePeerId) {
+            peerIdRef.current = remotePeerId;
+            setPeerId(remotePeerId);
+          }
           
           // Update UI state when offer is received - peer is found but still connecting
           setIsConnecting(false);
@@ -486,25 +542,26 @@ const VideoChatScreen: React.FC = () => {
           KeepAwake.activateKeepAwake().catch(() => {});
           
           if (!peerConnection.current || peerConnection.current.signalingState !== 'stable') {
-            peerConnection.current = createPeerConnection();
+            peerConnection.current = await createPeerConnection();
             if (!peerConnection.current) return;
 
             stream.getTracks().forEach((track: MediaStreamTrack) => {
               try {
+                console.log('📤 Adding local track in offer handler:', track.kind);
                 peerConnection.current?.addTrack(track, stream);
               } catch (e) {
-                console.error('Error adding track in offer:', e);
+                console.error('❌ Error adding track in offer:', e);
               }
             });
           }
 
           try {
-            if (peerConnection.current.signalingState !== 'stable') {
-              return;
-            }
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
             await flushIceCandidates();
-            const answer = await peerConnection.current.createAnswer();
+            const answer = await peerConnection.current.createAnswer({
+              offerToReceiveAudio: true,
+              offerToReceiveVideo: true,
+            });
             await peerConnection.current.setLocalDescription(answer);
             socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
           } catch (e) {
@@ -733,6 +790,12 @@ const VideoChatScreen: React.FC = () => {
       };
     }, [isConnecting, resetChat]);
 
+  const localStreamUrl = localStream?.toURL?.() || null;
+  const remoteStreamUrl = remoteStream?.toURL?.() || null;
+
+  // Debug logging for stream URL changes
+
+
   if (!webRTCSupported) {
     return (
       <ThemedView style={styles.centeredContainer}>
@@ -772,11 +835,13 @@ const VideoChatScreen: React.FC = () => {
           style={[StyleSheet.absoluteFill, { transform: [{ translateX: pan.x }] }]}
           {...panResponder.panHandlers}
         >
-        {remoteStream && RTCView && (
+        {remoteStream && RTCView && remoteStreamUrl && (
           <RTCView
-            streamURL={remoteStream.toURL()}
+            key={remoteStream?.id}
+            streamURL={remoteStreamUrl}
             style={styles.fullScreenVideo}
             objectFit="cover"
+            zOrder={0}
           />
         )}
 
@@ -834,7 +899,7 @@ const VideoChatScreen: React.FC = () => {
         )}
 
         {/* Local Video Overlay */}
-        {localStream && RTCView && (
+        {localStream && RTCView && localStreamUrl && (
           <View style={[styles.localVideoContainer, { borderColor: surfaceColor }]}>
             {isVideoPaused ? (
               <View style={[styles.localVideo, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
@@ -842,7 +907,8 @@ const VideoChatScreen: React.FC = () => {
               </View>
             ) : (
               <RTCView
-                streamURL={localStream.toURL()}
+                key={localStream?.id}
+                streamURL={localStreamUrl}
                 style={styles.localVideo}
                 objectFit="cover"
                 mirror={true}

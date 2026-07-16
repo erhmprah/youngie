@@ -3,5 +3,11 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "/^node --check backend/routes/community-feed\\.js && node --check backend/routes/communities\\.js && node --check backend/models/CommunityFeed\\.js$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

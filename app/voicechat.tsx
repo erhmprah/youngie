@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, StyleSheet, Text, Button, Platform, Alert } from 'react-native';
-import { CustomAlert } from '@/utils/alert';
-import { useNavigation } from '@react-navigation/native';
-import { Socket, io } from 'socket.io-client';
-import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { SOCKET_URL } from '@/utils/api'; // Import SOCKET_URL
+import { ThemedView } from '@/components/themed-view';
+import { CustomAlert } from '@/utils/alert';
+import { SOCKET_URL } from '@/utils/api';
+import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Button, StyleSheet, View } from 'react-native';
+import { Socket, io } from 'socket.io-client';
 
 const SOCKET_SERVER_URL = SOCKET_URL;
 
@@ -15,11 +15,13 @@ const VoiceChatScreen: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [webRTCSupported, setWebRTCSupported] = useState(true);
+
   const peerConnection = useRef<any>(null);
   const socket = useRef<Socket | null>(null);
   const navigation = useNavigation();
 
   const [webRTC, setWebRTC] = useState<any>(null);
+  const matchedPeerIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -30,40 +32,63 @@ const VoiceChatScreen: React.FC = () => {
     }
   }, []);
 
-  const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } = webRTC || {};
+  const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices, RTCView } = webRTC || {};
+
+  const resetChat = useCallback(() => {
+    matchedPeerIdRef.current = null;
+
+    if (peerConnection.current) {
+      try {
+        peerConnection.current.close();
+      } catch {}
+      peerConnection.current = null;
+    }
+
+    if (localStream) {
+      try {
+        localStream.getTracks().forEach((track: any) => track.stop());
+      } catch {}
+    }
+
+    setLocalStream(null);
+    setRemoteStream(null);
+    setIsConnecting(false);
+    setIsChatting(false);
+  }, [localStream]);
 
   const createPeerConnection = useCallback(() => {
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        // TURN servers are required for connectivity behind symmetric NATs or firewalls.
-        // {
-        //   urls: 'turn:your-turn-server.com:3478',
-        //   username: 'your-username',
-        //   credential: 'your-password',
-        // },
+        { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
+        { urls: 'turn:global.relay.metered.ca:443', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
+        { urls: 'turn:global.relay.metered.ca:3478', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
       ],
     });
 
-    // @ts-ignore
-    pc.onicecandidate = (event) => {
-      if (event.candidate && socket.current) {
-        const peerId = peerConnection.current?.remoteDescription ? socket.current.id : null;
-        if (peerId) {
-          socket.current.emit('ice_candidate', event.candidate, peerId);
-        }
+    pc.onicecandidate = (event: any) => {
+      if (!event.candidate) return;
+      if (!socket.current) return;
+
+      const peerId = matchedPeerIdRef.current;
+      if (!peerId) return;
+
+      socket.current.emit('ice_candidate', event.candidate, peerId);
+    };
+
+    pc.ontrack = (event: any) => {
+      const stream = event.streams?.[0];
+      if (stream) {
+        setRemoteStream(stream);
+        setIsChatting(true);
       }
     };
 
-    // @ts-ignore
-    pc.ontrack = (event) => {
-      setRemoteStream(event.streams[0]);
-      setIsChatting(true);
-    };
-
-    // @ts-ignore
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+      if (!peerConnection.current) return;
+
+      const state = peerConnection.current.iceConnectionState;
+      if (state === 'disconnected' || state === 'failed') {
         if (isChatting) {
           CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
           resetChat();
@@ -72,44 +97,32 @@ const VoiceChatScreen: React.FC = () => {
     };
 
     return pc;
-  }, [isChatting]);
+  }, [isChatting, resetChat]);
 
   const initLocalStream = useCallback(async () => {
     try {
       if (!mediaDevices || !mediaDevices.getUserMedia) {
         throw new Error('WebRTC not supported. Please use a development build.');
       }
+
       const stream = await mediaDevices.getUserMedia({
         audio: true,
-        video: false,
+        video: true,
       });
+
       setLocalStream(stream);
       return stream;
-     } catch (error) {
-       console.log('Issue with microphone access, handling gracefully');
-       CustomAlert.error('Error', 'Microphone access is required. Please check your permissions.');
-       navigation.goBack();
-       return null;
-     }
+    } catch (error) {
+      CustomAlert.error('Error', 'Camera + microphone access is required. Please check your permissions.');
+      navigation.goBack();
+      return null;
+    }
   }, [navigation]);
-
-  const resetChat = useCallback(() => {
-    if (peerConnection.current) {
-      peerConnection.current.close();
-      peerConnection.current = null;
-    }
-    if (localStream) {
-      localStream.getTracks().forEach((track: any) => track.stop());
-    }
-    setLocalStream(null);
-    setRemoteStream(null);
-    setIsConnecting(false);
-    setIsChatting(false);
-  }, [localStream]);
 
   const startVoiceChat = useCallback(async () => {
     setIsConnecting(true);
-    resetChat(); // Ensure clean state
+    resetChat();
+
     const stream = await initLocalStream();
     if (!stream) {
       setIsConnecting(false);
@@ -126,21 +139,20 @@ const VoiceChatScreen: React.FC = () => {
     });
 
     socket.current.on('connect', () => {
-      console.log('Socket connected:', socket.current?.id);
       socket.current?.emit('join_room');
     });
 
-    socket.current.on('connect_error', (error) => {
-      console.error('Socket connection error:', error.message);
+    socket.current.on('connect_error', (error: any) => {
       CustomAlert.error('Connection Error', 'Failed to connect to the chat server. Please try again.');
       setIsConnecting(false);
+      console.error('Socket connection error:', error?.message || error);
     });
 
-    socket.current.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason);
+    socket.current.on('disconnect', (reason: any) => {
       if (isChatting) {
         CustomAlert.error('Disconnected', 'Connection lost. Please try connecting again.');
       }
+      console.log('Socket disconnected:', reason);
       resetChat();
     });
 
@@ -152,11 +164,15 @@ const VoiceChatScreen: React.FC = () => {
     socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
       try {
         const { peerId, initiator } = data;
+        matchedPeerIdRef.current = peerId;
+
         setIsConnecting(false);
         setIsChatting(true);
 
         peerConnection.current = createPeerConnection();
-        stream.getTracks().forEach((track: MediaStreamTrack) => {
+
+        // Add local tracks (audio + video)
+        stream.getTracks().forEach((track: any) => {
           peerConnection.current?.addTrack(track, stream);
         });
 
@@ -165,18 +181,19 @@ const VoiceChatScreen: React.FC = () => {
           await peerConnection.current.setLocalDescription(offer);
           socket.current?.emit('offer', offer, peerId);
         }
-       } catch (error) {
-         console.error('Error in match_found:', error);
-         CustomAlert.error('Connection Error', 'Failed to establish connection. Please try again.');
-         resetChat();
-       }
+      } catch (error) {
+        console.error('Error in match_found:', error);
+        CustomAlert.error('Connection Error', 'Failed to establish connection. Please try again.');
+        resetChat();
+      }
     });
 
     socket.current.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
       try {
-        if (peerConnection.current?.signalingState !== 'stable') {
-          return;
-        }
+        matchedPeerIdRef.current = peerId;
+
+        if (peerConnection.current?.signalingState !== 'stable') return;
+
         await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await peerConnection.current.createAnswer();
         await peerConnection.current.setLocalDescription(answer);
@@ -188,13 +205,11 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
       try {
+        matchedPeerIdRef.current = peerId;
+
         if (peerConnection.current && !peerConnection.current.remoteDescription) {
           if (peerConnection.current.signalingState === 'have-local-offer') {
-            try {
-              await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
-            } catch (e) {
-              console.error('Error setting remote description:', e);
-            }
+            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
           }
         }
       } catch (error) {
@@ -204,6 +219,7 @@ const VoiceChatScreen: React.FC = () => {
 
     socket.current.on('ice_candidate', async (candidate: RTCIceCandidate, peerId: string) => {
       try {
+        matchedPeerIdRef.current = peerId;
         await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (e) {
         console.error('Error adding ICE candidate:', e);
@@ -216,25 +232,17 @@ const VoiceChatScreen: React.FC = () => {
     });
 
     socket.current.on('reconnect', (attemptNumber: number) => {
-      console.log('Socket reconnected after', attemptNumber, 'attempts');
       if (!isChatting) {
         socket.current?.emit('join_room');
       }
-    });
-
-    socket.current.on('reconnect_attempt', (attemptNumber: number) => {
-      console.log('Socket reconnection attempt:', attemptNumber);
-    });
-
-    socket.current.on('reconnect_error', (error: Error) => {
-      console.error('Socket reconnection error:', error.message);
+      console.log('Socket reconnected after', attemptNumber, 'attempts');
     });
 
     socket.current.on('reconnect_failed', () => {
       console.error('Socket reconnection failed');
       CustomAlert.error('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
     });
-  }, [initLocalStream, resetChat, createPeerConnection, isChatting]);
+  }, [createPeerConnection, initLocalStream, isChatting, resetChat]);
 
   const findNextPeer = useCallback(() => {
     resetChat();
@@ -242,7 +250,7 @@ const VoiceChatScreen: React.FC = () => {
       socket.current.emit('next_peer');
       setIsConnecting(true);
     } else {
-      startVoiceChat(); // Reconnect if socket is not active
+      startVoiceChat();
     }
   }, [resetChat, startVoiceChat]);
 
@@ -260,7 +268,7 @@ const VoiceChatScreen: React.FC = () => {
   if (!webRTCSupported) {
     return (
       <ThemedView style={styles.container}>
-        <ThemedText style={styles.title}>Voice Chat</ThemedText>
+        <ThemedText style={styles.title}>Video Chat</ThemedText>
         <ThemedText>WebRTC is not supported in this environment. Please use a development build.</ThemedText>
       </ThemedView>
     );
@@ -268,10 +276,29 @@ const VoiceChatScreen: React.FC = () => {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedText style={styles.title}>Voice Chat</ThemedText>
+      <ThemedText style={styles.title}>Video Chat</ThemedText>
+
       {isConnecting && <ThemedText>Finding a peer...</ThemedText>}
-      {!isChatting && !isConnecting && <ThemedText>Press "Start Chat" to begin.</ThemedText>}
-      {isChatting && <ThemedText>Voice chat in progress...</ThemedText>}
+      {!isChatting && !isConnecting && <ThemedText>Press "Next Peer" to begin.</ThemedText>}
+      {isChatting && <ThemedText>Call in progress...</ThemedText>}
+
+      <View style={styles.videosWrapper}>
+        {localStream && RTCView ? (
+          <View style={styles.localVideo}>
+            <RTCView streamURL={localStream.toURL()} style={styles.localVideoView} objectFit="cover" />
+          </View>
+        ) : null}
+
+        {remoteStream && RTCView ? (
+          <View style={styles.remoteVideo}>
+            <RTCView streamURL={remoteStream.toURL()} style={styles.remoteVideoView} objectFit="cover" />
+          </View>
+        ) : (
+          <View style={styles.remoteVideoPlaceholder}>
+            <ThemedText style={styles.placeholderText}>Waiting for remote video...</ThemedText>
+          </View>
+        )}
+      </View>
 
       <View style={styles.controls}>
         <Button title="Next Peer" onPress={findNextPeer} disabled={isConnecting} />
@@ -291,13 +318,61 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  videosWrapper: {
+    flex: 1,
+    width: '100%',
+    marginVertical: 12,
+  },
+  remoteVideo: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  remoteVideoView: {
+    width: '100%',
+    height: '100%',
+  },
+  remoteVideoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  placeholderText: {
+    color: '#fff',
+    opacity: 0.85,
+  },
+  localVideo: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 120,
+    height: 160,
+    backgroundColor: '#111',
+    borderRadius: 12,
+    overflow: 'hidden',
+    zIndex: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  localVideoView: {
+    width: '100%',
+    height: '100%',
   },
   controls: {
     flexDirection: 'row',
-    marginTop: 20,
+    width: '100%',
     gap: 10,
+    marginTop: 10,
   },
 });
 
 export default VoiceChatScreen;
+

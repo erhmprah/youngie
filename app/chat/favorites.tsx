@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, View, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { FlatList, StyleSheet, View, ActivityIndicator, RefreshControl, TouchableOpacity, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { Header } from '@/components/header';
 import { FeedCard } from '@/app/chat/FeedCard.component';
-import { postAPI } from '@/utils/api';
+import { postAPI, communityAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -21,6 +21,16 @@ export default function FavoritesScreen() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [playingPostId, setPlayingPostId] = useState<string | null>(null);
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 50,
+    }).current;
+
+    const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        if (viewableItems.length > 0) {
+            setPlayingPostId(viewableItems[0].item._id);
+        }
+    }, []);
     const primaryColor = useThemeColor('primary');
     const textColor = useThemeColor('text');
 
@@ -54,17 +64,22 @@ export default function FavoritesScreen() {
         fetchFavorites(page + 1, true);
     };
 
-    const handleUnfavorite = async (postId: string) => {
+    const handleUnfavorite = async (postId: string, type?: string) => {
         // Optimistically remove from list
         setPosts(prev => prev.filter(p => p._id !== postId));
         try {
-            await postAPI.unfavoritePost(postId);
+            if (type === 'communityFeed') {
+                const post = posts.find(p => p._id === postId);
+                await communityAPI.unfavoriteFeed(post?.community?._id, postId);
+            } else {
+                await postAPI.unfavoritePost(postId);
+            }
         } catch (error) {
             fetchFavorites(); // Revert on error
         }
     };
 
-    const handleLike = async (postId: string) => {
+    const handleLike = async (postId: string, type?: string, communityId?: string) => {
         // Optimistic update for like
         setPosts(prev => prev.map(p => {
             if (p._id === postId) {
@@ -78,7 +93,11 @@ export default function FavoritesScreen() {
         }));
 
         try {
-            await postAPI.likePost(postId);
+            if (type === 'communityFeed') {
+                await communityAPI.likeFeed(communityId || '', postId);
+            } else {
+                await postAPI.likePost(postId);
+            }
         } catch (error) {
             fetchFavorites(); // Revert on error
         }
@@ -108,18 +127,21 @@ export default function FavoritesScreen() {
                             <FeedCard
                                 post={item}
                                 currentUserId={user?._id || ''}
+                                communityId={item.community?._id}
                                 onDelete={() => {}}
                                 onReport={() => {}}
                                 onUpdate={() => {}}
-                                onLike={handleLike}
+                                onLike={(postId: string) => handleLike(postId, item.type, item.community?._id)}
                                 onComment={() => {}}
-                                onFavorite={() => handleUnfavorite(item._id)}
-                                shouldPlay={false}
+                                onFavorite={() => handleUnfavorite(item._id, item.type)}
+                                shouldPlay={item._id === playingPostId}
                             />
                         )}
                         contentContainerStyle={styles.listContent}
                         onEndReached={loadMore}
                         onEndReachedThreshold={0.3}
+                        onViewableItemsChanged={onViewableItemsChanged}
+                        viewabilityConfig={viewabilityConfig}
                         refreshControl={
                             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />
                         }

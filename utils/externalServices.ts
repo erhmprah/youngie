@@ -5,7 +5,11 @@ import axios, { AxiosInstance } from 'axios';
 
 // ============== CONFIGURATION ==============
 
-// TURN server configurations using Metered.ca (free TURN servers)
+// TURN server configurations using Metered.ca. Credentials are read from env
+// (EXPO_PUBLIC_TURN_USERNAME / EXPO_PUBLIC_TURN_CREDENTIAL) so secrets stay in .env.
+const TURN_USERNAME = process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee';
+const TURN_CREDENTIAL = process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF';
+
 const TURN_SERVERS = process.env.EXPO_PUBLIC_TURN_SERVERS
   ? JSON.parse(process.env.EXPO_PUBLIC_TURN_SERVERS)
   : [
@@ -13,9 +17,11 @@ const TURN_SERVERS = process.env.EXPO_PUBLIC_TURN_SERVERS
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-      // Free Metered.ca TURN servers (if credentials available)
-      { urls: 'turn:global.metered.ca:443', username: 'anonymous', credential: 'anonymous' },
-      { urls: 'turn:global.metered.ca:3478', username: 'anonymous', credential: 'anonymous' },
+      // Metered.ca TURN relay servers
+      { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: 'turn:global.relay.metered.ca:443', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: 'turn:global.relay.metered.ca:443?transport=tcp', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: 'turn:global.relay.metered.ca:3478', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
     ];
 
 // Supabase configuration

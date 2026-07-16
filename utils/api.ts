@@ -1,6 +1,5 @@
-import axios, { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import axios, { AxiosInstance } from 'axios';
 import { router } from 'expo-router';
 import { CustomAlert } from './alert';
 
@@ -800,9 +799,19 @@ export const communityAPI = {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return response.json();
   },
+  uploadVideoBase64: async (data: { videoData: string; filename: string }) => {
+    const token = await AsyncStorage.getItem('authToken');
+    const response = await fetch(`${API_URL}/communities/upload-video-base64`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-auth-token': token || '' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    return response.json();
+  },
   getFeed: (communityId: string, page?: number, limit?: number) =>
     api.get(`/communities/${communityId}/feed`, { params: { page, limit } }),
-  createFeed: (communityId: string, data: { content?: string; images?: string[] }) =>
+  createFeed: (communityId: string, data: { content?: string; images?: string[]; video?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.post(`/communities/${communityId}/feed`, data),
   deleteFeed: (communityId: string, feedId: string) =>
     api.delete(`/communities/${communityId}/feed/${feedId}`),
@@ -816,8 +825,10 @@ export const communityAPI = {
     api.post(`/communities/${communityId}/feed/${feedId}/favorite`, {}),
   unfavoriteFeed: (communityId: string, feedId: string) =>
     api.delete(`/communities/${communityId}/feed/${feedId}/favorite`),
-  updateFeed: (communityId: string, feedId: string, data: { content?: string; images?: string[] }) =>
+  updateFeed: (communityId: string, feedId: string, data: { content?: string; images?: string[]; video?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.put(`/communities/${communityId}/feed/${feedId}`, data),
+  voteFeedPoll: (communityId: string, feedId: string, optionIndex: number) =>
+    api.post(`/communities/${communityId}/feed/${feedId}/vote-poll`, { optionIndex }),
   reportFeed: (communityId: string, feedId: string, reason?: string) =>
     api.post(`/communities/${communityId}/feed/${feedId}/report`, { reason }),
   getEvents: (communityId: string) => api.get(`/communities/${communityId}/events`),

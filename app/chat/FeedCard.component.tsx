@@ -11,9 +11,9 @@ import { borderRadius, shadows, spacing, typography } from '@/constants/design-t
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
-import { getImageUrl, postAPI, userAPI, communityAPI } from '@/utils/api';
-import { getSocket } from '@/utils/socket';
+import { communityAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
 import { getRelativeTime } from '@/utils/helpers';
+import { getSocket } from '@/utils/socket';
 import { Ionicons } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import { useRouter } from 'expo-router';
@@ -57,9 +57,10 @@ interface FeedCardProps {
     onFavorite?: (postId: string) => void;
     shouldPlay?: boolean;
     communityId?: string;
+    voteAPI?: (postId: string, optionIndex: number) => Promise<any>;
 }
 
-export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId }: FeedCardProps) => {
+export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId, voteAPI }: FeedCardProps) => {
     const { user } = useAuth();
     const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
@@ -80,7 +81,8 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const lastTap = useRef<number | null>(null);
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const videoRef = useRef<Video>(null);
+    const videoRefsMap = useRef<Map<number, Video>>(new Map());
+    const singleVideoRef = useRef<Video>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [previewMedia, setPreviewMedia] = useState<any>(null);
@@ -141,15 +143,32 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     }, [post.author.isOnline, pulseAnim]);
 
     useEffect(() => {
-        if (!shouldPlay && videoRef.current) {
-            videoRef.current.pauseAsync().catch(() => {});
-        }
-        return () => {
-            if (longPressTimer.current) {
-                clearTimeout(longPressTimer.current);
+        if (singleVideoRef.current) {
+            if (shouldPlay) {
+                singleVideoRef.current.playAsync().catch(() => {});
+            } else {
+                singleVideoRef.current.pauseAsync().catch(() => {});
             }
+        }
+        videoRefsMap.current.forEach((video, index) => {
+            if (shouldPlay && index === activeImageIndex) {
+                video.playAsync().catch(() => {});
+            } else {
+                video.pauseAsync().catch(() => {});
+            }
+        });
+    }, [shouldPlay, activeImageIndex]);
+
+    useEffect(() => {
+        return () => {
+            if (singleVideoRef.current) {
+                singleVideoRef.current.pauseAsync().catch(() => {});
+            }
+            videoRefsMap.current.forEach((video) => {
+                video.pauseAsync().catch(() => {});
+            });
         };
-    }, [shouldPlay]);
+    }, []);
 
     const normalizeMediaUrl = (rawUrl: string): string => {
         if (!rawUrl) return rawUrl;
@@ -219,7 +238,9 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         }
     };
     const { width: screenWidth } = Dimensions.get('window');
-    const availableWidth = screenWidth - (spacing.lg * 2); // 16px padding on each side
+    const [cardWidth, setCardWidth] = useState(screenWidth);
+    const contentWidth = cardWidth - (spacing.lg * 2);
+    const resolvedVoteAPI = voteAPI ?? (communityId ? ((postId: string, optionIndex: number) => communityAPI.voteFeedPoll(communityId, postId, optionIndex)) : undefined);
 
     const handleEdit = () => {
         setOptionsVisible(false);
@@ -380,7 +401,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     };
 
     return (
-        <ThemedView style={[styles.card, { backgroundColor: surfaceColor, borderColor }]}>
+        <ThemedView style={[styles.card, { backgroundColor: surfaceColor, borderColor }]} onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}>
             <View style={styles.header}>
                 <View style={styles.userInfo}>
                     <TouchableOpacity 
@@ -434,6 +455,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                 <PollView
                     postId={post._id}
                     options={post.pollOptions}
+                    voteAPI={resolvedVoteAPI}
                     onVote={(updatedOptions) => {
                         const updatedPost = { ...post, pollOptions: updatedOptions };
                         onUpdate?.(updatedPost);
@@ -443,15 +465,15 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
             <View>
                 {post.media && post.media.length > 0 ? (
-                <View style={[styles.postMedia, { height: availableWidth }]}>
+                <View style={[styles.postMedia, { width: contentWidth, height: contentWidth }]}>
                     <FlatList
                         data={post.media}
-                        renderItem={({ item }) => (
-                            <View style={{ width: availableWidth, height: availableWidth }}>
+                        renderItem={({ item, index }) => (
+                            <View style={{ width: contentWidth, height: contentWidth }}>
                                 {item.type === 'image' ? (
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <Image
-source={{ uri: getImageUrl(item.url) || '' }}
+ source={{ uri: getImageUrl(item.url) || '' }}
                                             style={styles.mediaFrame}
                                             resizeMode="cover"
                                             fadeDuration={0}
@@ -462,11 +484,17 @@ source={{ uri: getImageUrl(item.url) || '' }}
                                 ) : (
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <Video
-                                            ref={videoRef}
+                                            ref={(ref) => {
+                                                if (ref) {
+                                                    videoRefsMap.current.set(index, ref);
+                                                } else {
+                                                    videoRefsMap.current.delete(index);
+                                                }
+                                            }}
                                             source={{ uri: getImageUrl(item.url) || '' }}
                                             style={styles.mediaFrame}
                                             resizeMode={ResizeMode.COVER}
-                                            shouldPlay={shouldPlay}
+                                            shouldPlay={false}
                                             isLooping={true}
                                         />
                                     </TouchableOpacity>
@@ -478,7 +506,7 @@ source={{ uri: getImageUrl(item.url) || '' }}
                         showsHorizontalScrollIndicator={false}
                         onViewableItemsChanged={onViewableItemsChanged}
                         viewabilityConfig={viewabilityConfig}
-                        style={{ width: availableWidth }}
+                        style={{ width: contentWidth }}
                     />
                     {(post.media?.length || 0) > 1 && (
                         <>
@@ -489,11 +517,11 @@ source={{ uri: getImageUrl(item.url) || '' }}
                     )}
                 </View>
                 ) : post.images && post.images.length > 0 ? (
-                    <View style={[styles.postMedia, { height: availableWidth }]}>
+                    <View style={[styles.postMedia, { width: contentWidth, height: contentWidth }]}>
                         <FlatList
                             data={post.images}
                             renderItem={({ item }) => (
-                                <View style={{ width: availableWidth, height: availableWidth }}>
+                                <View style={{ width: contentWidth, height: contentWidth }}>
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item, 'image')}>
                                         <Image
 source={{ uri: getImageUrl(item) }}
@@ -511,7 +539,7 @@ source={{ uri: getImageUrl(item) }}
                             showsHorizontalScrollIndicator={false}
                             onViewableItemsChanged={onViewableItemsChanged}
                             viewabilityConfig={viewabilityConfig}
-                            style={{ width: availableWidth }}
+                        style={{ width: contentWidth }}
                         />
                         {post.images.length > 1 && (
                             <>
@@ -522,7 +550,7 @@ source={{ uri: getImageUrl(item) }}
                         )}
                     </View>
                 ) : post.image ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image || '', 'image')} style={{ width: availableWidth, height: availableWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image || '', 'image')} style={{ width: contentWidth, height: contentWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
                         <Image
                             source={{ uri: getImageUrl(post.image || '') }}
                             style={styles.mediaFrame}
@@ -532,13 +560,13 @@ source={{ uri: getImageUrl(item) }}
                         />
                     </TouchableOpacity>
                 ) : post.video ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')} style={{ width: contentWidth, height: contentWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
                         <Video
-                            ref={videoRef}
+                            ref={singleVideoRef}
                             source={{ uri: getImageUrl(post.video) || '' }}
-                            style={[styles.postMedia, styles.mediaFrame, { width: availableWidth, height: availableWidth }]}
+                            style={styles.mediaFrame}
                             resizeMode={ResizeMode.COVER}
-                            shouldPlay={shouldPlay}
+                            shouldPlay={false}
                             isLooping={true}
                         />
                     </TouchableOpacity>

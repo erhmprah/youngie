@@ -1,20 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, FlatList, Modal, TextInput } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import * as Calendar from 'expo-calendar';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
-import { communityAPI, getImageUrl } from '@/utils/api';
-import { useAuth } from '@/contexts/AuthContext';
-import { CreateEventModal } from '@/components/create-event-modal';
 import { FeedCard } from '@/app/chat/FeedCard.component';
+import { CreateEventModal } from '@/components/create-event-modal';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
+import { useAuth } from '@/contexts/AuthContext';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
+import { communityAPI, getImageUrl } from '@/utils/api';
+import { ResizeMode, Video } from 'expo-av';
+import * as Calendar from 'expo-calendar';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, ViewToken } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface CommunityEvent {
   _id: string;
@@ -31,6 +32,8 @@ interface CommunityFeed {
   author: { _id: string; username: string; profilePhoto?: string };
   content?: string;
   images?: string[];
+  video?: string;
+  pollOptions?: { text: string; votes: string[] }[];
   likes: { _id: string; username: string; profilePhoto?: string }[];
   comments?: any[];
   isFavorited?: boolean;
@@ -57,6 +60,9 @@ export default function CommunityScreen() {
   const [feedHasMore, setFeedHasMore] = useState(false);
   const [feedContent, setFeedContent] = useState('');
   const [feedImages, setFeedImages] = useState<string[]>([]);
+  const [feedVideo, setFeedVideo] = useState<string | null>(null);
+  const [showPoll, setShowPoll] = useState(false);
+  const [pollOptions, setPollOptions] = useState(['', '']);
   const [feedPosting, setFeedPosting] = useState(false);
 
   const primaryColor = useThemeColor('primary');
@@ -75,8 +81,8 @@ export default function CommunityScreen() {
       try {
         const eventsResponse = communityAPI.getEvents
           ? await communityAPI.getEvents(id as string)
-          : { data: [] };
-        setEvents(eventsResponse.data || []);
+          : { data: { data: [] } };
+        setEvents(eventsResponse.data?.data || []);
       } catch (eventErr) {
         // Events are non-critical; don't block the community from rendering
         console.warn('Could not load community events', eventErr);
@@ -158,20 +164,43 @@ export default function CommunityScreen() {
       selectionLimit: 10 - feedImages.length,
     });
     if (!result.canceled) {
+      setFeedVideo(null);
       const uris = result.assets.map(a => a.uri);
       setFeedImages(prev => [...prev, ...uris].slice(0, 10));
     }
   };
 
+  const handlePickFeedVideo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      allowsEditing: true,
+      quality: 1,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setFeedImages([]);
+      setFeedVideo(result.assets[0].uri);
+    }
+  };
+
+  const validPollOptions = pollOptions.filter((option) => option.trim().length > 0);
+
   const handleCreateFeed = async () => {
     if (!id) return;
-    if (!feedContent.trim() && feedImages.length === 0) {
-      CustomAlert.error('Error', 'Please add some content or an image to your post.');
+    if (showPoll && validPollOptions.length < 2) {
+      CustomAlert.error('Error', 'Polls need at least 2 options.');
       return;
     }
+
+    if (!feedContent.trim() && feedImages.length === 0 && !feedVideo && (!showPoll || validPollOptions.length < 2)) {
+      CustomAlert.error('Error', 'Please add some content, media, or a poll to your post.');
+      return;
+    }
+
     setFeedPosting(true);
     try {
       const imageUrls: string[] = [];
+      let videoUrl: string | undefined;
+
       for (const uri of feedImages) {
         if (uri.startsWith('http') || uri.startsWith('/uploads')) {
           imageUrls.push(uri);
@@ -186,13 +215,32 @@ export default function CommunityScreen() {
         if (upload?.imageUrl) imageUrls.push(upload.imageUrl);
       }
 
+      if (feedVideo) {
+        if (feedVideo.startsWith('http') || feedVideo.startsWith('/uploads')) {
+          videoUrl = feedVideo;
+        } else {
+          const base64 = await FileSystem.readAsStringAsync(feedVideo, { encoding: 'base64' });
+          const filename = `feed-video-${Date.now()}.mp4`;
+          const upload = await communityAPI.uploadVideoBase64({
+            videoData: `data:video/mp4;base64,${base64}`,
+            filename,
+          });
+          if (upload?.videoUrl) videoUrl = upload.videoUrl;
+        }
+      }
+
       await communityAPI.createFeed(id as string, {
         content: feedContent.trim() || undefined,
         images: imageUrls.length > 0 ? imageUrls : undefined,
+        video: videoUrl,
+        pollOptions: showPoll ? validPollOptions.map((text) => ({ text, votes: [] })) : undefined,
       });
 
       setFeedContent('');
       setFeedImages([]);
+      setFeedVideo(null);
+      setShowPoll(false);
+      setPollOptions(['', '']);
       fetchFeed(1);
     } catch (error) {
       CustomAlert.error('Error', 'Failed to create feed post. Please try again.');
@@ -269,20 +317,6 @@ export default function CommunityScreen() {
       CustomAlert.error('Error', 'Failed to update favorite');
     }
   };
-
-  const renderFeedItem = ({ item }: { item: CommunityFeed }) => (
-    <FeedCard
-      post={item as any}
-      currentUserId={user?._id || ''}
-      communityId={id as string}
-      onLike={handleLikeFeed}
-      onDelete={handleDeleteFeed}
-      onReport={handleReportFeed}
-      onUpdate={handleUpdateFeed}
-      onFavorite={handleFavoriteFeed}
-    />
-  );
-
 
   const initiateAddToCalendar = async (event: CommunityEvent) => {
     try {
@@ -531,19 +565,28 @@ export default function CommunityScreen() {
                         <IconSymbol name="person.fill" size={16} color={primaryColor} />
                       </View>
                     )}
-                    <ThemedText type="body2" style={{ color: lightTextColor }}>
-                      {isAdmin ? 'Posting as Admin' : 'Share something with the community'}
-                    </ThemedText>
+                    <TextInput
+                      style={[styles.composerInput, { color: textColor, borderColor }]}
+                      placeholder={isAdmin ? 'Post as admin...' : 'Write something...'}
+                      placeholderTextColor={lightTextColor}
+                      value={feedContent}
+                      onChangeText={setFeedContent}
+                      multiline={false}
+                      maxLength={220}
+                      textAlignVertical="top"
+                    />
+                    <TouchableOpacity
+                      style={[styles.composerPostButton, { backgroundColor: primaryColor }]}
+                      onPress={handleCreateFeed}
+                      disabled={feedPosting || (!feedContent.trim() && feedImages.length === 0 && !feedVideo && (!showPoll || validPollOptions.length < 2))}
+                    >
+                      {feedPosting ? (
+                        <ActivityIndicator color={white} size="small" />
+                      ) : (
+                        <ThemedText style={{ color: white, fontWeight: typography.weights.semibold }}>Post</ThemedText>
+                      )}
+                    </TouchableOpacity>
                   </View>
-                  <TextInput
-                    style={[styles.composerInput, { color: textColor, borderColor }]}
-                    placeholder="Write a post..."
-                    placeholderTextColor={lightTextColor}
-                    value={feedContent}
-                    onChangeText={setFeedContent}
-                    multiline
-                    textAlignVertical="top"
-                  />
                   {feedImages.length > 0 && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.composerImages}>
                       {feedImages.map((uri, idx) => (
@@ -559,58 +602,80 @@ export default function CommunityScreen() {
                       ))}
                     </ScrollView>
                   )}
-                  <View style={styles.composerActions}>
-                    <TouchableOpacity onPress={handlePickFeedImage} disabled={feedImages.length >= 10}>
-                      <IconSymbol name="photo" size={22} color={feedImages.length >= 10 ? lightTextColor : primaryColor} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.composerPostButton, { backgroundColor: primaryColor }]}
-                      onPress={handleCreateFeed}
-                      disabled={feedPosting || (!feedContent.trim() && feedImages.length === 0)}
-                    >
-                      {feedPosting ? (
-                        <ActivityIndicator color={white} size="small" />
-                      ) : (
-                        <ThemedText style={{ color: white, fontWeight: typography.weights.semibold }}>Post</ThemedText>
+                  {feedVideo && (
+                    <View style={styles.composerVideoWrapper}>
+                      <Video
+                        source={{ uri: feedVideo.startsWith('http') || feedVideo.startsWith('/uploads') ? feedVideo : feedVideo }}
+                        style={styles.composerVideo}
+                        useNativeControls
+                        resizeMode={ResizeMode.COVER}
+                        isLooping={false}
+                      />
+                      <TouchableOpacity style={styles.composerRemoveImage} onPress={() => setFeedVideo(null)}>
+                        <IconSymbol name="xmark.circle.fill" size={20} color="white" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {showPoll && (
+                    <View style={styles.pollContainer}>
+                      {pollOptions.map((option, index) => (
+                        <TextInput
+                          key={index}
+                          style={[styles.composerInput, styles.pollOptionInput, { color: textColor, borderColor }]}
+                          placeholder={`Option ${index + 1}`}
+                          placeholderTextColor={lightTextColor}
+                          value={option}
+                          onChangeText={(text) => {
+                            const nextOptions = [...pollOptions];
+                            nextOptions[index] = text;
+                            setPollOptions(nextOptions);
+                          }}
+                        />
+                      ))}
+                      {pollOptions.length < 4 && (
+                        <TouchableOpacity onPress={() => setPollOptions((prev) => [...prev, ''])}>
+                          <ThemedText style={{ color: primaryColor, marginTop: spacing.xs }}>+ Add Option</ThemedText>
+                        </TouchableOpacity>
                       )}
-                    </TouchableOpacity>
+                    </View>
+                  )}
+                  <View style={styles.composerActions}>
+                    <View style={styles.composerActionButtons}>
+                      <TouchableOpacity onPress={handlePickFeedImage} disabled={feedImages.length >= 10}>
+                        <IconSymbol name="photo" size={20} color={feedImages.length >= 10 ? lightTextColor : primaryColor} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handlePickFeedVideo} style={{ marginLeft: spacing.sm }}>
+                        <IconSymbol name="video" size={20} color={primaryColor} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setShowPoll((prev) => !prev)} style={{ marginLeft: spacing.sm }}>
+                        <IconSymbol name="chart.bar.fill" size={20} color={showPoll ? primaryColor : lightTextColor} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               )}
 
-              {feedLoading && feeds.length === 0 ? (
-                <View style={styles.feedLoading}>
-                  <ActivityIndicator color={primaryColor} />
-                </View>
-              ) : !canPostFeed ? (
-                <View style={styles.emptyState}>
-                  <IconSymbol name="lock" size={48} color={lightTextColor} />
-                  <ThemedText style={{ color: lightTextColor, marginTop: spacing.md }}>
-                    Join this community to see and post in the feed
-                  </ThemedText>
-                </View>
-              ) : feeds.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <IconSymbol name="doc" size={48} color={lightTextColor} />
-                  <ThemedText style={{ color: lightTextColor, marginTop: spacing.md }}>
-                    No posts yet. Be the first to share!
-                  </ThemedText>
-                </View>
-              ) : (
-                <FlatList
-                  data={feeds}
-                  renderItem={renderFeedItem}
-                  keyExtractor={item => item._id}
-                  contentContainerStyle={styles.feedList}
-                  onEndReached={() => {
-                    if (feedHasMore && !feedLoading) fetchFeed(feedPage + 1, false);
-                  }}
-                  onEndReachedThreshold={0.2}
-                  ListFooterComponent={feedLoading && feeds.length > 0 ? (
-                    <View style={styles.feedLoading}><ActivityIndicator color={primaryColor} /></View>
-                  ) : null}
-                />
-              )}
+              <FeedList
+                feeds={feeds}
+                userId={user?._id || ''}
+                communityId={id as string}
+                onLike={handleLikeFeed}
+                onDelete={handleDeleteFeed}
+                onReport={handleReportFeed}
+                onUpdate={handleUpdateFeed}
+                onFavorite={handleFavoriteFeed}
+                feedLoading={feedLoading}
+                feedHasMore={feedHasMore}
+                feedPage={feedPage}
+                canPostFeed={canPostFeed}
+                onLoadMore={() => {
+                  if (feedHasMore && !feedLoading) fetchFeed(feedPage + 1, false);
+                }}
+                primaryColor={primaryColor}
+                lightTextColor={lightTextColor}
+                spacing={spacing}
+                typography={typography}
+              />
             </View>
           )}
         </View>
@@ -697,17 +762,22 @@ const styles = StyleSheet.create({
   cancelButton: { marginTop: spacing.lg, padding: spacing.md, alignItems: 'center', borderWidth: 1, borderRadius: borderRadius.md },
   // Feed
   feedContainer: { flex: 1, padding: spacing.lg },
-  composer: { borderRadius: borderRadius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
-  composerHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  composerAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: spacing.sm },
-  composerAvatarPlaceholder: { width: 32, height: 32, borderRadius: 16, marginRight: spacing.sm, justifyContent: 'center', alignItems: 'center' },
-  composerInput: { minHeight: 70, borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, fontSize: typography.sizes.body1, textAlignVertical: 'top' },
+  composer: { borderRadius: borderRadius.lg, borderWidth: 1, padding: spacing.sm, marginBottom: spacing.md },
+  composerHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs, gap: spacing.xs },
+  composerAvatar: { width: 30, height: 30, borderRadius: 15, marginRight: spacing.xs },
+  composerAvatarPlaceholder: { width: 30, height: 30, borderRadius: 15, marginRight: spacing.xs, justifyContent: 'center', alignItems: 'center' },
+  composerInput: { flex: 1, minHeight: 36, borderWidth: 1, borderRadius: borderRadius.md, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, fontSize: typography.sizes.body1, textAlignVertical: 'center' },
   composerImages: { marginTop: spacing.sm },
   composerImageWrapper: { position: 'relative', marginRight: spacing.sm },
   composerImage: { width: 72, height: 72, borderRadius: borderRadius.md },
+  composerVideoWrapper: { position: 'relative', marginTop: spacing.sm, borderRadius: borderRadius.md, overflow: 'hidden' },
+  composerVideo: { width: '100%', height: 180, borderRadius: borderRadius.md },
   composerRemoveImage: { position: 'absolute', top: -6, right: -6 },
-  composerActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm },
-  composerPostButton: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 70, alignItems: 'center' },
+  composerActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xs },
+  composerActionButtons: { flexDirection: 'row', alignItems: 'center' },
+  pollContainer: { marginTop: spacing.sm },
+  pollOptionInput: { marginBottom: spacing.xs },
+  composerPostButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.md, minWidth: 64, alignItems: 'center', marginLeft: spacing.xs },
   feedList: { paddingBottom: spacing.xl },
   feedLoading: { paddingVertical: spacing.lg, alignItems: 'center' },
   feedCard: { borderRadius: borderRadius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
@@ -722,3 +792,112 @@ const styles = StyleSheet.create({
   feedImageSingle: { width: '100%', aspectRatio: 1.5, borderRadius: borderRadius.md },
   feedLikeRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: '#E0E0E0' },
 });
+
+interface FeedListProps {
+  feeds: CommunityFeed[];
+  userId: string;
+  communityId: string;
+  onLike: (feedId: string) => void;
+  onDelete: (feedId: string) => void;
+  onReport: (feedId: string) => void;
+  onUpdate: (updated: any) => void;
+  onFavorite: (feedId: string) => void;
+  feedLoading: boolean;
+  feedHasMore: boolean;
+  feedPage: number;
+  canPostFeed: boolean;
+  onLoadMore: () => void;
+  primaryColor: string;
+  lightTextColor: string;
+  spacing: typeof import('@/constants/design-tokens').spacing;
+  typography: typeof import('@/constants/design-tokens').typography;
+}
+
+const FeedListComponent: React.FC<FeedListProps> = ({
+  feeds,
+  userId,
+  communityId,
+  onLike,
+  onDelete,
+  onReport,
+  onUpdate,
+  onFavorite,
+  feedLoading,
+  feedHasMore,
+  canPostFeed,
+  onLoadMore,
+  primaryColor,
+  lightTextColor,
+  spacing,
+}) => {
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+  }).current;
+
+  const [playingFeedId, setPlayingFeedId] = useState<string | null>(null);
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if (viewableItems.length > 0) {
+      setPlayingFeedId(viewableItems[0].item._id);
+    }
+  }, []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: CommunityFeed }) => (
+      <FeedCard
+        post={item as any}
+        currentUserId={userId}
+        communityId={communityId}
+        onLike={onLike}
+        onDelete={onDelete}
+        onReport={onReport}
+        onUpdate={onUpdate}
+        onFavorite={onFavorite}
+        shouldPlay={item._id === playingFeedId}
+      />
+    ),
+    [userId, communityId, onLike, onDelete, onReport, onUpdate, onFavorite, playingFeedId],
+  );
+
+  return (
+    <FlatList
+      data={feeds}
+      renderItem={renderItem}
+      keyExtractor={item => item._id}
+      contentContainerStyle={styles.feedList}
+      onEndReached={onLoadMore}
+      onEndReachedThreshold={0.2}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
+      ListFooterComponent={
+        feedLoading && feeds.length > 0 ? (
+          <View style={styles.feedLoading}><ActivityIndicator color={primaryColor} /></View>
+        ) : null
+      }
+      ListEmptyComponent={
+        feedLoading && feeds.length === 0 ? (
+          <View style={styles.feedLoading}>
+            <ActivityIndicator color={primaryColor} />
+          </View>
+        ) : !canPostFeed ? (
+          <View style={styles.emptyState}>
+            <IconSymbol name="lock" size={48} color={lightTextColor} />
+            <ThemedText style={{ color: lightTextColor, marginTop: spacing.md }}>
+              Join this community to see and post in the feed
+            </ThemedText>
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <IconSymbol name="doc" size={48} color={lightTextColor} />
+            <ThemedText style={{ color: lightTextColor, marginTop: spacing.md }}>
+              No posts yet. Be the first to share!
+            </ThemedText>
+          </View>
+        )
+      }
+    />
+  );
+};
+
+const FeedList = memo(FeedListComponent);
+FeedList.displayName = 'FeedList';

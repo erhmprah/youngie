@@ -78,7 +78,7 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false,
         if (!socket || !post?._id) return;
 
         const handlePostUpdate = (updatedPost: any) => {
-            if (updatedPost._id === post._id) {
+            if (updatedPost && updatedPost._id === post._id && updatedPost.comments) {
                 setComments(updatedPost.comments);
             }
         };
@@ -96,7 +96,8 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false,
         setIsLoadingFriends(true);
         try {
             const response = await userAPI.getProfile(user._id);
-            setFriends(response.data.friends || []);
+            // The API interceptor resolves failed requests with { data: null }
+            setFriends(response.data?.friends || []);
         } catch (error) {
             console.error('Error fetching friends:', error);
             setFriends([]);
@@ -177,37 +178,43 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false,
     const white = useThemeColor('white');
 
     const handleAddComment = async () => {
-        if (!comment.trim()) return;
+        if (!comment.trim() || !post) return;
 
         setIsLoading(true);
         try {
-            if (post) {
-                if (communityContext) {
-                    const response = await communityAPI.commentFeed(
-                        communityContext.communityId,
-                        post._id,
-                        {
-                            content: comment,
-                            parent: replyingTo?._id,
-                            isAnonymous,
-                            tags: taggedUsers.length > 0 ? taggedUsers : undefined,
-                        }
-                    );
-                    setComments(response.data.comments || []);
-                } else {
-                    const response = await postAPI.addComment(post._id, {
+            let response;
+            if (communityContext) {
+                response = await communityAPI.commentFeed(
+                    communityContext.communityId,
+                    post._id,
+                    {
                         content: comment,
                         parent: replyingTo?._id,
                         isAnonymous,
                         tags: taggedUsers.length > 0 ? taggedUsers : undefined,
-                    });
-                    // The API returns the updated post, so get comments from it
-                    setComments(response.data.comments);
-                }
-                setComment('');
-                setReplyingTo(null);
-                setTaggedUsers([]);
+                    }
+                );
+            } else {
+                response = await postAPI.addComment(post._id, {
+                    content: comment,
+                    parent: replyingTo?._id,
+                    isAnonymous,
+                    tags: taggedUsers.length > 0 ? taggedUsers : undefined,
+                });
             }
+
+            // The API response interceptor resolves with { data: null } on any
+            // API/network error instead of rejecting, so check for it here.
+            if (!response || response.data == null) {
+                Alert.alert('Error', 'Failed to add comment. Please try again.');
+                return;
+            }
+
+            // The API returns the updated post, so get comments from it
+            setComments(response.data.comments || []);
+            setComment('');
+            setReplyingTo(null);
+            setTaggedUsers([]);
         } catch (error) {
             console.error('Error adding comment:', error);
             Alert.alert('Error', 'Failed to add comment.');

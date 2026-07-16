@@ -64,6 +64,8 @@ export default function UserProfileScreen() {
   const [loadingAlbum, setLoadingAlbum] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [playingPostId, setPlayingPostId] = useState<string | null>(null);
+  const postPositions = useRef<Map<string, { y: number; height: number }>>(new Map());
   const isOwnProfile = currentUser?._id === id;
 
   const backgroundColor = useThemeColor('background');
@@ -313,7 +315,6 @@ export default function UserProfileScreen() {
   };
 
   const renderPostItem = ({ item }: { item: Post }) => {
-    // Ensure post has author information (since it's a user's profile, author is the profile user)
     const postWithAuthor = {
       ...item,
       author: {
@@ -326,16 +327,51 @@ export default function UserProfileScreen() {
     };
 
     return (
-      <FeedCard
-        key={item._id}
-        post={postWithAuthor as any}
-        currentUserId={currentUser?._id || ''}
-      />
+      <View
+        onLayout={(e) => {
+          postPositions.current.set(item._id, {
+            y: e.nativeEvent.layout.y,
+            height: e.nativeEvent.layout.height,
+          });
+        }}
+      >
+        <FeedCard
+          post={postWithAuthor as any}
+          currentUserId={currentUser?._id || ''}
+          shouldPlay={item._id === playingPostId}
+        />
+      </View>
     );
   };
 
   const getPostsData = () => posts.length > 0 ? posts : null;
   const getAlbumData = () => album.length > 0 ? album : null;
+
+  const handleScroll = useCallback((event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    const viewportHeight = event.nativeEvent.layoutMeasurement.height;
+    const visibleTop = offsetY;
+    const visibleBottom = offsetY + viewportHeight;
+
+    let bestId: string | null = null;
+    let bestOverlap = 0;
+
+    postPositions.current.forEach((pos, id) => {
+      const postTop = pos.y;
+      const postBottom = pos.y + pos.height;
+      const overlapTop = Math.max(visibleTop, postTop);
+      const overlapBottom = Math.min(visibleBottom, postBottom);
+      const overlap = Math.max(0, overlapBottom - overlapTop);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestId = id;
+      }
+    });
+
+    if (bestId && bestOverlap > 0) {
+      setPlayingPostId(bestId);
+    }
+  }, []);
 
   const handleDeleteAlbumPhoto = async (photoId: string) => {
     if (!currentUser?._id) return;
@@ -390,7 +426,7 @@ export default function UserProfileScreen() {
           </View>
   
           {profile && (
-            <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} onScroll={handleScroll} scrollEventThrottle={16}>
               {/* Cover Photo */}
               <View style={styles.coverPhotoContainer}>
                 {profile.coverPhoto ? (
