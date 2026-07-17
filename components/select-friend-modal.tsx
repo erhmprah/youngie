@@ -1,6 +1,6 @@
 // components/select-friend-modal.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, StyleSheet, View, TouchableOpacity, SectionList, ActivityIndicator, Image, TextInput, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from '@/components/themed-view';
@@ -31,6 +31,9 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
     const [incomingRequests, setIncomingRequests] = useState<Friend[]>([]);
     const [sentRequests, setSentRequests] = useState<Friend[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [friendsPage, setFriendsPage] = useState(1);
+    const [friendsHasMore, setFriendsHasMore] = useState(true);
+    const [friendsLoadingMore, setFriendsLoadingMore] = useState(false);
     const [isGroupMode, setIsGroupMode] = useState(false);
     const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
     const [groupName, setGroupName] = useState('');
@@ -45,32 +48,50 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
     const borderColor = useThemeColor('border');
     const white = useThemeColor('white');
 
-    const fetchFriends = async () => {
+    const fetchFriends = useCallback(async (pageToLoad: number = 1, append: boolean = false) => {
         if (!user?._id) return;
 
-        setIsLoading(true);
+        if (pageToLoad === 1) {
+            setIsLoading(true);
+        } else {
+            setFriendsLoadingMore(true);
+        }
+
         try {
-            const [profileResponse, incomingResponse, sentResponse] = await Promise.all([
-                userAPI.getProfile(user._id),
+            const [friendsResponse, incomingResponse, sentResponse] = await Promise.all([
+                userAPI.getFriendsList(pageToLoad, 20),
                 userAPI.getIncomingFriendRequests(),
                 userAPI.getSentFriendRequests()
             ]);
-            setFriends(profileResponse.data.friends || []);
+
+            const newFriends = friendsResponse.data.friends || [];
+            setFriends(prev => append ? [...prev, ...newFriends] : newFriends);
+            setFriendsPage(pageToLoad);
+            setFriendsHasMore(!!friendsResponse.data.hasMore);
             setIncomingRequests(incomingResponse.data || []);
             setSentRequests(sentResponse.data || []);
         } catch (error) {
             console.error('Error fetching friends and requests:', error);
-            setFriends([]);
+            if (pageToLoad === 1) {
+                setFriends([]);
+            }
             setIncomingRequests([]);
             setSentRequests([]);
         } finally {
             setIsLoading(false);
+            setFriendsLoadingMore(false);
         }
-    };
+    }, [user?._id]);
+
+    const loadMoreFriends = useCallback(() => {
+        if (!friendsLoadingMore && friendsHasMore && !isLoading) {
+            fetchFriends(friendsPage + 1, true);
+        }
+    }, [friendsLoadingMore, friendsHasMore, isLoading, friendsPage, fetchFriends]);
 
     useEffect(() => {
         if (visible) {
-            fetchFriends();
+            fetchFriends(1);
             setIsGroupMode(false);
             setSelectedFriends([]);
             setGroupName('');
@@ -79,7 +100,7 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
             setIncomingRequests([]);
             setSentRequests([]);
         }
-    }, [visible, user?._id]);
+    }, [visible, user?._id, fetchFriends]);
 
     const toggleFriendSelection = (friendId: string) => {
         if (selectedFriends.includes(friendId)) {
@@ -93,7 +114,7 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
         try {
             await userAPI.acceptFriendRequest(user!._id, senderId);
             // Refresh data
-            fetchFriends();
+            fetchFriends(1);
         } catch (error) {
             console.error('Error accepting friend request:', error);
         }
@@ -103,7 +124,7 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
         try {
             await userAPI.ignoreFriendRequest(user!._id, senderId);
             // Refresh data
-            fetchFriends();
+            fetchFriends(1);
         } catch (error) {
             console.error('Error ignoring friend request:', error);
         }
@@ -113,7 +134,7 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
         try {
             await userAPI.cancelFriendRequest(user!._id, targetUserId);
             // Refresh data
-            fetchFriends();
+            fetchFriends(1);
         } catch (error) {
             console.error('Error canceling friend request:', error);
         }
@@ -142,6 +163,23 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
             onCreateGroup(selectedFriends, groupName.trim(), isTemporary, isAnonymous);
             onClose();
         }
+    };
+
+    const renderFriendsFooter = () => {
+        if (!friendsHasMore) return null;
+        return (
+            <View style={styles.loadMoreContainer}>
+                {friendsLoadingMore ? (
+                    <ActivityIndicator size="small" color={primaryColor} />
+                ) : (
+                    <TouchableOpacity onPress={loadMoreFriends}>
+                        <ThemedText style={{ color: primaryColor, fontWeight: 'bold' }}>
+                            Load more friends
+                        </ThemedText>
+                    </TouchableOpacity>
+                )}
+            </View>
+        );
     };
 
     const renderFriendItem = ({ item, section }: { item: Friend; section: any }) => {
@@ -298,6 +336,9 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
                             )}
                             keyExtractor={item => item._id}
                             contentContainerStyle={styles.listContainer}
+                            onEndReached={loadMoreFriends}
+                            onEndReachedThreshold={0.2}
+                            ListFooterComponent={renderFriendsFooter}
                             ListEmptyComponent={
                                 <ThemedText style={[styles.emptyText, { color: lightTextColor }]}>
                                     No friends or requests yet.
@@ -414,5 +455,9 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: typography.sizes.body1,
         fontWeight: 'bold',
+    },
+    loadMoreContainer: {
+        paddingVertical: spacing.md,
+        alignItems: 'center',
     },
 });

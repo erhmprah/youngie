@@ -27,6 +27,23 @@ export default function AuthCallback() {
     let isMounted = true;
     let hasNavigated = false;
 
+    // Resolve once a session has been established (by magic link / OAuth). The
+    // processCallback promise waits on this so a redirect to /login doesn't win
+    // the race against Supabase's asynchronous session detection.
+    let resolveSession: ((session: any) => void) | null = null;
+    const sessionReady = new Promise<any>((resolve) => {
+      resolveSession = resolve;
+    });
+
+    // Listen for the magic-link URL being opened while the app is already running
+    // (warm start). On cold start the URL is delivered via Linking.getInitialURL().
+    const onDeepLink = (event: { url: string }) => {
+      console.log('Deep link received while running:', event.url);
+      // Supabase's detectSessionInUrl will pick up the params from the URL and
+      // establish the session automatically; nothing else to do here.
+    };
+    const linkingSubscription = Linking.addEventListener('url', onDeepLink);
+
     const navigateToNextScreen = async (session: any) => {
       if (hasNavigated) return;
       hasNavigated = true;
@@ -244,6 +261,22 @@ export default function AuthCallback() {
           }
         }
 
+        // Give Supabase's asynchronous session detection (detectSessionInUrl)
+        // one last chance to establish the session before giving up. This
+        // avoids redirecting to /login while the magic-link session is still
+        // being created.
+        const settledSession = await Promise.race([
+          sessionReady,
+          new Promise<any>((resolve) => setTimeout(() => resolve(undefined), 4000)),
+        ]);
+
+        if (settledSession) {
+          console.log('Session established via deferred auth state change');
+          setStatus('success');
+          setTimeout(() => navigateToNextScreen(settledSession), 100);
+          return;
+        }
+
         console.log('No valid auth URL and no session - redirecting to login');
         router.replace('/login');
       } catch (error: any) {
@@ -255,9 +288,15 @@ export default function AuthCallback() {
       }
     };
 
-    // Listen for auth state changes as a fallback
+    // Listen for auth state changes. Supabase fires SIGNED_IN (and, for magic
+    // links, often TOKEN_REFRESHED/INITIAL_SESSION) once it has processed the
+    // URL and established the session.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session && isMounted && !hasNavigated) {
+      console.log('Auth state change in callback:', event);
+      if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
+        if (resolveSession) resolveSession(session);
+      }
+      if (session && event === 'SIGNED_IN' && isMounted && !hasNavigated) {
         console.log('Session established via auth state change');
         setStatus('success');
         setTimeout(() => navigateToNextScreen(session), 100);
@@ -269,6 +308,7 @@ export default function AuthCallback() {
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      linkingSubscription.remove();
     };
   }, [router]);
 

@@ -50,6 +50,9 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
     const [friends, setFriends] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+    const [friendsPage, setFriendsPage] = useState(1);
+    const [friendsHasMore, setFriendsHasMore] = useState(true);
+    const [friendsLoadingMore, setFriendsLoadingMore] = useState(false);
     const [showPoll, setShowPoll] = useState(false);
     const [pollOptions, setPollOptions] = useState(['', '']);
     const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
@@ -57,18 +60,33 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
 
     const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
-    const fetchFriends = async () => {
+    const fetchFriends = async (pageToLoad: number = 1, append: boolean = false) => {
         if (!user?._id) return;
 
-        setIsLoadingFriends(true);
+        if (append) {
+            setFriendsLoadingMore(true);
+        } else {
+            setIsLoadingFriends(true);
+        }
+
         try {
-            const response = await userAPI.getProfile(user._id);
-            setFriends(response.data.friends || []);
+            const response = await userAPI.getFriendsList(pageToLoad, 20);
+            const newFriends = response.data.friends || [];
+            setFriends(prev => append ? [...prev, ...newFriends] : newFriends);
+            setFriendsPage(pageToLoad);
+            setFriendsHasMore(!!response.data.hasMore);
         } catch (error) {
             console.error('Error fetching friends:', error);
-            setFriends([]);
+            if (!append) setFriends([]);
         } finally {
             setIsLoadingFriends(false);
+            setFriendsLoadingMore(false);
+        }
+    };
+
+    const loadMoreFriends = () => {
+        if (!friendsLoadingMore && friendsHasMore && !isLoadingFriends && !searchQuery.trim()) {
+            fetchFriends(friendsPage + 1, true);
         }
     };
 
@@ -83,9 +101,11 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
             setTaggedUsers([]);
             setSearchQuery('');
             setSearchResults([]);
-            fetchFriends();
+            setFriendsPage(1);
+            setFriendsHasMore(true);
+            fetchFriends(1);
         }
-    }, [showTagModal, user?._id]);
+    }, [showTagModal, user?._id, fetchFriends]);
 
     const performSearch = async (query: string) => {
         if (!query.trim()) {
@@ -480,6 +500,21 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                                 <FlatList
                                     data={searchQuery.trim() ? searchResults : friends}
                                     keyExtractor={(item) => item._id}
+                                    onEndReached={loadMoreFriends}
+                                    onEndReachedThreshold={0.2}
+                                    ListFooterComponent={
+                                        searchQuery.trim() || !friendsHasMore
+                                            ? null
+                                            : (
+                                                <View style={styles.loadMoreContainer}>
+                                                    {friendsLoadingMore ? (
+                                                        <ActivityIndicator size="small" color={primaryColor} />
+                                                    ) : (
+                                                        <ThemedText style={{ color: primaryColor }}>Load more friends</ThemedText>
+                                                    )}
+                                                </View>
+                                            )
+                                    }
                                     renderItem={({ item }) => (
                                         <TouchableOpacity
                                             style={[styles.userRow, { borderBottomColor: '#E0E0E0' }]}
@@ -690,6 +725,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: spacing.md,
+    },
+    loadMoreContainer: {
+        paddingVertical: spacing.md,
+        alignItems: 'center',
     },
     avatarImage: {
         width: 36,

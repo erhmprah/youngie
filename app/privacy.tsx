@@ -33,7 +33,7 @@ export default function PrivacyPolicyView() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.header, { backgroundColor }]}>
+         <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
           <ThemedText style={[styles.title, { color: textColor }]}>
             Privacy Policy
           </ThemedText>
@@ -44,7 +44,7 @@ export default function PrivacyPolicyView() {
 
         {privacyPolicyData.sections.map(renderSection)}
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
             For questions about this Privacy Policy, please contact us at privacy@youngieapp.com
           </ThemedText>
@@ -66,7 +66,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
   },
   title: {
     fontSize: typography.sizes.heading1,
@@ -92,7 +91,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
   },
   footerText: {
     fontSize: typography.sizes.body2,

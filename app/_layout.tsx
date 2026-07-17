@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider, useNavigationState } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -43,6 +43,8 @@ import CallService from '@/utils/call-service';
 import { getErrorLog, setupGlobalErrorHandlers } from '@/utils/global-error-handler';
 import { disconnectSocket, initSocket, offVoiceCallEnd, offVoiceCallOffer, onVoiceCallEnd, onVoiceCallOffer } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
+import { checkAppVersion, useUpdateAlert, setUpdateAlertStateDirect } from '@/utils/app-version';
+import { UpdateAvailableAlert } from '@/components/ui/UpdateAvailableAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Conditionally import expo-notifications
@@ -61,7 +63,9 @@ function RootLayoutNav() {
   const [hasSupabaseSession, setHasSupabaseSession] = useState(false);
   const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
   const isAppReadyRef = useRef(false);
-  
+  const currentRouteName = useNavigationState((state) => state.routes[state.index]?.name);
+  const updateAlert = useUpdateAlert();
+
   // Initialize push notifications
   const { 
     hasPermission, 
@@ -247,9 +251,14 @@ function RootLayoutNav() {
     // Check Supabase session on app start
     const checkSupabaseSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Session check timeout')), 5000)
+        );
+
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
         setHasSupabaseSession(!!session);
-        
+
         // If there's a Supabase session but no MongoDB token, check if profile is complete
         if (session) {
           const mongoToken = await AsyncStorage.getItem('authToken');
@@ -264,7 +273,7 @@ function RootLayoutNav() {
         setIsCheckingSupabase(false);
       }
     };
-    
+
     checkSupabaseSession();
   }, [router]);
 
@@ -274,17 +283,32 @@ function RootLayoutNav() {
     // Mark app as ready after initial navigation
     isAppReadyRef.current = true;
 
+    // Check for app updates once the app is ready (non-blocking; never
+    // prevents the user from reaching the app on failure).
+    checkAppVersion();
+
     // Force signed-in users to tabs regardless of notification state
     if (isSignedIn) {
       router.replace('/(tabs)');
       return;
     }
-    
+
+    // If there is a valid Supabase session (e.g. from a magic link / OAuth
+    // callback), let the auth callback screen finish the flow. Do NOT send the
+    // user back to login, otherwise the callback's redirect is overwritten.
+    if (hasSupabaseSession) {
+      if (currentRouteName !== '/auth/callback') {
+        console.log('Supabase session present but not on callback - navigating to login');
+        router.replace('/login');
+      }
+      return;
+    }
+
     console.log('App navigation ready, not signed in');
-    
+
     // Not signed in - go to login
     router.replace('/login');
-  }, [isLoading, isCheckingSupabase, isSignedIn, router]);
+  }, [isLoading, isCheckingSupabase, isSignedIn, hasSupabaseSession, router]);
 
   // Handle push notification registration on login
   useEffect(() => {
@@ -345,6 +369,15 @@ function RootLayoutNav() {
         <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <UpdateAvailableAlert
+        visible={updateAlert.visible}
+        forceUpdate={updateAlert.forceUpdate}
+        currentVersion={updateAlert.currentVersion}
+        newVersion={updateAlert.newVersion}
+        releaseNotes={updateAlert.releaseNotes}
+        storeUrl={updateAlert.storeUrl}
+        onDismiss={() => setUpdateAlertStateDirect({ ...updateAlert, visible: false })}
+      />
     </ThemeProvider>
   );
 }

@@ -143,7 +143,19 @@ const MAPPING: IconMapping = {
   'rectangle.stack': 'layers',
   'pause.fill': 'pause',
   'pause.circle.fill': 'pause-circle',
-  'square.grid.2x2': 'grid',
+   'square.grid.2x2': 'grid',
+  'clock': 'clock',
+  'heart': 'heart',
+  'mail.fill': 'mail',
+  'message': 'message-circle',
+  'paperplane': 'send',
+  'speaker.slash': 'volume-x',
+  'arrow.left': 'arrow-left',
+  'lock.shield': 'shield',
+  'doc.text': 'file-text',
+  'person.3': 'users',
+  'chart.bar': 'bar-chart-2',
+  'exclamationmark.triangle': 'alert-triangle',
 };
 
 export type IconName = keyof typeof MAPPING;

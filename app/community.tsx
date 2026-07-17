@@ -9,8 +9,10 @@ import { spacing, typography } from '@/constants/design-tokens';
 import { communityGuidelinesData } from './community-guidelines';
 
 export default function CommunityGuidelinesView() {
+  const backgroundColor = useThemeColor('background');
   const textColor = useThemeColor('text');
   const lightTextColor = useThemeColor('lightText');
+  const borderColor = useThemeColor('border');
 
   const renderSection = (section: { title: string; content: string }, index: number) => (
     <View key={index} style={styles.section}>
@@ -29,7 +31,7 @@ export default function CommunityGuidelinesView() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
           <ThemedText style={[styles.title, { color: textColor }]}>
             Community Guidelines
           </ThemedText>
@@ -40,7 +42,7 @@ export default function CommunityGuidelinesView() {
 
         {communityGuidelinesData.sections.map(renderSection)}
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
             For questions about these guidelines, please contact us at support@youngieapp.com
           </ThemedText>
@@ -62,7 +64,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
   },
   title: {
     fontSize: typography.sizes.heading1,
@@ -88,7 +89,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
   },
   footerText: {
     fontSize: typography.sizes.body2,

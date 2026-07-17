@@ -407,8 +407,8 @@ export default function ProfileScreen() {
             setFriends(prev => [...prev, { _id: requestId, username, profilePhoto: null }]);
             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(parseInt(s.value) + 1) } : s));
             CustomAlert.success('Success', `You are now friends with ${username}`);
-        } catch (error) {
-            CustomAlert.error('Error', 'Failed to accept friend request');
+        } catch (error: any) {
+            CustomAlert.error('Friend Limit Reached', error?.response?.data?.msg || 'Failed to accept friend request');
         }
     };
 

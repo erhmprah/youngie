@@ -9,8 +9,10 @@ import { spacing, typography } from '@/constants/design-tokens';
 import { dataPolicyData } from './data-policy';
 
 export default function DataPolicyView() {
+  const backgroundColor = useThemeColor('background');
   const textColor = useThemeColor('text');
   const lightTextColor = useThemeColor('lightText');
+  const borderColor = useThemeColor('border');
 
   const renderSection = (section: { title: string; content: string }, index: number) => (
     <View key={index} style={styles.section}>
@@ -29,7 +31,7 @@ export default function DataPolicyView() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
           <ThemedText style={[styles.title, { color: textColor }]}>
             Data Policy
           </ThemedText>
@@ -40,7 +42,7 @@ export default function DataPolicyView() {
 
         {dataPolicyData.sections.map(renderSection)}
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
             For data-related questions or requests, please contact us at privacy@youngieapp.com
           </ThemedText>
@@ -62,7 +64,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
   },
   title: {
     fontSize: typography.sizes.heading1,
@@ -88,7 +89,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
   },
   footerText: {
     fontSize: typography.sizes.body2,

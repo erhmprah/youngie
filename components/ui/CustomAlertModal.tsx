@@ -14,6 +14,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { getColors } from '@/constants/design-tokens';
 import { borderRadius, spacing, typography } from '@/constants/design-tokens';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'confirm' | 'loading';
 
@@ -53,17 +54,17 @@ const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
       case 'success':
         return {
           iconColor: colors.success,
-          iconName: 'checkmark-circle',
+          iconName: 'checkmark.circle',
         };
       case 'error':
         return {
           iconColor: colors.error,
-          iconName: 'close-circle',
+          iconName: 'close.circle',
         };
       case 'warning':
         return {
           iconColor: colors.warning,
-          iconName: 'warning',
+          iconName: 'exclamationmark.triangle',
         };
       case 'confirm':
         return {
@@ -73,12 +74,12 @@ const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
       case 'loading':
         return {
           iconColor: colors.primary,
-          iconName: 'loading',
+          iconName: undefined,
         };
       default:
         return {
           iconColor: colors.primary,
-          iconName: 'information-circle',
+          iconName: 'info.circle',
         };
     }
   };
@@ -155,7 +156,7 @@ const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
         >
           {/* Icon */}
           <View style={styles.iconContainer}>
-            <AlertIcon type={type} color={alertConfig.iconColor} />
+            <AlertIcon type={type} color={alertConfig.iconColor} name={alertConfig.iconName} />
           </View>
 
           {/* Title */}
@@ -220,30 +221,9 @@ const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
   );
 };
 
-// Alert Icon Component using Unicode characters for simplicity
-const AlertIcon: React.FC<{ type: AlertType; color: string }> = ({ type, color }) => {
-  const iconMap: Record<AlertType, string> = {
-    success: '✓',
-    error: '✕',
-    warning: '⚠',
-    info: 'ℹ',
-    confirm: '?',
-    loading: '',
-  };
-
-  // Loading type shows activity indicator instead of icon
-  if (type === 'loading') {
-    return (
-      <View
-        style={[
-          styles.iconCircle,
-          { borderColor: color, backgroundColor: color + '20' },
-        ]}
-      >
-        <ActivityIndicator size="large" color={color} />
-      </View>
-    );
-  }
+const AlertIcon: React.FC<{ type: AlertType; color: string; name?: string }> = ({ type, color, name }) => {
+  const loading = type === 'loading';
+  const iconName = loading ? undefined : name;
 
   return (
     <View
@@ -252,7 +232,11 @@ const AlertIcon: React.FC<{ type: AlertType; color: string }> = ({ type, color }
         { borderColor: color, backgroundColor: color + '20' },
       ]}
     >
-      <Text style={[styles.iconText, { color }]}>{iconMap[type]}</Text>
+      {loading ? (
+        <ActivityIndicator size="large" color={color} />
+      ) : iconName ? (
+        <IconSymbol name={iconName} size={28} color={color} />
+      ) : null}
     </View>
   );
 };

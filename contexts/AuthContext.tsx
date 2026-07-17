@@ -1,7 +1,7 @@
 import React, { createContext, useState, useCallback, useEffect } from 'react';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import api, { BASE_URL } from '@/utils/api';
+import api, { BASE_URL, isNetworkErrorResponse } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
 
@@ -47,33 +47,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    const [isOffline, setIsOffline] = useState(false);
    const [sessionId, setSessionId] = useState<string | null>(null);
 
-   // Restore token and user data on app start
-   useEffect(() => {
-      const restoreAuth = async () => {
-         try {
-            const token = await AsyncStorage.getItem('authToken');
-            if (token) {
-               // Verify token with backend and get user data
-               const response = await api.get('/auth/me', {
-                  headers: { 'x-auth-token': token }
-               });
-               setUser(response.data);
-               
-               const storedSessionId = await AsyncStorage.getItem('sessionId');
-               if (storedSessionId) setSessionId(storedSessionId);
-            }
-         } catch (error: any) {
-            console.warn('Failed to restore auth:', error);
-            // Clear invalid token
-            await AsyncStorage.removeItem('authToken');
-            await AsyncStorage.removeItem('sessionId');
-         } finally {
-            setIsLoading(false);
-         }
-      };
+    // Restore token and user data on app start
+    useEffect(() => {
+       const restoreAuth = async () => {
+          try {
+             const token = await AsyncStorage.getItem('authToken');
+             if (token) {
+                try {
+                   const controller = new AbortController();
+                   const timeoutId = setTimeout(() => controller.abort(), 3000);
+                   
+                   const response = await fetch(`${BASE_URL}/api/auth/me`, {
+                      method: 'GET',
+                      headers: {
+                         'x-auth-token': token,
+                         'Content-Type': 'application/json'
+                      },
+                      signal: controller.signal,
+                   });
+                   
+                   clearTimeout(timeoutId);
 
-      restoreAuth();
-   }, []);
+                   if (!response.ok) {
+                      throw new Error(`HTTP ${response.status}`);
+                   }
+
+                   const userData = await response.json();
+                   setUser(userData);
+                } catch (error: any) {
+                   console.warn('Failed to restore auth:', error);
+                   await AsyncStorage.removeItem('authToken');
+                   await AsyncStorage.removeItem('sessionId');
+                   await AsyncStorage.removeItem('profileCompleted');
+                   await AsyncStorage.removeItem('pendingProfileCompletion');
+                   await AsyncStorage.removeItem('supabaseUserId');
+                   await AsyncStorage.removeItem('userEmail');
+                   setUser(null);
+                   return;
+                }
+                
+                const storedSessionId = await AsyncStorage.getItem('sessionId');
+                if (storedSessionId) setSessionId(storedSessionId);
+             }
+          } catch (error: any) {
+             console.warn('Failed to restore auth:', error);
+             await AsyncStorage.removeItem('authToken');
+             await AsyncStorage.removeItem('sessionId');
+             await AsyncStorage.removeItem('profileCompleted');
+             await AsyncStorage.removeItem('pendingProfileCompletion');
+             await AsyncStorage.removeItem('supabaseUserId');
+             await AsyncStorage.removeItem('userEmail');
+             setUser(null);
+          } finally {
+             setIsLoading(false);
+          }
+       };
+
+       restoreAuth();
+    }, []);
 
    const register = useCallback(
       async (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => {

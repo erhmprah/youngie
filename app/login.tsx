@@ -26,7 +26,12 @@ export default function LoginScreen() {
   useEffect(() => {
     const checkSupabaseSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Session check timeout')), 5000)
+        );
+
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
 
         if (session) {
           const mongoToken = await AsyncStorage.getItem('authToken');
@@ -152,7 +157,12 @@ export default function LoginScreen() {
 
   const handleMagicLinkLogin = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Session check timeout')), 5000)
+      );
+
+      const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
 
       if (session) {
         const mongoToken = await AsyncStorage.getItem('authToken');

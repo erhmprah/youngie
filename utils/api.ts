@@ -460,6 +460,12 @@ export const authAPI = {
     api.post('/auth/complete-profile', data),
 };
 
+export const appAPI = {
+  // Get the current published app version for a platform (no auth required)
+  getCurrentVersion: (platform: 'ios' | 'android') =>
+    api.get(`/app-version/current`, { params: { platform } }),
+};
+
 export const userAPI = {
   getProfile: (userId: string) => api.get(`/users/${userId}`),
   updateProfile: (userId: string, data: any) => api.put(`/users/${userId}`, data),
@@ -568,6 +574,7 @@ export const userAPI = {
   unmuteUser: (userId: string) => api.post(`/users/unmute/${userId}`),
   getLoginActivity: () => api.get('/users/login-activity'),
   clearLoginActivity: () => api.delete('/users/login-activity'),
+  getFriendsList: (page?: number, limit?: number) => api.get('/users/friends/list', { params: { page, limit } }),
   getIncomingFriendRequests: () => api.get('/users/friend-requests/incoming'),
   getSentFriendRequests: () => api.get('/users/friend-requests/sent'),
   reportUser: (userId: string, targetUserId: string, reason?: string) =>

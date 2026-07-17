@@ -7,6 +7,7 @@ import { StyleSheet } from 'react-native';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ChatTabIcon } from '@/components/chat-tab-icon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { shadows, typography } from '@/constants/design-tokens';
 
@@ -15,6 +16,8 @@ export default function TabLayout() {
   const inactiveTintColor = useThemeColor('lightText');
   const backgroundColor = useThemeColor('surface');
   const borderTopColor = useThemeColor('border');
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 80 + Math.max(insets.bottom, 0);
 
   return (
     <Tabs
@@ -28,6 +31,8 @@ export default function TabLayout() {
           {
             backgroundColor: backgroundColor,
             borderTopColor: borderTopColor,
+            height: tabBarHeight,
+            paddingBottom: Math.max(insets.bottom, 8),
           },
         ],
         tabBarLabelStyle: styles.tabBarLabel,
@@ -80,7 +85,6 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: 80,
     borderTopWidth: 1,
     ...shadows.sm,
   },

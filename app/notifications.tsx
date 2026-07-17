@@ -154,9 +154,9 @@ export default function NotificationsScreen() {
         ));
         CustomAlert.info('Rejected', 'Join request rejected');
       } catch (error: any) {
-        CustomAlert.error('Error', 'Something went wrong. Please try again.');
+        CustomAlert.error('Friend Limit Reached', error?.response?.data?.msg || 'Something went wrong. Please try again.');
       }
-    };
+  };
 
    const handleAcceptChatInvitation = async (chatId: string, notificationId: string) => {
      try {
@@ -554,7 +554,6 @@ export default function NotificationsScreen() {
 
         {notifications.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <ThemedText style={styles.emptyIcon}>🎉</ThemedText>
             <ThemedText style={styles.emptyText}>All caught up!</ThemedText>
             <ThemedText style={styles.emptySubtext}>You have no new notifications.</ThemedText>
           </View>
@@ -710,10 +709,6 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.xxl,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: spacing.lg,
   },
   emptyText: {
     fontSize: typography.sizes.heading4,

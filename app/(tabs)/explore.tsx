@@ -12,7 +12,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { CreateCommunityModal } from './create-community-modal.component';
+import { CreateCommunityModal } from '@/components/create-community-modal';
 import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -257,7 +257,7 @@ export default function ExploreScreen() {
         }
         fetchExploreData();
       } catch (error: any) {
-        CustomAlert.error('Error', 'Something went wrong. Please try again.');
+        CustomAlert.error('Friend Limit Reached', error?.response?.data?.msg || 'Something went wrong. Please try again.');
       }
     };
 

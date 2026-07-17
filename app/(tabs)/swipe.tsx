@@ -178,7 +178,7 @@ export default function SwipeScreen() {
                     setProfiles(prev => prev.filter(p => p._id !== currentProfile._id));
                     CustomAlert.show({
                         type: 'success',
-                        title: '✅',
+                        title: 'Friend Request Sent',
                         message: 'Friend request sent!',
                         buttons: [{ text: 'Continue', style: 'default' }],
                         dismissable: true
