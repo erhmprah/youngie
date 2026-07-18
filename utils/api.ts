@@ -442,8 +442,8 @@ export const authAPI = {
     api.post('/auth/register', data),
   login: (data: { email: string; password: string }) =>
     api.post('/auth/login', data),
-  supabaseLogin: (accessToken: string) =>
-    api.post('/auth/supabase-login', { accessToken }),
+  supabaseLogin: (accessToken: string, deviceName?: string, clientLocation?: string) =>
+    api.post('/auth/supabase-login', { accessToken, deviceName, clientLocation }),
   getCurrentUser: () => api.get('/auth/me'),
   checkUsername: (username: string) => api.get(`/auth/check-username/${username}`),
   checkEmail: (email: string) => api.get(`/auth/check-email/${email}`),
@@ -469,6 +469,8 @@ export const appAPI = {
 export const userAPI = {
   getProfile: (userId: string) => api.get(`/users/${userId}`),
   updateProfile: (userId: string, data: any) => api.put(`/users/${userId}`, data),
+  deleteAccount: () => api.post('/users/delete-account'),
+  restoreAccount: () => api.post('/users/restore-account'),
   uploadProfilePhoto: async (userId: string, formData: FormData) => {
     const token = await AsyncStorage.getItem('authToken');
     const response = await fetch(`${API_URL}/users/${userId}/upload-profile-photo`, {
@@ -657,9 +659,9 @@ export const postAPI = {
   getPosts: (isAnonymous?: boolean, page?: number, limit?: number) => api.get('/posts', { params: { isAnonymous, page, limit } }),
   getUserPosts: (userId: string, page?: number, limit?: number) => api.get(`/posts/user/${userId}`, { params: { page, limit } }),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
-  createPost: (data: { content?: string; image?: string; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
+  createPost: (data: { content?: string; images?: string[]; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.post('/posts', data),
-  updatePost: (postId: string, data: { content?: string; image?: string; video?: string }) =>
+  updatePost: (postId: string, data: { content?: string; images?: string[]; video?: string }) =>
     api.put(`/posts/${postId}`, data),
   deletePost: (postId: string) =>
     api.delete(`/posts/${postId}`),

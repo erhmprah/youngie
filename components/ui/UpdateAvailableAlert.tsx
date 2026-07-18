@@ -3,8 +3,7 @@
 import React from 'react';
 import { Modal, StyleSheet, View, Text, TouchableOpacity, ScrollView, Linking, Platform } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getColors } from '@/constants/design-tokens';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { getColors , spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export interface UpdateAvailableAlertProps {

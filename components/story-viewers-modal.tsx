@@ -64,6 +64,7 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
 
     // Add viewers
     viewers.forEach(v => {
+        if (!v) return;
         const userId = v.user && (v.user._id || v.user.toString());
         if (userId && typeof v.user === 'object') {
             viewerIds.add(userId);
@@ -77,6 +78,7 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
 
     // Add reactors who are not in viewers list
     reactions.forEach(r => {
+        if (!r) return;
         const userId = r.user && (r.user._id || r.user.toString());
         if (userId && typeof r.user === 'object' && !viewerIds.has(userId)) {
             combinedList.push({
@@ -134,11 +136,12 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
                         </View>
                     )}
 
-                    <FlatList
+                     <FlatList
                         data={combinedList}
-                        keyExtractor={(item) => item.user._id}
+                        keyExtractor={(item) => item?.user?._id || Math.random().toString()}
                         showsVerticalScrollIndicator={false}
                         renderItem={({ item }) => {
+                            if (!item || !item.user) return null;
                             const iconConfig = item.reaction ? (REACTION_ICONS[item.reaction] || REACTION_ICONS.default) : null;
                             
                             return (

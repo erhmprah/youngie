@@ -38,13 +38,12 @@ export function HapticTab(props: BottomTabBarButtonProps) {
   };
 
   return (
-    <Animated.View style={[{ flex: 1 }, animatedStyle]}>
+    <Animated.View style={[props.style, { flex: 1 }, animatedStyle]}>
       <PlatformPressable
         {...props}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        // Removes the default gray background circle on Android for a cleaner look
-        android_ripple={{ color: 'transparent' }} 
+        android_ripple={{ color: 'transparent' }}
       />
     </Animated.View>
   );

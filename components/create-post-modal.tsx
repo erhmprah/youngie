@@ -38,7 +38,7 @@ const categories = [
 export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = false }: CreatePostModalProps) {
     const { user } = useAuth();
     const [content, setContent] = useState('');
-    const [media, setMedia] = useState<Array<{ uri: string; type: 'image' | 'video' }>>([]);
+    const [media, setMedia] = useState<{ uri: string; type: 'image' | 'video' }[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isPublic, setIsPublic] = useState(true);
     const [isAnonymous, setIsAnonymous] = useState(initialAnonymous);
@@ -199,11 +199,30 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
     // Handle unified media picker selection
     const handleMediaSelected = (result: MediaPickerResult) => {
         if (result.type === 'photo') {
-            // For photos, use the existing pickImage flow
-            handlePickImage();
+            const currentImageCount = media.filter(m => m.type === 'image').length;
+            if (currentImageCount >= MAX_IMAGES) {
+                CustomAlert.warning('Limit Reached', `You can only upload a maximum of ${MAX_IMAGES} images.`);
+                return;
+            }
+            setMedia(prev => {
+                const currentImages = prev.filter(m => m.type === 'image');
+                const combined = [...currentImages, { uri: result.uri, type: 'image' as const }];
+                if (combined.length > MAX_IMAGES) {
+                    CustomAlert.warning('Limit Exceeded', `You can only select up to ${MAX_IMAGES} images. ${combined.length - MAX_IMAGES} images were not added.`);
+                    return combined.slice(0, MAX_IMAGES);
+                }
+                return combined;
+            });
         } else if (result.type === 'video') {
-            // For videos, use the existing pickVideo flow
-            handlePickVideo();
+            if (media.length > 0) {
+                CustomAlert.confirm(
+                    'Clear Selection',
+                    'Adding a video will remove any selected images. Continue?',
+                    () => setMedia([{ uri: result.uri, type: 'video' as const }])
+                );
+                return;
+            }
+            setMedia([{ uri: result.uri, type: 'video' as const }]);
         }
         // Audio is not supported for posts, only for chat
     };
@@ -252,7 +271,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
             // Create post with uploaded media URLs
             await postAPI.createPost({
                 content: content.trim() || undefined,
-                image: imageUrls.length > 0 ? imageUrls[0] : undefined,
+                images: imageUrls.length > 0 ? imageUrls : undefined,
                 video: videoUrl,
                 isPublic,
                 isAnonymous,

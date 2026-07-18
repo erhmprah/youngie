@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { StyleSheet, View, ScrollView, TouchableOpacity, Linking, Image } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -32,7 +32,7 @@ export default function AboutScreen() {
             <ScrollView contentContainerStyle={styles.content}>
                 <View style={styles.header}>
                     <View style={[styles.logoContainer, { backgroundColor: primaryColor }]}>
-                        <IconSymbol name="app" size={48} color="white" />
+                        <Image source={require('@/assets/images/youngie_icon.png')} style={styles.logo} resizeMode="contain" />
                     </View>
                     <ThemedText style={[styles.appName, { color: textColor }]}>Youngie</ThemedText>
                     <ThemedText style={[styles.version, { color: lightTextColor }]}>Version 1.0.0</ThemedText>
@@ -115,6 +115,7 @@ const styles = StyleSheet.create({
     content: { padding: spacing.md },
     header: { alignItems: 'center', marginBottom: spacing.xl },
     logoContainer: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md },
+    logo: { width: 48, height: 48 },
     appName: { fontSize: typography.sizes.title, fontFamily: typography.families.bold, marginBottom: spacing.xs },
     version: { fontSize: typography.sizes.caption },
     section: { borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md },

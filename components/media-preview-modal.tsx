@@ -3,9 +3,12 @@ import { getImageUrl } from '@/utils/api';
 import { ResizeMode, Video } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Dimensions, Image, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import Reanimated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { borderRadius, spacing, typography } from '@/constants/design-tokens';
 import { ThemedText } from './themed-text';
 import { IconSymbol } from './ui/icon-symbol';
 
@@ -14,20 +17,95 @@ const { width, height } = Dimensions.get('window')
 interface MediaPreviewModalProps {
     visible: boolean;
     onClose: () => void;
-    attachment: any;
+    attachment?: any;
+    attachments?: any[];
+    initialIndex?: number;
+    onIndexChange?: (index: number) => void;
 }
 
-export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreviewModalProps) {
+export function MediaPreviewModal({ visible, onClose, attachment, attachments, initialIndex = 0, onIndexChange }: MediaPreviewModalProps) {
     const white = useThemeColor('white');
     const insets = useSafeAreaInsets();
     const [mediaError, setMediaError] = useState(false);
 
+    const attachmentsList = attachments && attachments.length > 0 ? attachments : (attachment ? [attachment] : []);
+    const [currentIndex, setCurrentIndex] = useState(initialIndex);
+
+    const translateY = useSharedValue(0);
+    const dragRef = useRef<{ startY: number }>({ startY: 0 });
+
+    useEffect(() => {
+        if (visible) {
+            setCurrentIndex(initialIndex);
+            translateY.value = 0;
+        }
+    }, [visible, initialIndex, translateY]);
+
+    const goToNext = () => {
+        if (currentIndex < attachmentsList.length - 1) {
+            const next = currentIndex + 1;
+            setCurrentIndex(next);
+            setMediaError(false);
+            onIndexChange?.(next);
+        } else {
+            onClose();
+        }
+    };
+
+    const goToPrev = () => {
+        if (currentIndex > 0) {
+            const prev = currentIndex - 1;
+            setCurrentIndex(prev);
+            setMediaError(false);
+            onIndexChange?.(prev);
+        } else {
+            onClose();
+        }
+    };
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: translateY.value }],
+    }));
+
+    const onGestureEvent = (event: any) => {
+        dragRef.current.startY = event.nativeEvent.y;
+        if (event.nativeEvent.y < 0) {
+            translateY.value = event.nativeEvent.y;
+        } else {
+            translateY.value = event.nativeEvent.y * 0.4;
+        }
+    };
+
+    const onHandlerStateChange = (event: any) => {
+        if (event.nativeEvent.state === State.END) {
+            const { y, velocityY } = event.nativeEvent;
+            const SWIPE_THRESHOLD = height * 0.2;
+            const VELOCITY_THRESHOLD = -800;
+
+            if (y <= -SWIPE_THRESHOLD || velocityY <= VELOCITY_THRESHOLD) {
+                translateY.value = withTiming(-height, { duration: 250 }, () => {
+                    runOnJS(goToNext)();
+                    translateY.value = 0;
+                });
+            } else if (y >= SWIPE_THRESHOLD || velocityY >= 800) {
+                translateY.value = withTiming(height, { duration: 250 }, () => {
+                    runOnJS(goToPrev)();
+                    translateY.value = 0;
+                });
+            } else {
+                translateY.value = withTiming(0, { duration: 200 });
+            }
+        }
+    };
+
     // Reset error state when attachment or visibility changes
     useEffect(() => {
         setMediaError(false);
-    }, [attachment, visible]);  
+    }, [attachment, visible, currentIndex]);
 
-    if (!attachment) return null;
+    if (attachmentsList.length === 0) return null;
+
+    const currentAttachment = attachmentsList[currentIndex] ?? attachment;
 
     const parseAttachment = (value: any): any => {
         if (typeof value === 'string') {
@@ -91,11 +169,11 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
         return undefined;
     };
 
-    const parsedAttachment = parseAttachment(attachment);
+    const parsedAttachment = parseAttachment(currentAttachment);
     let uri = extractUri(parsedAttachment);
 
-    if (!uri && typeof attachment === 'string') {
-        uri = attachment;
+    if (!uri && typeof currentAttachment === 'string') {
+        uri = currentAttachment;
     }
     if (!uri) return null;
 
@@ -163,81 +241,101 @@ export function MediaPreviewModal({ visible, onClose, attachment }: MediaPreview
 
     return (
         <Modal visible={visible} transparent={false} presentationStyle="fullScreen" animationType="fade" onRequestClose={onClose}>
-            <View style={styles.container}>
-                <TouchableOpacity style={[styles.closeButton, { top: insets.top + 10 }]} onPress={onClose}>
-                    <IconSymbol name="xmark" size={30} color={white} />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.saveButton, { top: insets.top + 10 }]} onPress={handleSave}>
-                    <IconSymbol name="square.and.arrow.down" size={30} color={white} />
-                </TouchableOpacity>
+            <PanGestureHandler
+                onGestureEvent={onGestureEvent}
+                onHandlerStateChange={onHandlerStateChange}
+            >
+                <Reanimated.View style={[styles.container, animatedStyle]}>
+                    <TouchableOpacity style={[styles.closeButton, { top: insets.top + 10 }]} onPress={onClose}>
+                        <IconSymbol name="xmark" size={30} color={white} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.saveButton, { top: insets.top + 10 }]} onPress={handleSave}>
+                        <IconSymbol name="square.and.arrow.down" size={30} color={white} />
+                    </TouchableOpacity>
 
-                <View style={styles.mediaContainer}>
-                    <View style={styles.mediaWrapper}>
-                        {mediaError ? (
-                            <View style={styles.errorContainer}>
-                                <IconSymbol name="exclamationmark.triangle" size={48} color={white} />
-                                <ThemedText style={{ color: white, marginTop: 8 }}>Failed to load media</ThemedText>
-                            </View>
-                        ) : (
-                            <>
-                                {isVideo ? (
-                                    <Video
-                                        source={{ uri: uriToDisplay }}
-                                        style={styles.media}
-                                        useNativeControls
-                                        resizeMode={ResizeMode.CONTAIN}
-                                        shouldPlay={false}
-                                        key={uriToDisplay}
-                                        onError={(e) => {
-                                            console.log('Video load error:', e);
-                                            setMediaError(true);
-                                        }}
-                                    />
-                                ) : (
-                                    <Image
-                                        source={
-                                            mediaError
-                                                ? require('@/assets/placeholder-gray.png')
-                                                : { uri: uriToDisplay }
-                                        }
-                                        style={styles.media}
-                                        resizeMode="contain"
-                                        key={uriToDisplay}
-                                        onLoadStart={() => {
-                                            console.log('Media load started', uriToDisplay);
-                                        }}
-                                        onLoad={() => {
-                                            console.log('Media loaded successfully', uriToDisplay);
-                                        }}
-                                        onError={(e) => {
-                                            console.log('Media load error:', e.nativeEvent.error, uriToDisplay);
-                                            setMediaError(true);
-                                        }}
-                                    />
+                    {attachmentsList.length > 1 && (
+                        <View style={[styles.counterBadge, { top: insets.top + 14 }]}>
+                            <ThemedText style={styles.counterText}>
+                                {currentIndex + 1}/{attachmentsList.length}
+                            </ThemedText>
+                        </View>
+                    )}
 
-                                )}
-                            </>
-                        )}
+                    <View style={styles.mediaContainer}>
+                        <View style={styles.mediaWrapper}>
+                            {mediaError ? (
+                                <View style={styles.errorContainer}>
+                                    <IconSymbol name="exclamationmark.triangle" size={48} color={white} />
+                                    <ThemedText style={{ color: white, marginTop: 8 }}>Failed to load media</ThemedText>
+                                </View>
+                            ) : (
+                                <>
+                                    {isVideo ? (
+                                        <Video
+                                            source={{ uri: uriToDisplay }}
+                                            style={styles.media}
+                                            useNativeControls
+                                            resizeMode={ResizeMode.CONTAIN}
+                                            shouldPlay={false}
+                                            key={uriToDisplay}
+                                            onError={(e) => {
+                                                console.log('Video load error:', e);
+                                                setMediaError(true);
+                                            }}
+                                        />
+                                    ) : (
+                                        <Image
+                                            source={
+                                                mediaError
+                                                    ? require('@/assets/placeholder-gray.png')
+                                                    : { uri: uriToDisplay }
+                                            }
+                                            style={styles.media}
+                                            resizeMode="contain"
+                                            key={uriToDisplay}
+                                            onLoadStart={() => {
+                                                console.log('Media load started', uriToDisplay);
+                                            }}
+                                            onLoad={() => {
+                                                console.log('Media loaded successfully', uriToDisplay);
+                                            }}
+                                            onError={(e) => {
+                                                console.log('Media load error:', e.nativeEvent.error, uriToDisplay);
+                                                setMediaError(true);
+                                            }}
+                                        />
+
+                                    )}
+                                </>
+                            )}
+                        </View>
                     </View>
-                </View>
 
-                <View style={styles.infoContainer}>
-                    <ThemedText style={styles.fileName}>
-                        {parsedAttachment.fileName || 'Media file'}
-                    </ThemedText>
-                    {(() => {
-                        const rawSize = parsedAttachment.fileSize ?? parsedAttachment.size;
-                        if (typeof rawSize === 'number' && rawSize > 0) {
-                            return (
-                                <ThemedText style={styles.fileSize}>
-                                    {(rawSize / 1024 / 1024).toFixed(2)} MB
-                                </ThemedText>
-                            );
-                        }
-                        return null;
-                    })()}
-                </View>
-            </View>
+                    {attachmentsList.length > 1 && (
+                        <View style={styles.swipeHint}>
+                            <IconSymbol name="chevron.up" size={20} color="rgba(255,255,255,0.7)" />
+                            <ThemedText style={styles.swipeHintText}>Swipe up for next</ThemedText>
+                        </View>
+                    )}
+
+                    <View style={styles.infoContainer}>
+                        <ThemedText style={styles.fileName}>
+                            {parsedAttachment.fileName || 'Media file'}
+                        </ThemedText>
+                        {(() => {
+                            const rawSize = parsedAttachment.fileSize ?? parsedAttachment.size;
+                            if (typeof rawSize === 'number' && rawSize > 0) {
+                                return (
+                                    <ThemedText style={styles.fileSize}>
+                                        {(rawSize / 1024 / 1024).toFixed(2)} MB
+                                    </ThemedText>
+                                );
+                            }
+                            return null;
+                        })()}
+                    </View>
+                </Reanimated.View>
+            </PanGestureHandler>
         </Modal>
     );
 }
@@ -314,5 +412,33 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 14,
         opacity: 0.8,
+    },
+    counterBadge: {
+        position: 'absolute',
+        left: 20,
+        zIndex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 4,
+        borderRadius: borderRadius.round,
+    },
+    counterText: {
+        color: 'white',
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.medium,
+    },
+    swipeHint: {
+        position: 'absolute',
+        bottom: 90,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 6,
+    },
+    swipeHintText: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 13,
     },
 });

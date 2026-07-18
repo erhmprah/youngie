@@ -26,20 +26,13 @@ export default function PrivacySettingsScreen() {
 
     useEffect(() => {
         if (user) {
-            fetchSettings();
-        }
-    }, [user]);
-
-    const fetchSettings = async () => {
-        if (!user?._id) return;
-        try {
-            const response = await userAPI.getProfile(user._id);
-            setIsPrivate(response.data.isPrivate || false);
-        } catch (error) {
-        } finally {
+            // The auth user is the single source of truth for isPrivate; it is
+            // updated by both this screen and the edit profile screen, so the
+            // two stay in sync without a server round-trip.
+            setIsPrivate(user.isPrivate || false);
             setIsLoading(false);
         }
-    };
+    }, [user]);
 
     const handleTogglePrivate = async (value: boolean) => {
         if (!user?._id) return;

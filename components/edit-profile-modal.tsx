@@ -26,6 +26,19 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
     const [showSuggestions, setShowSuggestions] = useState(true);
     const [suggestions, setSuggestions] = useState<string[]>([]);
 
+    // Keep modal state in sync with the latest user data whenever it opens.
+    // This ensures the Private Profile switch reflects changes made from
+    // the Account Privacy screen (and vice versa).
+    useEffect(() => {
+        if (visible) {
+            setUsername(initialData?.username || '');
+            setBio(initialData?.bio || '');
+            setLocation(initialData?.location || '');
+            setInterests(initialData?.interests || []);
+            setIsPrivate(initialData?.isPrivate || false);
+        }
+    }, [visible, initialData]);
+
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
     const primaryColor = useThemeColor('primary');

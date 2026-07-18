@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert, Text } from 'react-native';
+import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert, Text , Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, Audio, ResizeMode, AVPlaybackStatus } from 'expo-av';
@@ -17,7 +17,6 @@ import { MediaPreviewModal } from '@/components/media-preview-modal';
 import { MediaPickerButton, MediaPickerResult } from '@/components/media-picker-button';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { Swipeable, RectButton } from 'react-native-gesture-handler';
-import { Animated } from 'react-native';
 
 interface Message {
    _id: string;
@@ -154,7 +153,6 @@ export default function ChatScreen() {
   const [meteringLevels, setMeteringLevels] = useState<number[]>([]);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const previewSound = useRef<Audio.Sound | null>(null);
-  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewStatus, setPreviewStatus] = useState<any>(null);
 
   const backgroundColor = useThemeColor('background');
@@ -547,7 +545,6 @@ export default function ChatScreen() {
       await previewSound.current.unloadAsync();
       previewSound.current = null;
     }
-    setIsPreviewPlaying(false);
     setPreviewStatus(null);
 
     let attachmentData = null;
@@ -721,7 +718,6 @@ export default function ChatScreen() {
     if (previewSound.current) {
       await previewSound.current.unloadAsync();
       previewSound.current = null;
-      setIsPreviewPlaying(false);
       setPreviewStatus(null);
     }
 
@@ -736,6 +732,7 @@ export default function ChatScreen() {
       setPlayingAudio(null);
     }
 
+    const previousAttachment = attachment;
     setAttachment(null);
     isRecordingDesired.current = true;
     if (recordingRef.current) {
@@ -748,9 +745,11 @@ export default function ChatScreen() {
     }
     try {
       const { status } = await Audio.requestPermissionsAsync();
+      console.log('Audio permission status:', status);
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant permission to record audio');
         isRecordingDesired.current = false;
+        setAttachment(previousAttachment);
         return;
       }
 
@@ -761,6 +760,7 @@ export default function ChatScreen() {
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: true,
       });
+      console.log('Audio mode set successfully');
 
       const { recording: newRecording } = await Audio.Recording.createAsync(
         { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
@@ -772,6 +772,7 @@ export default function ChatScreen() {
         },
         100
       );
+      console.log('Recording created successfully');
 
       if (!isRecordingDesired.current) {
         try {
@@ -779,18 +780,21 @@ export default function ChatScreen() {
         } catch (error) {
           // Ignore error if stopped too quickly
         }
+        setAttachment(previousAttachment);
         return;
       }
 
       recordingRef.current = newRecording;
       setRecording(newRecording);
       setIsRecording(true);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to start recording');
+    } catch (error: any) {
+      console.error('Failed to start recording:', error);
+      Alert.alert('Error', `Failed to start recording: ${error?.message || error}`);
       isRecordingDesired.current = false;
       setIsRecording(false);
       setRecording(null);
       recordingRef.current = null;
+      setAttachment(previousAttachment);
     }
   };
 
@@ -931,10 +935,8 @@ export default function ChatScreen() {
         if (status.isLoaded) {
           if (status.isPlaying) {
             await previewSound.current.pauseAsync();
-            setIsPreviewPlaying(false);
           } else {
             await previewSound.current.playAsync();
-            setIsPreviewPlaying(true);
           }
           return;
         }
@@ -945,14 +947,11 @@ export default function ChatScreen() {
         { shouldPlay: true }
       );
       previewSound.current = sound;
-      setIsPreviewPlaying(true);
 
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
           setPreviewStatus(status);
-          setIsPreviewPlaying(status.isPlaying);
           if (status.didJustFinish) {
-            setIsPreviewPlaying(false);
             sound.setPositionAsync(0);
           }
         }
@@ -1376,7 +1375,7 @@ export default function ChatScreen() {
               {attachment.type?.startsWith('audio') ? (
                 <View style={[styles.attachmentPreview, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' }]}>
                   <TouchableOpacity onPress={togglePreviewPlayback}>
-                    <IconSymbol name={isPreviewPlaying ? "pause.circle.fill" : "play.circle.fill"} size={40} color={primaryColor} />
+                    <IconSymbol name="mic.fill" size={36} color={primaryColor} />
                   </TouchableOpacity>
                   <View style={{ marginLeft: spacing.sm }}>
                     <View style={styles.waveformContainer}>
@@ -1413,7 +1412,6 @@ export default function ChatScreen() {
                   await previewSound.current.unloadAsync();
                   previewSound.current = null;
                 }
-                setIsPreviewPlaying(false);
                 setPreviewStatus(null);
                 setAttachment(null);
               }} style={styles.cancelAttachment}>
@@ -1438,6 +1436,7 @@ export default function ChatScreen() {
             )}
             <MediaPickerButton
               onMediaSelected={handleMediaSelected}
+              showAudioOption={false}
               icon="add"
               size={24}
               disabled={isUploading}
@@ -1552,7 +1551,7 @@ export default function ChatScreen() {
                     }
                   }}
                 >
-                  <ThemedText style={{ color: white, marginLeft: spacing.sm }}>
+                  <ThemedText style={{ color: white }}>
                     {item.name || item.participants.filter((p: any) => p._id !== user?._id).map((p: any) => p.username).join(', ')}
                   </ThemedText>
                 </TouchableOpacity>
@@ -1572,27 +1571,33 @@ export default function ChatScreen() {
             onPress={() => { setShowMessageOptionsModal(false); setSelectedMessage(null); }}
           />
           <View style={[styles.forwardModal, { backgroundColor: surfaceColor }]}>
-            <ThemedText type="title" style={{ marginBottom: spacing.md }}>Message Options</ThemedText>
+            <View style={{ width: 36, height: 5, borderRadius: 2.5, backgroundColor: lightTextColor + '40', alignSelf: 'center', marginBottom: spacing.lg }} />
             <TouchableOpacity
-              style={[styles.forwardOption, { backgroundColor: primaryColor }]}
+              style={[styles.messageOptionItem, { borderBottomWidth: 1, borderBottomColor: textColor + '20' }]}
               onPress={() => { handleReply(selectedMessage); setShowMessageOptionsModal(false); setSelectedMessage(null); }}
             >
-              <IconSymbol name="arrowshape.turn.up.left" size={20} color={white} />
-              <ThemedText style={{ color: white, marginLeft: spacing.sm }}>Reply</ThemedText>
+              <IconSymbol name="arrowshape.turn.up.left" size={20} color={primaryColor} />
+              <ThemedText style={{ color: textColor }}>Reply</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.forwardOption, { backgroundColor: primaryColor }]}
+              style={[styles.messageOptionItem, { borderBottomWidth: 1, borderBottomColor: textColor + '20' }]}
               onPress={() => { handleForward(selectedMessage); setShowMessageOptionsModal(false); setSelectedMessage(null); }}
             >
-              <IconSymbol name="arrowshape.turn.up.right" size={20} color={white} />
-              <ThemedText style={{ color: white, marginLeft: spacing.sm }}>Forward</ThemedText>
+              <IconSymbol name="arrowshape.turn.up.right" size={20} color={primaryColor} />
+              <ThemedText style={{ color: textColor }}>Forward</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.forwardOption, { backgroundColor: '#ff4444' }]}
+              style={styles.messageOptionItem}
               onPress={() => { showDeleteOptions(selectedMessage); setShowMessageOptionsModal(false); setSelectedMessage(null); }}
             >
-              <IconSymbol name="trash" size={20} color={white} />
-              <ThemedText style={{ color: white, marginLeft: spacing.sm }}>Delete</ThemedText>
+              <IconSymbol name="trash" size={20} color={errorColor} />
+              <ThemedText style={{ color: errorColor }}>Delete</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm }}
+              onPress={() => { setShowMessageOptionsModal(false); setSelectedMessage(null); }}
+            >
+              <ThemedText style={{ color: primaryColor, fontWeight: '600' }}>Cancel</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -1632,7 +1637,7 @@ export default function ChatScreen() {
                   onPress={() => { handleDelete(deleteMessageData, 'me'); setShowDeleteConfirmModal(false); setDeleteMessageData(null); }}
                 >
                   <IconSymbol name="trash" size={20} color={white} />
-                  <ThemedText style={{ color: white, marginLeft: spacing.sm }}>Delete</ThemedText>
+                  <ThemedText style={{ color: white }}>Delete</ThemedText>
                 </TouchableOpacity>
               )}
             </View>
@@ -1776,15 +1781,29 @@ const createStyles = (colors: { primaryColor: string; white: string; surfaceColo
     left: 0,
     right: 0,
     padding: spacing.xl,
+    paddingBottom: spacing.xxl,
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
   },
   forwardOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     padding: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
+  },
+  messageOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
   },
   attachmentVideo: {
     width: 200,

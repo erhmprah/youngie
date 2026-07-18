@@ -31,10 +31,10 @@ interface Story {
     image?: string;
     video?: string;
     expiresAt: string;
-    viewers: Array<{ user: User; viewedAt: string }>;
+    viewers: { user: User; viewedAt: string }[];
     createdAt: string;
     pollOptions?: { text: string; votes: string[] }[];
-    reactions?: Array<{ user: User; type: string }>;
+    reactions?: { user: User; type: string }[];
 }
 
 interface StoryGroup {
@@ -140,7 +140,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         if (visible && story) {
             // Mark as viewed if not already viewed AND not the author
             const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
-            if (user && !isAuthor && !story.viewers?.some(v => v.user._id === user._id)) {
+            if (user && !isAuthor && !story.viewers?.some((v: any) => v && v.user && v.user._id === user._id)) {
                  storyAPI.viewStory(story._id).then(() => {
                      onStoryViewed?.(story._id);
                  }).catch(() => {});
@@ -211,7 +211,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     };
 
     const handleMuteUser = () => {
-        if (!group) return;
+        if (!group || !group.user) return;
         
         Alert.alert(
             `Mute ${group.user.username}?`,
@@ -241,7 +241,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         setShowReactions(false);
         try {
             // Check if user already has this reaction
-            const hasSameReaction = story.reactions?.some(r => r.user._id === (user?._id || '') && r.type === type);
+            const hasSameReaction = story.reactions?.some((r: any) => r && r.user && r.user._id === (user?._id || '') && r.type === type);
             
             if (hasSameReaction) {
                 // Remove reaction if user is clicking the same reaction type again
@@ -298,14 +298,14 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                 <TouchableOpacity
                     style={{ flexDirection: 'row', alignItems: 'center' }}
                     onPress={() => {
-                        if (group.user._id !== user?._id) {
+                        if (group.user?._id !== user?._id) {
                             onClose();
                             router.push(`/user/${group.user._id}`);
                         }
                     }}
                 >
-                    <Image source={{ uri: getImageUrl(group.user.profilePhoto) }} style={styles.avatar} />
-                    <ThemedText style={styles.username}>{group.user.username}</ThemedText>
+                    <Image source={{ uri: getImageUrl(group.user?.profilePhoto) }} style={styles.avatar} />
+                    <ThemedText style={styles.username}>{group.user?.username || 'User'}</ThemedText>
                 </TouchableOpacity>
                 <ThemedText style={styles.time}>{getRelativeTime(story.createdAt)}</ThemedText>
                 {!isOwnStory && (

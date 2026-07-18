@@ -68,12 +68,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                    
                    clearTimeout(timeoutId);
 
-                   if (!response.ok) {
-                      throw new Error(`HTTP ${response.status}`);
-                   }
+                    if (!response.ok) {
+                       if (response.status === 403) {
+                          try {
+                             const data = await response.json();
+                             await handleSuspension(data.msg || 'You are not authorized to use this app.');
+                          } catch {
+                             await handleSuspension('You are not authorized to use this app.');
+                          }
+                          return;
+                       }
+                       throw new Error(`HTTP ${response.status}`);
+                    }
 
-                   const userData = await response.json();
-                   setUser(userData);
+                    const userData = await response.json();
+                    if (userData.suspended) {
+                       await handleSuspension('You are not authorized to use this app.');
+                       return;
+                    }
+
+                    setUser(userData);
                 } catch (error: any) {
                    console.warn('Failed to restore auth:', error);
                    await AsyncStorage.removeItem('authToken');
@@ -106,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
        restoreAuth();
     }, []);
 
-   const register = useCallback(
+    const register = useCallback(
       async (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => {
          setIsLoading(true);
          try {
@@ -119,7 +133,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                location,
             });
 
+            if (response.status === 403) {
+               await handleSuspension();
+               return;
+            }
+
+            if (!response.data) {
+               throw new Error('Registration failed');
+            }
+
             const { token, user: userData, sessionId: newSessionId } = response.data;
+
+            if (userData?.suspended) {
+               await handleSuspension();
+               return;
+            }
 
             // Store token
             await AsyncStorage.setItem('authToken', token);
@@ -139,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
          }
       },
       []
-   );
+    );
 
    const login = useCallback(async (email: string, password: string) => {
       setIsLoading(true);
@@ -153,14 +181,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
          const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
          const clientLocation = timeZone ? timeZone.split('/').pop()?.replace(/_/g, ' ') : undefined;
 
-         const response = await api.post('/auth/login', {
-            email,
-            password,
-            deviceName,
-            clientLocation,
-         });
+          const response = await api.post('/auth/login', {
+             email,
+             password,
+             deviceName,
+             clientLocation,
+          });
 
-         const { token, user: userData, sessionId: newSessionId } = response.data;
+          if (response.status === 403) {
+             await handleSuspension();
+             return;
+          }
+
+          if (!response.data) {
+             throw new Error('Login failed');
+          }
+
+          const { token, user: userData, sessionId: newSessionId } = response.data;
 
          // Store token
          await AsyncStorage.setItem('authToken', token);
@@ -204,18 +241,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
    }, []);
 
-   const logoutFromOtherDevices = useCallback(async () => {
-      if (!sessionId) return;
-      try {
-         const token = await AsyncStorage.getItem('authToken');
-         await api.post('/users/login-activity/logout-others', 
-            { currentSessionId: sessionId },
-            { headers: { 'x-auth-token': token } }
-         );
-      } catch (error: any) {
-         throw error.response?.data?.msg || error.message || 'Failed to logout other devices';
-      }
-   }, [sessionId]);
+    const logoutFromOtherDevices = useCallback(async () => {
+       if (!sessionId) return;
+       try {
+          const token = await AsyncStorage.getItem('authToken');
+          await api.post('/users/login-activity/logout-others', 
+             { currentSessionId: sessionId },
+             { headers: { 'x-auth-token': token } }
+          );
+       } catch (error: any) {
+          throw error.response?.data?.msg || error.message || 'Failed to logout other devices';
+       }
+    }, [sessionId]);
+
+    const handleSuspension = useCallback(async (message?: string) => {
+       try {
+          await supabase.auth.signOut();
+       } catch (e) {
+          console.log('Supabase signOut error:', e);
+       }
+       await AsyncStorage.removeItem('authToken');
+       await AsyncStorage.removeItem('sessionId');
+       await AsyncStorage.removeItem('profileCompleted');
+       await AsyncStorage.removeItem('pendingProfileCompletion');
+       await AsyncStorage.removeItem('supabaseUserId');
+       await AsyncStorage.removeItem('userEmail');
+       setUser(null);
+       setSessionId(null);
+       if (message) {
+          Alert.alert('Not Authorized', message);
+       }
+    }, []);
 
    const updateUser = useCallback((updatedUser: Partial<User>) => {
       setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : (updatedUser as User));

@@ -85,7 +85,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const singleVideoRef = useRef<Video>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
-    const [previewMedia, setPreviewMedia] = useState<any>(null);
+    const [previewMedia, setPreviewMedia] = useState<{ attachments: any[]; index: number } | null>(null);
     const mediaTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -183,6 +183,20 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         return getImageUrl(path) || trimmed;
     };
 
+    const getAllMediaItems = (): { uri: string; type: string }[] => {
+        const items: { uri: string; type: string }[] = [];
+        if (post.media && post.media.length > 0) {
+            post.media.forEach((m) => items.push({ uri: normalizeMediaUrl(m.url), type: m.type || 'image' }));
+        } else if (post.images && post.images.length > 0) {
+            post.images.forEach((img) => items.push({ uri: normalizeMediaUrl(img), type: 'image' }));
+        } else if (post.image) {
+            items.push({ uri: normalizeMediaUrl(post.image), type: 'image' });
+        } else if (post.video) {
+            items.push({ uri: normalizeMediaUrl(post.video), type: 'video' });
+        }
+        return items;
+    };
+
     const handleMediaTap = (url: string, type?: string) => {
         const now = Date.now();
         const DOUBLE_PRESS_DELAY = 300;
@@ -200,7 +214,9 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         } else {
             lastTap.current = now;
             mediaTapTimer.current = setTimeout(() => {
-                setPreviewMedia({ uri: resolvedUrl, type: type || 'image' });
+                const items = getAllMediaItems();
+                const index = items.findIndex((item) => item.uri === resolvedUrl);
+                setPreviewMedia({ attachments: items.length > 0 ? items : [{ uri: resolvedUrl, type: type || 'image' }], index: index >= 0 ? index : 0 });
                 lastTap.current = null;
                 mediaTapTimer.current = null;
             }, DOUBLE_PRESS_DELAY);
@@ -333,13 +349,18 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
             const updateData: {
                 content: string;
-                media?: { url: string; type: 'image' | 'video' }[];
+                images?: string[];
+                video?: string;
             } = {
                 content,
             };
 
             if (media) {
-                updateData.media = [{ url: media.uri, type: media.type }];
+                if (media.type === 'image') {
+                    updateData.images = [media.uri];
+                } else if (media.type === 'video') {
+                    updateData.video = media.uri;
+                }
             }
 
             const response = await postAPI.updatePost(post._id, updateData);
@@ -382,9 +403,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                             };
 
                             if (post.media && post.media.length > 0) {
-                                newPostData.media = post.media;
-                            } else {
-                                newPostData.image = post.image;
+                                newPostData.images = post.media.map(m => m.url);
+                            } else if (post.image) {
+                                newPostData.images = [post.image];
+                            }
+                            if (post.video) {
                                 newPostData.video = post.video;
                             }
 
@@ -663,7 +686,8 @@ source={{ uri: getImageUrl(item) }}
             <MediaPreviewModal
                 visible={!!previewMedia}
                 onClose={() => setPreviewMedia(null)}
-                attachment={previewMedia}
+                attachments={previewMedia?.attachments}
+                initialIndex={previewMedia?.index ?? 0}
             />
 
         </ThemedView>

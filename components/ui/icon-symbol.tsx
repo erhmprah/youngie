@@ -1,8 +1,7 @@
 // components/ui/icon-symbol.tsx
 
-import React, { useMemo } from 'react';
+import React, { useMemo , ComponentProps } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
 // Define a mapping from a generic name to a Feather icon name

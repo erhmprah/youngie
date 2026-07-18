@@ -4,6 +4,27 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import 'react-native-reanimated';
 
+import { AppState } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import AuthLoadingScreen from '@/components/auth-loading-screen';
+import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
+import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
+import AlertContainer from '@/components/ui/AlertContainer';
+import { AlertProvider } from '@/contexts/AlertContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { CacheProvider } from '@/contexts/CacheContext';
+import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import CallService from '@/utils/call-service';
+import { getErrorLog, setupGlobalErrorHandlers } from '@/utils/global-error-handler';
+import { disconnectSocket, initSocket, offVoiceCallEnd, offVoiceCallOffer, onVoiceCallEnd, onVoiceCallOffer } from '@/utils/socket';
+import { supabase } from '@/utils/supabase';
+import { checkAppVersion, useUpdateAlert, setUpdateAlertStateDirect } from '@/utils/app-version';
+import { UpdateAvailableAlert } from '@/components/ui/UpdateAvailableAlert';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 type TimeoutHandle = ReturnType<typeof setTimeout>;
 
 function safeJsonStringify(value: unknown): string | undefined {
@@ -25,27 +46,6 @@ function getString(value: unknown): string | undefined {
 function getNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
-
-import { AppState } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-
-import AuthLoadingScreen from '@/components/auth-loading-screen';
-import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
-import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
-import AlertContainer from '@/components/ui/AlertContainer';
-import { AlertProvider } from '@/contexts/AlertContext';
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { CacheProvider } from '@/contexts/CacheContext';
-import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { usePushNotifications } from '@/hooks/usePushNotifications';
-import CallService from '@/utils/call-service';
-import { getErrorLog, setupGlobalErrorHandlers } from '@/utils/global-error-handler';
-import { disconnectSocket, initSocket, offVoiceCallEnd, offVoiceCallOffer, onVoiceCallEnd, onVoiceCallOffer } from '@/utils/socket';
-import { supabase } from '@/utils/supabase';
-import { checkAppVersion, useUpdateAlert, setUpdateAlertStateDirect } from '@/utils/app-version';
-import { UpdateAvailableAlert } from '@/components/ui/UpdateAvailableAlert';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Conditionally import expo-notifications
 let Notifications: any = null;
@@ -214,7 +214,7 @@ function RootLayoutNav() {
         if (AppState.currentState === 'background' || AppState.currentState === 'inactive') {
           // Generate a random UUID for the call
           const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            let r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
           });
 

@@ -12,8 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getColors } from '@/constants/design-tokens';
-import { borderRadius, spacing, typography } from '@/constants/design-tokens';
+import { getColors , borderRadius, spacing, typography } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'confirm' | 'loading';

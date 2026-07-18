@@ -9,6 +9,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase, handleOAuthCallback } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '@/utils/api';
+import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
@@ -74,8 +75,17 @@ export default function AuthCallback() {
         // Check with backend if profile is already completed
         try {
           const supabaseToken = session.access_token;
-          const response = await authAPI.supabaseLogin(supabaseToken);
-          
+          const [deviceName, clientLocation] = await Promise.all([
+            getDeviceName(),
+            getClientLocation(),
+          ]);
+          const response = await authAPI.supabaseLogin(supabaseToken, deviceName, clientLocation);
+
+          if (response.status === 403) {
+            setStatus('error');
+            return;
+          }
+
           if (response.data?.needsProfileCompletion === false && response.data?.token) {
             // Profile is complete - store tokens and go to tabs
             await AsyncStorage.setItem('authToken', response.data.token);

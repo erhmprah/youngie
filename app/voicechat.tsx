@@ -4,8 +4,10 @@ import { CustomAlert } from '@/utils/alert';
 import { SOCKET_URL } from '@/utils/api';
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, StyleSheet, View } from 'react-native';
+import { Button, StyleSheet, View, Text, TouchableOpacity, Platform, PermissionsAndroid } from 'react-native';
+import { Audio } from 'expo-av';
 import { Socket, io } from 'socket.io-client';
+import InCallManager from 'react-native-incall-manager';
 
 const SOCKET_SERVER_URL = SOCKET_URL;
 
@@ -18,6 +20,9 @@ const VoiceChatScreen: React.FC = () => {
 
   const peerConnection = useRef<any>(null);
   const socket = useRef<Socket | null>(null);
+  const localStreamRef = useRef<any>(null);
+  const remoteStreamRef = useRef<any>(null);
+  const inCallManagerStarted = useRef(false);
   const navigation = useNavigation();
 
   const [webRTC, setWebRTC] = useState<any>(null);
@@ -34,6 +39,51 @@ const VoiceChatScreen: React.FC = () => {
 
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices, RTCView } = webRTC || {};
 
+  const requestAudioPermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'This app needs access to your microphone for voice chat.',
+            buttonPositive: 'OK',
+            buttonNegative: 'Cancel',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (error) {
+        console.error('Failed to request audio permission:', error);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const startInCallManager = useCallback(() => {
+    try {
+      if (typeof InCallManager?.start === 'function') {
+        InCallManager.start({ media: 'audio' });
+        InCallManager.setKeepScreenOn(true);
+        InCallManager.setForceSpeakerphoneOn(false);
+        inCallManagerStarted.current = true;
+      }
+    } catch (e) {
+      console.error('Error starting InCallManager:', e);
+    }
+  }, []);
+
+  const stopInCallManager = useCallback(() => {
+    try {
+      if (inCallManagerStarted.current && typeof InCallManager?.stop === 'function') {
+        InCallManager.stop();
+        inCallManagerStarted.current = false;
+      }
+    } catch (e) {
+      console.error('Error stopping InCallManager:', e);
+    }
+  }, []);
+
   const resetChat = useCallback(() => {
     matchedPeerIdRef.current = null;
 
@@ -44,17 +94,20 @@ const VoiceChatScreen: React.FC = () => {
       peerConnection.current = null;
     }
 
-    if (localStream) {
+    if (localStreamRef.current) {
       try {
-        localStream.getTracks().forEach((track: any) => track.stop());
+        localStreamRef.current.getTracks().forEach((track: any) => track.stop());
       } catch {}
+      localStreamRef.current = null;
     }
 
     setLocalStream(null);
     setRemoteStream(null);
+    remoteStreamRef.current = null;
     setIsConnecting(false);
     setIsChatting(false);
-  }, [localStream]);
+    stopInCallManager();
+  }, [stopInCallManager]);
 
   const createPeerConnection = useCallback(() => {
     const pc = new RTCPeerConnection({
@@ -79,8 +132,10 @@ const VoiceChatScreen: React.FC = () => {
     pc.ontrack = (event: any) => {
       const stream = event.streams?.[0];
       if (stream) {
+        remoteStreamRef.current = stream;
         setRemoteStream(stream);
         setIsChatting(true);
+        startInCallManager();
       }
     };
 
@@ -97,7 +152,7 @@ const VoiceChatScreen: React.FC = () => {
     };
 
     return pc;
-  }, [isChatting, resetChat]);
+  }, [isChatting, resetChat, startInCallManager]);
 
   const initLocalStream = useCallback(async () => {
     try {
@@ -105,11 +160,26 @@ const VoiceChatScreen: React.FC = () => {
         throw new Error('WebRTC not supported. Please use a development build.');
       }
 
+      const hasPermission = await requestAudioPermission();
+      if (!hasPermission) {
+        CustomAlert.error('Permission Denied', 'Microphone permission is required for voice chat.');
+        return null;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
+      });
+
       const stream = await mediaDevices.getUserMedia({
         audio: true,
         video: true,
       });
 
+      localStreamRef.current = stream;
       setLocalStream(stream);
       return stream;
     } catch (error) {

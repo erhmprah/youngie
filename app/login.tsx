@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { authAPI } from '@/utils/api';
+import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
 import { signInWithGoogle } from '@/utils/google-signin';
 import { signInWithMagicLink, supabase } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -45,9 +46,17 @@ export default function LoginScreen() {
           if (!mongoToken) {
             try {
               const supabaseToken = session.access_token;
-              const response = await authAPI.supabaseLogin(supabaseToken);
+              const [deviceName, clientLocation] = await Promise.all([
+                getDeviceName(),
+                getClientLocation(),
+              ]);
+               const response = await authAPI.supabaseLogin(supabaseToken, deviceName, clientLocation);
 
-              if (response.data?.needsProfileCompletion === false && response.data?.token) {
+               if (response.status === 403) {
+                 return;
+               }
+
+               if (response.data?.needsProfileCompletion === false && response.data?.token) {
                 await AsyncStorage.setItem('authToken', response.data.token);
                 await AsyncStorage.setItem('sessionId', response.data.sessionId);
                 await AsyncStorage.setItem('profileCompleted', 'true');

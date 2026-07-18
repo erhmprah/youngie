@@ -160,21 +160,42 @@ export default function CompleteProfileScreen() {
 
     const birthYearNum = parseInt(birthYear);
     const currentYear = new Date().getFullYear();
-    if (birthYearNum < 1997 || birthYearNum > currentYear) {
-      Alert.alert('Error', `Birth year must be between 1997 and ${currentYear}`);
+
+    if (birthYearNum > currentYear) {
+      Alert.alert('Error', `Birth year cannot be in the future`);
       return;
     }
 
+    const userAge = currentYear - birthYearNum;
+    if (userAge > 29) {
+      Alert.alert(
+        'Age Restriction',
+        'This app is intended for users below 29 years old. Are you sure this is your correct age?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => proceedWithCompletion(birthYearNum),
+          },
+        ]
+      );
+      return;
+    }
+
+    await proceedWithCompletion(birthYearNum);
+  };
+
+  const proceedWithCompletion = async (birthYearNum: number) => {
     setIsLoading(true);
 
     let user: any = null;
     try {
       // Use timeout to avoid hanging
       const userPromise = supabase.auth.getUser();
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('getUser timeout')), 5000)
       );
-      
+
       const result = await Promise.race([userPromise, timeoutPromise]) as any;
       user = result?.data?.user;
     } catch (e) {
@@ -226,21 +247,44 @@ export default function CompleteProfileScreen() {
           gender,
           location,
         });
-        
+
         // Store the backend token if returned
         if (response.data?.token) {
           await AsyncStorage.setItem('authToken', response.data.token);
           console.log('Backend token stored successfully');
         }
-        
+
         // Store the session ID if returned
         if (response.data?.sessionId) {
           await AsyncStorage.setItem('sessionId', response.data.sessionId);
           console.log('Session ID stored successfully');
         }
-        
+
         // Store the user data for AuthContext
         backendUserData = response.data?.user;
+
+        if (backendUserData?.suspended) {
+          await AsyncStorage.removeItem('authToken');
+          await AsyncStorage.removeItem('sessionId');
+          await AsyncStorage.removeItem('profileCompleted');
+          await AsyncStorage.removeItem('pendingProfileCompletion');
+          await AsyncStorage.removeItem('supabaseUserId');
+          await AsyncStorage.removeItem('userEmail');
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {
+            console.log('Supabase signOut error:', e);
+          }
+          Alert.alert(
+            'Not Authorized',
+            'You are not authorized to use this app.',
+            [{ text: 'OK', onPress: async () => {
+              router.replace('/login');
+            }}]
+          );
+          setIsLoading(false);
+          return;
+        }
       } catch (backendError) {
         console.log('Backend sync warning:', backendError);
         // Continue anyway - profile is complete in Supabase
@@ -265,7 +309,7 @@ export default function CompleteProfileScreen() {
 
       // Mark profile as completed
       await AsyncStorage.setItem('profileCompleted', 'true');
-      
+
       // Clear pending profile flag
       await AsyncStorage.removeItem('pendingProfileCompletion');
 
@@ -273,9 +317,9 @@ export default function CompleteProfileScreen() {
       Alert.alert(
         '🎉 Welcome to Youngie!',
         `Your profile has been created successfully.`,
-        [{ 
-          text: 'Continue', 
-          onPress: () => router.replace('/(tabs)') 
+        [{
+          text: 'Continue',
+          onPress: () => router.replace('/(tabs)')
         }]
       );
 

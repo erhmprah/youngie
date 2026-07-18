@@ -7,12 +7,14 @@ import { CustomAlert } from '@/utils/alert';
 import { SOCKET_URL, userAPI } from '@/utils/api';
 import { getICEServers } from '@/utils/externalServices';
 import { Ionicons } from '@expo/vector-icons';
+import InCallManager from 'react-native-incall-manager';
 import * as KeepAwake from 'expo-keep-awake';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, FlatList, KeyboardAvoidingView, PanResponder, PermissionsAndroid, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Socket, io } from 'socket.io-client';
+import { Audio } from 'expo-av';
 
 type Message = {
   id: string;
@@ -27,6 +29,7 @@ const VideoChatScreen: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaker, setIsSpeaker] = useState(true);
   const [isVideoPaused, setIsVideoPaused] = useState(false);
   const [isRemoteVideoPaused, setIsRemoteVideoPaused] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -43,6 +46,7 @@ const VideoChatScreen: React.FC = () => {
   const socket = useRef<Socket | null>(null);
   const localStreamRef = useRef<any>(null);
   const remoteStreamRef = useRef<any>(null);
+  const inCallManagerStarted = useRef(false);
   const pendingIceCandidates = useRef<any[]>([]);
   const router = useRouter();
   const { user } = useAuth();
@@ -86,6 +90,35 @@ const VideoChatScreen: React.FC = () => {
 
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, RTCView, mediaDevices, MediaStream } = webRTC || {};
 
+  const startInCallManager = useCallback(() => {
+    try {
+      // @ts-ignore
+      if (typeof InCallManager?.start === 'function') {
+        // media: 'video' keeps camera/speaker management; force speaker on
+        // so audio is routed to the loud speaker automatically.
+        InCallManager.start({ media: 'video' });
+        InCallManager.setKeepScreenOn(true);
+        InCallManager.setForceSpeakerphoneOn(true);
+        InCallManager.setSpeakerphoneOn(true);
+        inCallManagerStarted.current = true;
+        setIsSpeaker(true);
+      }
+    } catch (e) {
+      console.error('Error starting InCallManager:', e);
+    }
+  }, []);
+
+  const stopInCallManager = useCallback(() => {
+    try {
+      if (inCallManagerStarted.current && typeof InCallManager?.stop === 'function') {
+        InCallManager.stop();
+        inCallManagerStarted.current = false;
+      }
+    } catch (e) {
+      console.error('Error stopping InCallManager:', e);
+    }
+  }, []);
+
   const attachRemoteStream = useCallback((stream: any) => {
     if (!stream) {
       console.log('❌ attachRemoteStream called with null/undefined stream');
@@ -102,7 +135,8 @@ const VideoChatScreen: React.FC = () => {
     remoteStreamRef.current = stream;
     setRemoteStream(stream);
     setIsChatting(true);
-  }, []);
+    startInCallManager();
+  }, [startInCallManager]);
 
   // Handle tab focus/blur to manage resources
   useFocusEffect(
@@ -280,6 +314,14 @@ const VideoChatScreen: React.FC = () => {
         throw new Error('WebRTC not supported. Please use a development build.');
       }
 
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
+      });
+
       const stream = await mediaDevices.getUserMedia({
         audio: true,
         video: {
@@ -350,8 +392,9 @@ const VideoChatScreen: React.FC = () => {
     setInputText('');
     setUnreadCount(0);
     setPeerId(null);
+    stopInCallManager();
     KeepAwake.deactivateKeepAwake().catch(() => {});
-  }, []);
+  }, [stopInCallManager]);
 
   resetChatRef.current = resetChat;
 
@@ -679,6 +722,19 @@ const VideoChatScreen: React.FC = () => {
     }
   }, [localStream]);
 
+  const toggleSpeaker = useCallback(() => {
+    const newSpeakerState = !isSpeaker;
+    setIsSpeaker(newSpeakerState);
+    try {
+      if (typeof InCallManager?.setSpeakerphoneOn === 'function') {
+        InCallManager.setSpeakerphoneOn(newSpeakerState);
+        InCallManager.setForceSpeakerphoneOn(newSpeakerState);
+      }
+    } catch (error) {
+      console.error('InCallManager error on speaker toggle:', error);
+    }
+  }, [isSpeaker]);
+
   const toggleVideo = useCallback(() => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
@@ -971,6 +1027,9 @@ const VideoChatScreen: React.FC = () => {
           <View style={styles.mediaControls}>
             <TouchableOpacity style={styles.mediaButton} onPress={toggleMute}>
               <Ionicons name={isMuted ? 'mic-off' : 'mic'} size={24} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mediaButton} onPress={toggleSpeaker}>
+              <Ionicons name={isSpeaker ? 'volume-high' : 'volume-low'} size={24} color="white" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.mediaButton} onPress={toggleVideo}>
               <Ionicons name={isVideoPaused ? 'videocam-off' : 'videocam'} size={24} color="white" />

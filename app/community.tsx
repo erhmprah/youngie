@@ -1,18 +1,22 @@
 // Community Guidelines View Screen
 
 import React from 'react';
-import { StyleSheet, ScrollView, View } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, typography } from '@/constants/design-tokens';
 import { communityGuidelinesData } from './community-guidelines';
 
 export default function CommunityGuidelinesView() {
+  const router = useRouter();
   const backgroundColor = useThemeColor('background');
   const textColor = useThemeColor('text');
   const lightTextColor = useThemeColor('lightText');
   const borderColor = useThemeColor('border');
+  const surfaceColor = useThemeColor('surface');
 
   const renderSection = (section: { title: string; content: string }, index: number) => (
     <View key={index} style={styles.section}>
@@ -27,18 +31,27 @@ export default function CommunityGuidelinesView() {
 
   return (
     <ThemedView style={styles.container} safe>
-      <ScrollView 
+      <View style={[styles.header, { borderBottomColor: borderColor }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <IconSymbol name="chevron.left" size={24} color={textColor} />
+        </TouchableOpacity>
+        <ThemedText style={[styles.title, { color: textColor }]}>
+          Community Guidelines
+        </ThemedText>
+        <View style={{ width: 24 }} />
+      </View>
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
-          <ThemedText style={[styles.title, { color: textColor }]}>
-            Community Guidelines
-          </ThemedText>
-          <ThemedText style={[styles.lastUpdated, { color: lightTextColor }]}>
-            Last Updated: {communityGuidelinesData.lastUpdated}
-          </ThemedText>
-        </View>
+         <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+           <ThemedText style={[styles.title, { color: textColor }]}>
+             Community Guidelines
+           </ThemedText>
+           <ThemedText style={[styles.lastUpdated, { color: lightTextColor }]}>
+             Last Updated: {communityGuidelinesData.lastUpdated}
+           </ThemedText>
+         </View>
 
         {communityGuidelinesData.sections.map(renderSection)}
 
@@ -70,6 +83,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.bold,
     marginBottom: spacing.sm,
   },
+  backButton: { padding: spacing.xs },
   lastUpdated: {
     fontSize: typography.sizes.body2,
   },

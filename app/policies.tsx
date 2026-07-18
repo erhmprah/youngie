@@ -85,19 +85,19 @@ export default function PoliciesScreen() {
 
   return (
     <ThemedView style={styles.container} safe>
-      <ScrollView 
+      <View style={[styles.header, { borderBottomColor: borderColor }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <IconSymbol name="chevron.left" size={24} color={textColor} />
+        </TouchableOpacity>
+        <ThemedText style={[styles.headerTitle, { color: textColor }]}>
+          Policies & Guidelines
+        </ThemedText>
+        <View style={{ width: 24 }} />
+      </View>
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <ThemedText style={[styles.headerTitle, { color: textColor }]}>
-            Policies & Guidelines
-          </ThemedText>
-          <ThemedText style={[styles.headerSubtitle, { color: lightTextColor }]}>
-            Review our policies to understand your rights and responsibilities
-          </ThemedText>
-        </View>
-
         <View style={styles.policiesList}>
           {policies.map(renderPolicyItem)}
         </View>
@@ -154,6 +154,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.bold,
     marginBottom: spacing.sm,
   },
+  backButton: { padding: spacing.xs },
   headerSubtitle: {
     fontSize: typography.sizes.body1,
     lineHeight: typography.sizes.body1 * 1.5,

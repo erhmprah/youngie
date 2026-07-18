@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, NativeModules } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, NativeModules, Platform, PermissionsAndroid } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from 'react-native-webrtc';
+import { Audio } from 'expo-av';
 import { getSocket, joinChat, sendVoiceCallOffer, sendVoiceCallAnswer, sendVoiceCallIceCandidate, sendVoiceCallEnd, sendCallLog, onVoiceCallAnswer, onVoiceCallIceCandidate, onVoiceCallEnd, offVoiceCallAnswer, offVoiceCallIceCandidate, offVoiceCallEnd } from '@/utils/socket';
 import InCallManager from 'react-native-incall-manager';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +21,7 @@ export default function VoiceCallScreen() {
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<any>(null);
   const [callStatus, setCallStatus] = useState('Initializing...');
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -56,6 +58,31 @@ export default function VoiceCallScreen() {
   }, [callStatus]);
 
   useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
+  const requestAudioPermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'This app needs access to your microphone for voice calls.',
+            buttonPositive: 'OK',
+            buttonNegative: 'Cancel',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (error) {
+        console.error('Failed to request audio permission:', error);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  useEffect(() => {
     const handleCallStart = async () => {
         try {
             if (NativeModules.InCallManager && InCallManager && typeof InCallManager.start === 'function') {
@@ -87,10 +114,26 @@ export default function VoiceCallScreen() {
                 return;
             }
 
+            const hasPermission = await requestAudioPermission();
+            if (!hasPermission) {
+              Alert.alert('Permission Denied', 'Microphone permission is required for voice calls.');
+              hangUp('failed');
+              return;
+            }
+
+            await Audio.setAudioModeAsync({
+              allowsRecordingIOS: true,
+              playsInSilentModeIOS: true,
+              shouldDuckAndroid: true,
+              playThroughEarpieceAndroid: false,
+              staysActiveInBackground: true,
+            });
+
             const pc = new RTCPeerConnection({ iceServers });
             pcRef.current = pc;
 
             const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+            localStreamRef.current = stream;
             setLocalStream(stream);
             stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
@@ -194,8 +237,9 @@ export default function VoiceCallScreen() {
         pcRef.current.close();
         pcRef.current = null;
       }
-      if (localStream) {
-        localStream.getTracks().forEach((track: any) => track.stop());
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        localStreamRef.current = null;
       }
     };
   }, []);
@@ -230,18 +274,19 @@ export default function VoiceCallScreen() {
       });
     }
 
-    if (localStream) {
-        localStream.getAudioTracks().forEach((track: any) => track.stop());
+    if (localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach((track: any) => track.stop());
     }
 
-    if (localStream) {
-        localStream.getTracks().forEach((track: any) => track.stop());
-    }
     if (pcRef.current) {
         pcRef.current.close();
         pcRef.current = null;
     }
 
+    if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        localStreamRef.current = null;
+    }
     setLocalStream(null);
     setRemoteStream(null);
 

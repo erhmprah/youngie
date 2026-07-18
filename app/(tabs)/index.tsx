@@ -61,11 +61,11 @@ interface Story {
     content?: string;
     image?: string;
     video?: string;
-    viewers: Array<{ user: User; viewedAt: string }>;
+    viewers: { user: User; viewedAt: string }[];
     createdAt: string;
     expiresAt: string;
     pollOptions?: { text: string; votes: string[] }[];
-    reactions?: Array<{ user: User; type: string }>;
+    reactions?: { user: User; type: string }[];
 }
 
 interface StoryGroup {
@@ -81,8 +81,8 @@ interface CommunityFeedPost {
     author: { _id: string; username: string; avatar?: string; profilePhoto?: string };
     content?: string;
     images?: string[];
-    likes: Array<{ _id: string }>;
-    comments?: Array<{ _id: string; author?: { _id: string; username: string }; content?: string; createdAt?: string }>;
+    likes: { _id: string }[];
+    comments?: { _id: string; author?: { _id: string; username: string }; content?: string; createdAt?: string }[];
     isFavorited?: boolean;
     createdAt: string;
 }
@@ -379,7 +379,7 @@ export default function FeedScreen() {
 
     const handleStoryPress = (userId: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        const actualIndex = stories.findIndex(s => s.user._id === userId);
+        const actualIndex = stories.findIndex(s => s.user?._id === userId);
         setSelectedStoryGroupIndex(actualIndex >= 0 ? actualIndex : 0);
         setShowStoryViewer(true);
     };
@@ -451,7 +451,7 @@ export default function FeedScreen() {
 
     const renderHeader = () => {
         let allStories = [...stories];
-        const userGroupIndex = allStories.findIndex(group => group.user._id === user?._id);
+        const userGroupIndex = allStories.findIndex(group => group.user?._id === user?._id);
         if (userGroupIndex !== -1) {
             allStories[userGroupIndex].isYourStory = true;
             allStories[userGroupIndex].user.username = 'Your Story';
@@ -487,15 +487,15 @@ export default function FeedScreen() {
                                 // Render user's stories with add button
                                 return (
                                     <View style={styles.storyItem}>
-                                        <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user._id); }}>
+                                        <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user?._id || ''); }}>
                                             <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
-                                                {renderAvatar(item.user)}
+                                                {renderAvatar(item.user || { _id: '', id: '', username: 'Your Story' })}
                                             </View>
                                         </TouchableOpacity>
                                         <TouchableOpacity style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
                                             <IconSymbol name="plus" size={10} color={white} />
                                         </TouchableOpacity>
-                                        <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
+                                        <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user?.username || 'Your Story'}</ThemedText>
                                     </View>
                                 );
                             } else {
@@ -503,12 +503,12 @@ export default function FeedScreen() {
                                 return (
                                     <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
                                         <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
-                                            {renderAvatar(item.user)}
+                                            {renderAvatar(item.user || { _id: '', id: '', username: 'Your Story' })}
                                             <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
                                                 <IconSymbol name="plus" size={10} color={white} />
                                             </View>
                                         </View>
-                                        <ThemedText style={styles.storyUsername}>{item.user.username}</ThemedText>
+                                        <ThemedText style={styles.storyUsername}>{item.user?.username || 'Your Story'}</ThemedText>
                                     </TouchableOpacity>
                                 );
                             }
@@ -516,7 +516,7 @@ export default function FeedScreen() {
                             // Render other users' stories
                             const isUnviewed = !item.allViewed;
                             return (
-                                <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user._id); }}>
+                                <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user?._id || ''); }}>
                                     {isUnviewed ? (
                                         <LinearGradient
                                             colors={[primaryColor, '#d62976', '#fa7e1e']}
@@ -525,20 +525,20 @@ export default function FeedScreen() {
                                             style={[styles.storyRing, { borderWidth: 0, padding: 2.5 }]}
                                         >
                                             <View style={[styles.storyAvatarGap, { backgroundColor }]}>
-                                                {renderAvatar(item.user)}
+                                                {renderAvatar(item.user || { _id: '', id: '', username: 'User' })}
                                             </View>
                                         </LinearGradient>
                                     ) : (
                                         <View style={[styles.storyRing, { borderColor: lightTextColor }]}>
-                                            {renderAvatar(item.user)}
+                                            {renderAvatar(item.user || { _id: '', id: '', username: 'User' })}
                                         </View>
                                     )}
-                                    <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user.username}</ThemedText>
+                                    <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user?.username || 'User'}</ThemedText>
                                 </TouchableOpacity>
                             );
                         }
                     }}
-                    keyExtractor={(item) => item.isYourStory ? 'your-story' : item.user._id}
+                    keyExtractor={(item) => item.isYourStory ? 'your-story' : (item.user?._id || Math.random().toString())}
                     horizontal
                     showsHorizontalScrollIndicator={false}
                 />
@@ -664,7 +664,7 @@ export default function FeedScreen() {
     // Merge personal posts and community feed posts into a single chronological feed.
     // Community posts only come from page 1, so when loading more we keep them at the top.
     const feedItems = useMemo(() => {
-        const merged: Array<{ kind: 'post'; data: Post } | { kind: 'community'; data: CommunityFeedPost }> = [];
+        const merged: ({ kind: 'post'; data: Post } | { kind: 'community'; data: CommunityFeedPost })[] = [];
         communityPosts.forEach((p) => merged.push({ kind: 'community', data: p }));
         posts.forEach((p) => merged.push({ kind: 'post', data: p }));
         merged.sort((a, b) => {

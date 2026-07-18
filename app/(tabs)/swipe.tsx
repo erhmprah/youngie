@@ -252,6 +252,11 @@ export default function SwipeScreen() {
             const activeFilters = filterParams || filters;
             const response = await userAPI.getNearbyUsers({ ...activeFilters, page, limit: 20 });
 
+            if (!response.data) {
+                showNetworkErrorAlert(() => fetchNearbyUsers(undefined, page, false));
+                return;
+            }
+
             const { users, hasMore: newHasMore } = response.data;
 
             if (append) {
@@ -272,7 +277,9 @@ export default function SwipeScreen() {
     const fetchUserAlbum = async (userId: string) => {
         try {
             const response = await userAPI.getAlbum(userId, 1, 30);
-            setAlbums(prev => ({ ...prev, [userId]: response.data.data || [] }));
+            if (response.data) {
+                setAlbums(prev => ({ ...prev, [userId]: response.data.data || [] }));
+            }
         } catch (error: any) {
             if (error.response?.status === 401) {
                 try {

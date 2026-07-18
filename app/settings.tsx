@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { userAPI } from '@/utils/api';
 import * as Haptics from 'expo-haptics';
 
 export default function SettingsScreen() {
@@ -32,6 +33,30 @@ export default function SettingsScreen() {
             [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Log Out', style: 'destructive', onPress: logout }
+            ]
+        );
+    };
+
+    const handleDeleteAccount = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        Alert.alert(
+            'Delete Account',
+            'Your account will be deactivated and your photos, posts and messages will be permanently deleted after 30 days. This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await userAPI.deleteAccount();
+                            Alert.alert('Account deleted', 'Your account has been scheduled for deletion.');
+                            await logout();
+                        } catch (error) {
+                            Alert.alert('Error', 'Could not delete your account. Please try again.');
+                        }
+                    },
+                },
             ]
         );
     };
@@ -104,6 +129,10 @@ export default function SettingsScreen() {
 
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1, marginTop: spacing.lg }]}>
                     <SettingItem icon="log-out" label="Log Out" onPress={handleLogout} isDestructive />
+                </View>
+
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1, marginTop: spacing.lg }]}>
+                    <SettingItem icon="trash" label="Delete Account" onPress={handleDeleteAccount} isDestructive />
                 </View>
                 
                 <ThemedText style={[styles.version, { color: lightTextColor }]}>Version 1.0.0</ThemedText>
