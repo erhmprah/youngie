@@ -4,7 +4,7 @@ import { Stack, useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import * as Haptics from 'expo-haptics';
 
@@ -29,7 +29,7 @@ export default function SecuritySettingsScreen() {
 
             <ScrollView contentContainerStyle={styles.content}>
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account Management</ThemedText>
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
                     <TouchableOpacity
                         style={[styles.item, { borderBottomColor: borderColor }]}
                         onPress={handleLoginActivity}

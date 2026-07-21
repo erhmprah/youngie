@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { notificationAPI } from '@/utils/api';
-import { getColors } from '@/constants/design-tokens';
+import { getColors, sizes } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getSocket } from '@/utils/socket';
 import * as Haptics from 'expo-haptics';
@@ -56,7 +56,7 @@ export function NotificationBell() {
 
   return (
     <TouchableOpacity onPress={handlePress} style={styles.container}>
-      <Ionicons name="notifications-outline" size={28} color={colors.text} />
+      <Ionicons name="notifications-outline" size={sizes.iconMedium} color={colors.text} />
       {unreadCount > 0 && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -68,24 +68,30 @@ export function NotificationBell() {
 
 const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.create({
   container: {
-    padding: 8,
+    padding: 0,
+    width: sizes.iconLarge,
+    height: sizes.iconLarge,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   badge: {
     position: 'absolute',
-    right: -2, // Adjusted position
-    top: -2, // Adjusted position
+    right: 2,
+    top: 2,
     backgroundColor: colors.error,
-    borderRadius: 12, // Slightly larger border radius
-    minWidth: 24, // Increased size
-    height: 24, // Increased size
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.white, // Always white border for contrast
+    borderColor: colors.white,
   },
   badgeText: {
     color: colors.white,
-    fontSize: 14, // Larger font size
+    fontSize: 10,
     fontWeight: 'bold',
+    lineHeight: 12,
   },
 });

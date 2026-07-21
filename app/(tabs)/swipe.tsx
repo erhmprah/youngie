@@ -10,7 +10,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { userAPI, getImageUrl } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
+import { verticalScale } from '@/utils/scale';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FilterModal, FilterState } from '@/components/FilterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -691,8 +692,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: spacing.lg,
-        height: 60,
-        borderBottomWidth: 1,
+        height: verticalScale(60),
+        borderBottomWidth: sizes.dividerWidth,
     },
     headerButtons: { flexDirection: 'row', gap: spacing.sm },
     brandText: { fontSize: typography.sizes.heading2, fontFamily: typography.families.bold },
@@ -712,16 +713,16 @@ const styles = StyleSheet.create({
     },
     cardImage: { width: '100%', height: '100%', position: 'absolute' },
     imageContainer: { width: '100%', height: '100%', position: 'relative' },
-    imageIndicator: { position: 'absolute', bottom: 20, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
-    indicatorDot: { width: 8, height: 8, borderRadius: 4 },
+    imageIndicator: { position: 'absolute', bottom: verticalScale(20), left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: spacing.xxs },
+    indicatorDot: { width: sizes.iconSmall, height: sizes.iconSmall, borderRadius: sizes.iconSmall / 2 },
     swipeBadge: {
         position: 'absolute',
-        top: 40,
+        top: verticalScale(40),
         zIndex: 20,
         paddingVertical: spacing.xs,
         paddingHorizontal: spacing.lg,
         borderRadius: borderRadius.lg,
-        borderWidth: 4,
+        borderWidth: sizes.borderWidth,
         transform: [{ rotate: '-15deg' }],
     },
     swipeBadgeLike: {
@@ -760,7 +761,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xxs,
         borderRadius: borderRadius.lg,
-        borderWidth: 1,
+        borderWidth: sizes.dividerWidth,
     },
     tagText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
     sharedInterestText: { opacity: 0.95, marginTop: spacing.xs, fontSize: typography.sizes.caption, fontFamily: typography.families.bold },
@@ -772,10 +773,10 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.lg,
     },
     roundButton: {
-        width: 64,
-        height: 64,
+        width: sizes.iconLarge + 16,
+        height: sizes.iconLarge + 16,
         borderRadius: borderRadius.round,
-        borderWidth: 1,
+        borderWidth: sizes.dividerWidth,
         justifyContent: 'center',
         alignItems: 'center',
         ...shadows.md,
@@ -792,7 +793,7 @@ const styles = StyleSheet.create({
         flex: 1,
         margin: spacing.xs,
         borderRadius: borderRadius.lg,
-        borderWidth: 1,
+        borderWidth: sizes.dividerWidth,
         overflow: 'hidden',
         ...shadows.sm,
     },
@@ -805,18 +806,18 @@ const styles = StyleSheet.create({
     gridTagContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xxs, marginTop: spacing.xs },
     gridTag: {
         paddingHorizontal: spacing.xs,
-        paddingVertical: 2,
+        paddingVertical: spacing.xxs,
         borderRadius: borderRadius.lg,
-        borderWidth: 1,
+        borderWidth: sizes.dividerWidth,
     },
     gridTagText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
     loadingMore: { marginVertical: spacing.lg },
     onlineIndicator: {
-        width: 14,
-        height: 14,
-        borderRadius: 7,
+        width: sizes.iconSmall,
+        height: sizes.iconSmall,
+        borderRadius: sizes.iconSmall / 2,
         backgroundColor: '#4CAF50',
-        borderWidth: 2,
+        borderWidth: sizes.borderWidth,
         borderColor: '#FFFFFF',
     },
 });

@@ -15,6 +15,7 @@ class CallService {
   private currentChatId: string | null = null;
   private currentCaller: any = null;
   private currentOffer: any = null;
+  private scheduledNotificationId: string | null = null;
 
   constructor() {
     this.setup();
@@ -41,9 +42,32 @@ class CallService {
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#FF231F7C',
-          sound: 'ringtone',
+          sound: 'ringtone.mp3',
           showBadge: true,
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        });
+      }
+
+      // Set up notification category for call actions
+      if (Notifications.setNotificationCategoryAsync) {
+        await Notifications.setNotificationCategoryAsync('incoming-call-category', {
+          actions: [
+            {
+              identifier: 'accept-call',
+              buttonTitle: 'Accept',
+              options: {
+                opensAppToForeground: true,
+              },
+            },
+            {
+              identifier: 'decline-call',
+              buttonTitle: 'Decline',
+              options: {
+                opensAppToForeground: true,
+                destructive: true,
+              },
+            },
+          ],
         });
       }
 
@@ -64,30 +88,31 @@ class CallService {
       return;
     }
 
-    try {
-      // Send a notification for the incoming call
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `Incoming call from ${localizedCallerName || 'User'}`,
-          body: 'Tap to answer the call',
-          data: {
-            callId: uuid,
-            chatId: this.currentChatId,
-            caller: this.currentCaller,
-            offer: this.currentOffer,
-            type: 'incoming-call'
+      try {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `Incoming call from ${localizedCallerName || 'User'}`,
+            body: 'Tap to answer the call',
+            data: {
+              callId: uuid,
+              chatId: this.currentChatId,
+              caller: this.currentCaller,
+              offer: this.currentOffer,
+              type: 'incoming-call'
+            },
+            categoryIdentifier: 'incoming-call-category',
+            sound: 'ringtone.mp3',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            sticky: true,
           },
-          sound: 'ringtone',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          sticky: true,
-        },
-        trigger: null, // Show immediately
-      });
+          trigger: null, // Show immediately
+        });
+        this.scheduledNotificationId = notificationId;
 
-      console.log('[CallService] Incoming call notification sent');
-    } catch (error) {
-      console.error('Error displaying incoming call notification:', error);
-    }
+        console.log('[CallService] Incoming call notification sent');
+      } catch (error) {
+        console.error('Error displaying incoming call notification:', error);
+      }
   };
 
   onAnswerCall = (data: any) => {
@@ -107,13 +132,27 @@ class CallService {
     }
   };
 
+  cancelIncomingCall = async () => {
+    if (this.scheduledNotificationId && Notifications) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(this.scheduledNotificationId);
+        this.scheduledNotificationId = null;
+      } catch (error) {
+        console.error('Error canceling incoming call notification:', error);
+      }
+    }
+  };
+
   onEndCall = (data: any) => {
     const { callUUID } = data;
     this.currentCallId = null;
     this.currentChatId = null;
     this.currentCaller = null;
     this.currentOffer = null;
-    // You might want to emit a socket event here to reject the call if it wasn't answered
+    if (this.scheduledNotificationId && Notifications) {
+      Notifications.cancelScheduledNotificationAsync(this.scheduledNotificationId).catch(() => {});
+      this.scheduledNotificationId = null;
+    }
   };
 
   isCallActive = (callId?: string): boolean => {

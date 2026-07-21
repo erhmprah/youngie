@@ -17,10 +17,11 @@ import { NotificationBell } from '@/components/notification-bell';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { postAPI, storyAPI, communityAPI, getImageUrl } from '@/utils/api';
+import { verticalScale } from '@/utils/scale';
 import { cachedPostAPI, cachedStoryAPI } from '@/utils/cachedApi';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SkeletonCard } from '@/components/ui/skeleton';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated } from '@/utils/socket';
 import { getRelativeTime } from '@/utils/helpers';
 
@@ -101,6 +102,8 @@ export default function FeedScreen() {
     const [hasMorePosts, setHasMorePosts] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [recommendedPosts, setRecommendedPosts] = useState<Post[]>([]);
+    const [loadingRecommended, setLoadingRecommended] = useState(false);
     
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
@@ -178,6 +181,21 @@ export default function FeedScreen() {
                 } else {
                     setCommunityPosts(filteredCommunityPosts);
                 }
+
+                if (newPosts.length === 0 && filteredCommunityPosts.length === 0) {
+                    setLoadingRecommended(true);
+                    try {
+                        const trendingResponse = await postAPI.getTrendingPosts();
+                        const trendingPosts = trendingResponse.data.data || [];
+                        setRecommendedPosts(trendingPosts);
+                    } catch (err) {
+                        setRecommendedPosts([]);
+                    } finally {
+                        setLoadingRecommended(false);
+                    }
+                } else {
+                    setRecommendedPosts([]);
+                }
             } else {
                 setPosts(prev => [...prev, ...newPosts]);
             }
@@ -224,6 +242,7 @@ export default function FeedScreen() {
             setPosts([]);
             setStories([]);
             setCommunityPosts([]);
+            setRecommendedPosts([]);
             setIsLoading(false);
             setIsRefreshing(false);
         }
@@ -312,6 +331,12 @@ export default function FeedScreen() {
             socket.off('story:updated', handleStoryUpdate);
         };
     }, [user?._id]);
+
+    useEffect(() => {
+        if (posts.length > 0 || communityPosts.length > 0) {
+            setRecommendedPosts([]);
+        }
+    }, [posts.length, communityPosts.length]);
 
     useEffect(() => {
         if (postId && posts.length > 0 && flatListRef.current) {
@@ -487,14 +512,26 @@ export default function FeedScreen() {
                                 // Render user's stories with add button
                                 return (
                                     <View style={styles.storyItem}>
+                                    <View style={styles.storyAvatarWrap}>
                                         <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleStoryPress(item.user?._id || ''); }}>
                                             <View style={[styles.storyRing, { borderColor: item.allViewed ? lightTextColor : primaryColor }]}>
                                                 {renderAvatar(item.user || { _id: '', id: '', username: 'Your Story' })}
                                             </View>
                                         </TouchableOpacity>
-                                        <TouchableOpacity style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
-                                            <IconSymbol name="plus" size={10} color={white} />
-                                        </TouchableOpacity>
+                                            <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
+                                                <TouchableOpacity
+                                                    style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+                                                    hitSlop={4}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation();
+                                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                                        setShowCreateStoryModal(true);
+                                                    }}
+                                                >
+                                                    <IconSymbol name="plus" size={sizes.iconSmall} color={white} />
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
                                         <ThemedText style={styles.storyUsername} numberOfLines={1}>{item.user?.username || 'Your Story'}</ThemedText>
                                     </View>
                                 );
@@ -502,10 +539,22 @@ export default function FeedScreen() {
                                 // Render create story button
                                 return (
                                     <TouchableOpacity style={styles.storyItem} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowCreateStoryModal(true); }}>
-                                        <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
-                                            {renderAvatar(item.user || { _id: '', id: '', username: 'Your Story' })}
+                                        <View style={styles.storyAvatarWrap}>
+                                            <View style={[styles.storyRing, { borderColor: 'transparent' }]}>
+                                                {renderAvatar(item.user || { _id: '', id: '', username: 'Your Story' })}
+                                            </View>
                                             <View style={[styles.addStoryBadge, { backgroundColor: primaryColor, borderColor: backgroundColor }]}>
-                                                <IconSymbol name="plus" size={10} color={white} />
+                                                <TouchableOpacity
+                                                    style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+                                                    hitSlop={4}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation();
+                                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                                        setShowCreateStoryModal(true);
+                                                    }}
+                                                >
+                                                    <IconSymbol name="plus" size={sizes.iconSmall} color={white} />
+                                                </TouchableOpacity>
                                             </View>
                                         </View>
                                         <ThemedText style={styles.storyUsername}>{item.user?.username || 'Your Story'}</ThemedText>
@@ -522,7 +571,7 @@ export default function FeedScreen() {
                                             colors={[primaryColor, '#d62976', '#fa7e1e']}
                                             start={{ x: 0, y: 1 }}
                                             end={{ x: 1, y: 0 }}
-                                            style={[styles.storyRing, { borderWidth: 0, padding: 2.5 }]}
+                                            style={[styles.storyRing, { borderWidth: 0, padding: spacing.xxs }]}
                                         >
                                             <View style={[styles.storyAvatarGap, { backgroundColor }]}>
                                                 {renderAvatar(item.user || { _id: '', id: '', username: 'User' })}
@@ -664,28 +713,66 @@ export default function FeedScreen() {
     // Merge personal posts and community feed posts into a single chronological feed.
     // Community posts only come from page 1, so when loading more we keep them at the top.
     const feedItems = useMemo(() => {
-        const merged: ({ kind: 'post'; data: Post } | { kind: 'community'; data: CommunityFeedPost })[] = [];
-        communityPosts.forEach((p) => merged.push({ kind: 'community', data: p }));
-        posts.forEach((p) => merged.push({ kind: 'post', data: p }));
-        merged.sort((a, b) => {
-            const ta = new Date(a.kind === 'post' ? a.data.createdAt : a.data.createdAt).getTime();
-            const tb = new Date(b.kind === 'post' ? b.data.createdAt : b.data.createdAt).getTime();
-            return tb - ta;
-        });
+        const hasRegularContent = posts.length > 0 || communityPosts.length > 0;
+        const merged: any[] = [];
+        
+        if (hasRegularContent) {
+            communityPosts.forEach((p) => merged.push({ kind: 'community', data: p }));
+            posts.forEach((p) => merged.push({ kind: 'post', data: p }));
+            merged.sort((a, b) => {
+                const ta = new Date(a.kind === 'post' ? a.data.createdAt : a.data.createdAt).getTime();
+                const tb = new Date(b.kind === 'post' ? b.data.createdAt : b.data.createdAt).getTime();
+                return tb - ta;
+            });
+        } else if (recommendedPosts.length > 0) {
+            merged.push({ kind: 'recommended-header' });
+            recommendedPosts.forEach((p) => merged.push({ kind: 'post', data: p, isRecommended: true }));
+        }
+        
         return merged;
-    }, [posts, communityPosts]);
+    }, [posts, communityPosts, recommendedPosts]);
 
-    const renderFeedItem = useCallback(({ item }: { item: { kind: 'post'; data: Post } | { kind: 'community'; data: CommunityFeedPost } }) => {
+    const renderFeedItem = useCallback(({ item }: { item: any }) => {
+        if (item.kind === 'recommended-header') {
+            return (
+                <View style={[styles.recommendedCard, { backgroundColor: surfaceColor, borderColor, shadowColor: backgroundColor }, shadows.sm]}>
+                    <View style={styles.recommendedIconWrap}>
+                        <LinearGradient
+                            colors={[primaryColor, '#fa7e1e']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.recommendedIconBadge}
+                        >
+                            <Ionicons name="flame" size={18} color={white} />
+                        </LinearGradient>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <ThemedText style={[styles.recommendedTitle, { color: textColor }]}>
+                            Recommended for you
+                        </ThemedText>
+                        <ThemedText style={[styles.recommendedSubtitle, { color: lightTextColor }]}>
+                            Popular posts you might like
+                        </ThemedText>
+                    </View>
+                    <View style={[styles.recommendedPill, { backgroundColor: primaryColor + '18', borderColor: primaryColor + '40' }]}>
+                        <Ionicons name="trending-up" size={14} color={primaryColor} />
+                        <ThemedText style={[styles.recommendedPillText, { color: primaryColor }]}>Trending</ThemedText>
+                    </View>
+                </View>
+            );
+        }
         if (item.kind === 'community') {
             return <CommunityPostCard item={item.data} />;
         }
-        const fullProfilePhoto = getImageUrl(item.data.author.profilePhoto);
+        const fullProfilePhoto = getImageUrl(item.data.author?.profilePhoto);
         const postWithAvatar = {
             ...item.data,
             author: {
-                ...item.data.author,
+                ...(item.data.author || {}),
+                _id: item.data.author?._id || '',
+                username: item.data.author?.username || 'Unknown',
                 profilePhoto: fullProfilePhoto,
-                avatar: fullProfilePhoto || getImageUrl(item.data.author.avatar)
+                avatar: fullProfilePhoto || getImageUrl(item.data.author?.avatar)
             }
         };
         return (
@@ -732,7 +819,7 @@ export default function FeedScreen() {
                     ref={flatListRef}
                     data={feedItems}
                     renderItem={renderFeedItem}
-                    keyExtractor={(item) => item.kind === 'post' ? item.data._id : 'c_' + item.data._id}
+                    keyExtractor={(item) => item.kind === 'post' ? item.data._id : item.kind === 'community' ? 'c_' + item.data._id : 'recommended-header'}
                     ListHeaderComponent={renderHeaderContent}
                     refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={primaryColor} />}
                     contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: spacing.lg }}
@@ -754,7 +841,7 @@ export default function FeedScreen() {
                                 <SkeletonCard />
                                 <SkeletonCard />
                             </View>
-                        ) : loadingMore ? (
+                        ) : loadingMore || loadingRecommended ? (
                             <ActivityIndicator size="small" color={primaryColor} style={{ marginVertical: 20 }} />
                         ) : null
                     }
@@ -834,9 +921,9 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
     },
     logoMark: {
-        width: 26,
-        height: 26,
-        borderRadius: 9,
+        width: sizes.iconSmall,
+        height: sizes.iconSmall,
+        borderRadius: sizes.borderRadiusSm,
     },
     logo: {
         fontSize: typography.sizes.title + 4,
@@ -849,8 +936,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     iconCircle: {
-        width: 40,
-        height: 40,
+        width: sizes.iconLarge,
+        height: sizes.iconLarge,
         borderRadius: borderRadius.round,
         justifyContent: 'center',
         alignItems: 'center',
@@ -860,36 +947,44 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.md,
         borderRadius: borderRadius.xl,
-        borderWidth: 1,
+        borderWidth: sizes.dividerWidth,
         ...shadows.sm,
     },
     storyItem: {
         alignItems: 'center',
         marginRight: spacing.sm,
-        width: 64,
+        width: sizes.storyRing,
+    },
+    storyAvatarWrap: {
+        position: 'relative',
+        width: sizes.storyRing,
+        height: sizes.storyRing,
+        marginBottom: spacing.xs,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     storyRing: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        borderWidth: 2,
-        padding: 2,
-        marginBottom: 4,
+        width: sizes.storyRing,
+        height: sizes.storyRing,
+        borderRadius: sizes.storyRing / 2,
+        borderWidth: sizes.borderWidth,
+        padding: spacing.xxs,
+        marginBottom: spacing.xs,
         justifyContent: 'center',
         alignItems: 'center',
     },
     storyAvatarGap: {
         flex: 1,
         width: '100%',
-        borderRadius: 32,
-        padding: 2,
+        borderRadius: sizes.storyRing / 2 - 4,
+        padding: spacing.xxs,
         justifyContent: 'center',
         alignItems: 'center',
     },
     storyAvatarContainer: {
         width: '100%',
         height: '100%',
-        borderRadius: 30,
+        borderRadius: sizes.storyRing / 2 - 5,
         overflow: 'hidden',
     },
     storyAvatar: {
@@ -897,17 +992,17 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     storyUsername: {
-        fontSize: 9,
+        fontSize: typography.sizes.tiny,
         textAlign: 'center',
     },
     addStoryBadge: {
         position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 18,
-        height: 18,
-        borderRadius: 9,
-        borderWidth: 2,
+        bottom: spacing.xxs,
+        right: spacing.xxs,
+        width: sizes.storyBadge,
+        height: sizes.storyBadge,
+        borderRadius: sizes.storyBadge / 2,
+        borderWidth: sizes.borderWidth,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 1,
@@ -918,7 +1013,7 @@ const styles = StyleSheet.create({
     },
     communityPostCard: {
         borderRadius: borderRadius.lg,
-        borderWidth: 1,
+        borderWidth: sizes.dividerWidth,
         padding: spacing.md,
         marginBottom: spacing.md,
         ...shadows.sm,
@@ -930,9 +1025,9 @@ const styles = StyleSheet.create({
         gap: spacing.xs,
     },
     communityPostBadgeImage: {
-        width: 20,
-        height: 20,
-        borderRadius: borderRadius.sm,
+        width: sizes.iconSmall,
+        height: sizes.iconSmall,
+        borderRadius: sizes.borderRadiusSm,
     },
     communityPostBadgeText: {
         flex: 1,
@@ -946,9 +1041,9 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
     },
     communityPostAvatar: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
+        width: sizes.iconSmall + 4,
+        height: sizes.iconSmall + 4,
+        borderRadius: (sizes.iconSmall + 4) / 2,
     },
     communityPostAuthor: {
         fontSize: typography.sizes.body2,
@@ -963,7 +1058,7 @@ const styles = StyleSheet.create({
     },
     communityPostImage: {
         width: '100%',
-        height: 120,
+        height: verticalScale(120),
         borderRadius: borderRadius.md,
         marginBottom: spacing.sm,
     },
@@ -990,19 +1085,64 @@ const styles = StyleSheet.create({
         fontSize: typography.sizes.body2,
         fontFamily: typography.families.medium,
     },
+    recommendedCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+        marginTop: spacing.md,
+        marginBottom: spacing.sm,
+        borderRadius: borderRadius.xl,
+        borderWidth: sizes.dividerWidth,
+    },
+    recommendedIconWrap: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    recommendedIconBadge: {
+        width: sizes.iconLarge,
+        height: sizes.iconLarge,
+        borderRadius: borderRadius.lg,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    recommendedTitle: {
+        fontSize: typography.sizes.title,
+        fontFamily: typography.families.bold,
+        letterSpacing: 0.2,
+    },
+    recommendedSubtitle: {
+        fontSize: typography.sizes.caption,
+        marginTop: spacing.xxs,
+    },
+    recommendedPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xxs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xxs,
+        borderRadius: borderRadius.lg,
+        borderWidth: sizes.dividerWidth,
+    },
+    recommendedPillText: {
+        fontSize: typography.sizes.tiny,
+        fontFamily: typography.families.bold,
+        letterSpacing: 0.3,
+    },
     fab: {
         position: 'absolute',
         bottom: spacing.xl,
         right: spacing.xl,
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: sizes.iconLarge + 16,
+        height: sizes.iconLarge + 16,
+        borderRadius: (sizes.iconLarge + 16) / 2,
         ...shadows.lg,
     },
     fabGradient: {
         width: '100%',
         height: '100%',
-        borderRadius: 28,
+        borderRadius: (sizes.iconLarge + 16) / 2,
         justifyContent: 'center',
         alignItems: 'center',
     },

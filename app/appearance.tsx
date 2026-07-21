@@ -5,7 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { useTheme } from '@/contexts/ThemeContext';
 
 export default function AppearanceScreen() {
@@ -190,9 +190,9 @@ const styles = StyleSheet.create({
     marginLeft: spacing.md,
   },
   colorCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: sizes.iconSmall,
+    height: sizes.iconSmall,
+    borderRadius: sizes.iconSmall / 2,
   },
   modalOverlay: {
     flex: 1,
@@ -217,9 +217,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   colorOption: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: sizes.iconLarge,
+    height: sizes.iconLarge,
+    borderRadius: sizes.iconLarge / 2,
     margin: spacing.xs,
     justifyContent: 'center',
     alignItems: 'center',

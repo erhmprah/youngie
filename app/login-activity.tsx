@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { userAPI, BASE_URL } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.md,
-    borderWidth: 1,
+    borderWidth: sizes.dividerWidth,
   },
   sessionHeader: {
     flexDirection: 'row',
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
+    borderWidth: sizes.dividerWidth,
   },
   clearButtonText: {
     fontSize: typography.sizes.body2,

@@ -11,6 +11,30 @@ try {
   console.warn('expo-device not available, using fallback');
 }
 
+// Background notification task for handling pushes when app is backgrounded/terminated
+let TaskManager: any = null;
+try {
+  TaskManager = require('expo-task-manager');
+} catch (e) {
+  console.warn('expo-task-manager not available, background push processing disabled');
+}
+
+const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
+
+if (TaskManager) {
+  TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, ({ data, error }: { data?: any; error?: any }) => {
+    if (error) {
+      console.error('Background notification task error:', error);
+      return;
+    }
+    if (data) {
+      const notification = data.notification;
+      const notificationData = notification?.request?.content?.data;
+      console.log('📬 Background notification received:', notificationData);
+    }
+  });
+}
+
 // Get Project ID from Expo constants (app.json)
 // This is more reliable than hardcoding and works with EAS project linking
 const getProjectId = (): string | undefined => {
@@ -31,6 +55,12 @@ const getProjectId = (): string | undefined => {
 };
 
 const EXPO_PROJECT_ID = getProjectId();
+
+if (EXPO_PROJECT_ID) {
+  console.log('🔔 Push notifications using EAS Project ID:', EXPO_PROJECT_ID);
+} else {
+  console.warn('⚠️ EAS Project ID not found in app config. Push notifications will fail. Check app.json extra.eas.projectId');
+}
 
 // API methods will be imported from api.ts after we add them
 // For now, we'll define the API call inline to avoid circular dependencies
@@ -84,7 +114,11 @@ export function usePushNotifications() {
   const registerTokenWithBackend = useCallback(async (pushToken: string): Promise<boolean> => {
     try {
       const deviceInfo = Device?.modelName || Platform.OS === 'ios' ? 'iOS Device' : 'Android Device';
-      const platform = Platform.OS;
+      // Register as 'expo' platform: the backend stores Expo push tokens and
+      // the push service routes them through the Expo Push API. Using
+      // Platform.OS ('ios'/'android') caused the backend to skip these tokens
+      // and never deliver pushes to offline devices.
+      const platform = 'expo';
 
       const authToken = await AsyncStorage.getItem('authToken');
       
@@ -292,6 +326,28 @@ export function usePushNotifications() {
     }
   }, []);
 
+  // Register background notification task so the app can process pushes
+  // while backgrounded or terminated (iOS requires contentAvailable: true
+  // in the push payload, which the backend now sets).
+  const registerBackgroundTask = useCallback(async (): Promise<boolean> => {
+    if (!TaskManager || !Notifications?.registerTaskAsync) {
+      console.log('⏭️ Background notification task not available (expo-task-manager not installed)');
+      return false;
+    }
+    try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        return false;
+      }
+      await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
+      console.log('✅ Background notification task registered');
+      return true;
+    } catch (error) {
+      console.error('❌ Error registering background notification task:', error);
+      return false;
+    }
+  }, [requestPermissions]);
+
   // Unregister push token from backend (for logout)
   const unregisterPushToken = useCallback(async (): Promise<boolean> => {
     if (!state.token) {
@@ -358,6 +414,7 @@ export function usePushNotifications() {
     unregisterPushToken,
     reRegisterOnLogin,
     setupNotificationChannels,
+    registerBackgroundTask,
   };
 }
 

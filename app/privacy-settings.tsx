@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { userAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import * as Haptics from 'expo-haptics';
 
@@ -61,7 +61,7 @@ export default function PrivacySettingsScreen() {
             ) : (
                 <ScrollView contentContainerStyle={styles.content}>
                     <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account Privacy</ThemedText>
-                    <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                    <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
                         <View style={[styles.row, { borderBottomColor: borderColor }]}>
                             <View style={styles.rowText}>
                                 <ThemedText style={styles.label}>Private Account</ThemedText>
@@ -78,7 +78,7 @@ export default function PrivacySettingsScreen() {
                     </View>
 
                     <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Connections</ThemedText>
-                    <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                    <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
                         <TouchableOpacity 
                             style={styles.item} 
                             onPress={() => {

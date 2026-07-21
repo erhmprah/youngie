@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getSocket, joinChat, onVoiceCallEnd, offVoiceCallEnd } from '@/utils/socket';
+import CallService from '@/utils/call-service';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageUrl } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -51,6 +52,7 @@ export default function IncomingCallScreen() {
   }, [router, chatId]);
 
   const acceptCall = () => {
+    CallService.cancelIncomingCall();
     router.replace({
       pathname: '/chat/voice-call',
       params: { 
@@ -63,6 +65,7 @@ export default function IncomingCallScreen() {
   };
 
   const declineCall = () => {
+    CallService.cancelIncomingCall();
     // Notify the caller that the call was declined
     socket?.emit('voice-call-end', { chatId });
     router.back();

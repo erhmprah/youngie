@@ -15,10 +15,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { userAPI, postAPI, chatAPI, getImageUrl } from '@/utils/api';
+import { verticalScale } from '@/utils/scale';
 import { cachedUserAPI, cachedPostAPI } from '@/utils/cachedApi';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SkeletonProfile, SkeletonGrid } from '@/components/ui/skeleton';
-import { spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
+import { spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
 import * as Haptics from 'expo-haptics';
 
@@ -470,7 +471,7 @@ export default function ProfileScreen() {
                                 />
                             ) : (
                                 <View style={[styles.avatarPlaceholder, { borderColor: primaryColor, backgroundColor: cardBackgroundColor }]}>
-                                    <IconSymbol name="person.fill" size={50} color={lightTextColor} />
+                                    <IconSymbol name="person.fill" size={sizes.iconXLarge} color={lightTextColor} />
                                 </View>
                             )}
                         </TouchableOpacity>
@@ -540,13 +541,13 @@ export default function ProfileScreen() {
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/chat/favorites'); }}>
-                            <IconSymbol name="heart.fill" size={20} color={textColor} />
+                            <IconSymbol name="heart.fill" size={sizes.actionIconSize} color={textColor} />
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}>
-                            <IconSymbol name="settings" size={20} color={textColor} />
+                            <IconSymbol name="settings" size={sizes.actionIconSize} color={textColor} />
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.btnSecondary, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); logout(); }}>
-                            <IconSymbol name="logout" size={20} color={textColor} />
+                            <IconSymbol name="logout" size={sizes.actionIconSize} color={textColor} />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -694,8 +695,8 @@ export default function ProfileScreen() {
                         {item.profilePhoto ? (
                             <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
                         ) : (
-                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: borderColor }]}>
-                                <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
+                                <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
                             </View>
                         )}
                         <View style={styles.friendInfo}>
@@ -718,8 +719,8 @@ export default function ProfileScreen() {
                         {item.profilePhoto ? (
                             <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
                         ) : (
-                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: borderColor }]}>
-                                <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
+                                <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
                             </View>
                         )}
                         <View style={styles.friendInfo}>
@@ -752,8 +753,8 @@ export default function ProfileScreen() {
                     {item.profilePhoto ? (
                         <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
                     ) : (
-                        <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: borderColor }]}>
-                            <IconSymbol name="person.fill" size={24} color={lightTextColor} />
+                        <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
+                            <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
                         </View>
                     )}
                     <View style={styles.friendInfo}>
@@ -820,23 +821,23 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    coverPhotoContainer: { width: '100%', height: 180, position: 'relative' },
+    coverPhotoContainer: { width: '100%', height: verticalScale(180), position: 'relative' },
     coverPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
     avatarWrapperAbsolute: { 
         position: 'absolute', 
-        bottom: -60, 
+        bottom: -sizes.profilePhoto / 2, 
         left: '50%', 
-        transform: [{ translateX: -60 }], 
+        transform: [{ translateX: -sizes.profilePhoto / 2 }], 
         ...shadows.lg 
     },
     coverPhotoPlaceholder: { width: '100%', height: '100%' },
-    coverPhotoEditButton: { position: 'absolute', bottom: 16, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-    headerBackground: { position: 'absolute', top: 0, left: 0, right: 0, height: 200 },
-    headerContent: { alignItems: 'center', paddingTop: 60, paddingHorizontal: spacing.xl },
+    coverPhotoEditButton: { position: 'absolute', bottom: spacing.md, right: spacing.md, width: sizes.iconLarge, height: sizes.iconLarge, borderRadius: sizes.iconLarge / 2, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    headerBackground: { position: 'absolute', top: 0, left: 0, right: 0, height: verticalScale(200) },
+    headerContent: { alignItems: 'center', paddingTop: sizes.profilePhoto / 2 + spacing.lg, paddingHorizontal: spacing.xl },
     avatarWrapper: { marginBottom: spacing.md, ...shadows.lg },
-    avatarImage: { width: 120, height: 120, borderRadius: 60, borderWidth: 4 },
-    avatarPlaceholder: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, justifyContent: 'center', alignItems: 'center', backgroundColor: '#E0E0E0' },
-    editBadge: { position: 'absolute', bottom: 5, right: 5, width: 32, height: 32, borderRadius: 16, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+    avatarImage: { width: sizes.profilePhoto, height: sizes.profilePhoto, borderRadius: sizes.profilePhoto / 2, borderWidth: sizes.borderWidth },
+    avatarPlaceholder: { width: sizes.profilePhoto, height: sizes.profilePhoto, borderRadius: sizes.profilePhoto / 2, borderWidth: sizes.borderWidth, justifyContent: 'center', alignItems: 'center', backgroundColor: '#E0E0E0' },
+    editBadge: { position: 'absolute', bottom: spacing.xs, right: spacing.xs, width: sizes.iconMedium, height: sizes.iconMedium, borderRadius: sizes.iconMedium / 2, borderWidth: sizes.borderWidth, justifyContent: 'center', alignItems: 'center' },
     profileDetails: { gap: spacing.xs, marginBottom: spacing.md },
     detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     interestChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, flex: 1 },
@@ -846,33 +847,33 @@ const styles = StyleSheet.create({
         borderRadius: borderRadius.lg,
     },
     interestChipText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
-    statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.lg, borderWidth: 1 },
-    statBox: { flex: 1, alignItems: 'center', borderRightWidth: 1 },
+    statsBar: { flexDirection: 'row', borderRadius: borderRadius.lg, padding: spacing.md, width: '100%', marginBottom: spacing.lg, borderWidth: sizes.dividerWidth },
+    statBox: { flex: 1, alignItems: 'center', borderRightWidth: sizes.dividerWidth },
     actionRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl },
-    btnPrimary: { flex: 1, height: 48, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
-    btnSecondary: { width: 48, height: 48, borderRadius: borderRadius.md, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-    tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: spacing.md },
-    tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent', gap: spacing.sm },
+    btnPrimary: { flex: 1, height: sizes.buttonHeight, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+    btnSecondary: { width: sizes.actionIcon, height: sizes.actionIcon, borderRadius: borderRadius.md, borderWidth: sizes.dividerWidth, justifyContent: 'center', alignItems: 'center' },
+    tabsContainer: { flexDirection: 'row', borderBottomWidth: sizes.dividerWidth, marginBottom: spacing.md },
+    tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: sizes.borderWidth, borderBottomColor: 'transparent', gap: spacing.sm },
     tabText: { fontSize: typography.sizes.body2, fontFamily: typography.families.medium },
-    friendSubTabs: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: spacing.sm, marginHorizontal: spacing.md },
-    subTab: { flex: 1, paddingVertical: spacing.sm, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    friendSubTabs: { flexDirection: 'row', borderBottomWidth: sizes.dividerWidth, marginBottom: spacing.sm, marginHorizontal: spacing.md },
+    subTab: { flex: 1, paddingVertical: spacing.sm, alignItems: 'center', borderBottomWidth: sizes.borderWidth, borderBottomColor: 'transparent' },
     subTabText: { fontSize: typography.sizes.caption, fontFamily: typography.families.medium },
     postsGrid: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-    postItem: { flex: 1/3, aspectRatio: 1, margin: 1, borderRadius: borderRadius.sm, overflow: 'hidden', borderWidth: 1 },
+    postItem: { flex: 1/3, aspectRatio: 1, margin: spacing.xxs, borderRadius: borderRadius.sm, overflow: 'hidden', borderWidth: sizes.dividerWidth },
     postThumbnail: { width: '100%', height: '100%' },
     postOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', padding: spacing.sm },
     postStats: { flexDirection: 'row', justifyContent: 'space-between' },
     stat: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     statText: { fontSize: typography.sizes.caption, fontFamily: typography.families.bold },
     friendsList: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-    friendItem: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, marginBottom: spacing.sm, borderRadius: borderRadius.md, borderWidth: 1 },
+    friendItem: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, marginBottom: spacing.sm, borderRadius: borderRadius.md, borderWidth: sizes.dividerWidth },
     friendTouchable: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-    friendAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: spacing.md },
+    friendAvatar: { width: sizes.iconLarge + 4, height: sizes.iconLarge + 4, borderRadius: (sizes.iconLarge + 4) / 2, marginRight: spacing.md },
     friendInfo: { flex: 1 },
-    messageBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    cancelBtn: { paddingHorizontal: spacing.md, height: 36, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
-    acceptBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-    declineBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+    messageBtn: { width: sizes.iconLarge, height: sizes.iconLarge, borderRadius: sizes.iconLarge / 2, justifyContent: 'center', alignItems: 'center' },
+    cancelBtn: { paddingHorizontal: spacing.md, height: verticalScale(36), borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+    acceptBtn: { width: sizes.iconMedium, height: sizes.iconMedium, borderRadius: sizes.iconMedium / 2, justifyContent: 'center', alignItems: 'center' },
+    declineBtn: { width: sizes.iconMedium, height: sizes.iconMedium, borderRadius: sizes.iconMedium / 2, justifyContent: 'center', alignItems: 'center' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 50 },
     emptyText: { marginTop: spacing.md, fontSize: typography.sizes.title, fontFamily: typography.families.bold },
     emptySubtext: { marginTop: spacing.xs, fontSize: typography.sizes.body2, textAlign: 'center', opacity: 0.6 },

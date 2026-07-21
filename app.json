@@ -11,11 +11,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.erhmprah.youngie",
+      "notification": {
+        "icon": "youngie_icon",
+        "color": "#FF231F7C"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "This app needs access to camera for video chat functionality.",
         "NSMicrophoneUsageDescription": "This app needs access to microphone for video chat functionality.",
         "NSLocalNetworkUsageDescription": "This app needs access to local network for peer-to-peer video chat.",
+        "UIBackgroundModes": ["remote-notification"],
         "CFBundleURLTypes": [
           {
             "CFBundleTypeRole": "Editor",
@@ -45,7 +50,8 @@
         "android.permission.READ_PHONE_STATE",
         "android.permission.CALL_PHONE",
         "android.permission.ANSWER_PHONE_CALLS",
-        "android.permission.READ_CALL_LOG"
+        "android.permission.READ_CALL_LOG",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "intentFilters": [
         {
@@ -71,6 +77,9 @@
       "output": "static",
       "favicon": "./assets/images/youngie_icon.png"
     },
+    "assetBundlePatterns": [
+      "assets/sounds/**"
+    ],
     "plugins": [
       "expo-router",
       "expo-dev-client",

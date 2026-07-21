@@ -2,7 +2,7 @@
 
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { borderRadius, spacing, typography } from '@/constants/design-tokens';
+import { borderRadius, sizes, spacing, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
@@ -224,7 +224,7 @@ export default function LoginScreen() {
         >
           <View style={styles.container}>
             <View style={styles.header}>
-              <Image source={require('@/assets/images/youngie_icon.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
+              <Image source={require('@/assets/images/youngie_icon.png')} style={{ width: sizes.logo, height: sizes.logo }} resizeMode="contain" />
               <ThemedText type="heading1" style={styles.titleText}>Welcome Back</ThemedText>
               <ThemedText type="body1" style={[styles.subtitleText, { color: lightTextColor }]}>Sign in to continue connecting with people</ThemedText>
             </View>
@@ -233,7 +233,7 @@ export default function LoginScreen() {
               {magicLinkSent ? (
                 <View style={styles.magicLinkContainer}>
                   <View style={[styles.magicLinkIconBg, { backgroundColor: primaryColor + '15' }]}>
-                    <IconSymbol name="mail.fill" size={32} color={primaryColor} />
+                    <IconSymbol name="mail.fill" size={sizes.iconLarge} color={primaryColor} />
                   </View>
                   <ThemedText type="heading2" style={styles.successTitle}>Check Your Email</ThemedText>
                   <ThemedText type="body1" style={[styles.successText, { color: lightTextColor }]}>
@@ -301,7 +301,7 @@ export default function LoginScreen() {
                     disabled={isLoading}
                     activeOpacity={0.75}
                   >
-                    <IconSymbol name="logo-google" size={20} color="#4285F4" />
+                     <IconSymbol name="logo-google" size={sizes.iconMedium} color="#4285F4" />
                     <ThemedText type="body1" style={[styles.googleButtonText, { color: textColor }]}>Continue with Google</ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -370,8 +370,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   magicLinkIconBg: {
-    width: 72,
-    height: 72,
+    width: sizes.logoSmall,
+    height: sizes.logoSmall,
     borderRadius: borderRadius.round,
     justifyContent: 'center',
     alignItems: 'center',
@@ -406,9 +406,9 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   input: {
-    height: 52,
+    height: sizes.inputHeight,
     borderRadius: borderRadius.md,
-    borderWidth: 1.5,
+    borderWidth: sizes.borderWidth,
     paddingHorizontal: spacing.md,
     fontSize: typography.sizes.body1,
     fontFamily: typography.families.regular,
@@ -417,9 +417,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
+    height: sizes.buttonHeight,
     borderRadius: borderRadius.md,
-    borderWidth: 1.5,
+    borderWidth: sizes.borderWidth,
     gap: spacing.sm,
   },
   googleButtonText: {
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   },
   dividerLine: {
     flex: 1,
-    height: StyleSheet.hairlineWidth,
+    height: sizes.dividerWidth,
   },
   dividerText: {
     paddingHorizontal: spacing.md,
@@ -443,7 +443,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   primaryButton: {
-    height: 52,
+    height: sizes.buttonHeight,
     borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',

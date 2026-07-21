@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { supabase } from '@/utils/supabase';
 import { authAPI } from '@/utils/api';
@@ -315,7 +315,7 @@ export default function CompleteProfileScreen() {
 
       // Success - navigate to main app
       Alert.alert(
-        '🎉 Welcome to Youngie!',
+        'Welcome to Youngie!',
         `Your profile has been created successfully.`,
         [{
           text: 'Continue',
@@ -337,7 +337,7 @@ export default function CompleteProfileScreen() {
           {/* Header */}
           <View style={styles.header}>
             <View style={[styles.logoContainer, { backgroundColor: primaryColor, shadowColor: primaryColor }]}>
-              <IconSymbol name="person.fill" size={40} color={white} />
+              <IconSymbol name="person.fill" size={sizes.iconXLarge} color={white} />
             </View>
             <ThemedText type="heading1" style={{ fontFamily: typography.families.bold }}>Complete Your Profile</ThemedText>
             <ThemedText type="body1" style={{ color: lightTextColor }}>Tell us a bit about yourself</ThemedText>
@@ -348,7 +348,7 @@ export default function CompleteProfileScreen() {
             <View style={styles.inputContainer}>
               <ThemedText type="body2" style={{ fontWeight: '600' }}>Username *</ThemedText>
               <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="person.fill" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                 <IconSymbol name="person.fill" size={sizes.iconMedium} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
                   placeholder="Choose a username (3+ chars)"
@@ -364,7 +364,7 @@ export default function CompleteProfileScreen() {
             <View style={styles.inputContainer}>
               <ThemedText type="body2" style={{ fontWeight: '600' }}>Year of Birth *</ThemedText>
               <View style={[styles.inputWrapper, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor }]}>
-                <IconSymbol name="calendar" size={20} color={textColor} style={{ marginRight: spacing.sm }} />
+                 <IconSymbol name="calendar" size={sizes.iconMedium} color={textColor} style={{ marginRight: spacing.sm }} />
                 <TextInput
                   style={[styles.input, { color: textColor }]}
                   placeholder="1997"
@@ -412,7 +412,7 @@ export default function CompleteProfileScreen() {
                   {detectingLocation ? (
                     <ActivityIndicator size="small" color={primaryColor} />
                   ) : (
-                    <IconSymbol name="location.fill" size={20} color={primaryColor} />
+                     <IconSymbol name="location.fill" size={sizes.iconMedium} color={primaryColor} />
                   )}
                 </TouchableOpacity>
               </View>
@@ -462,8 +462,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
+    width: sizes.logoSmall,
+    height: sizes.logoSmall,
     borderRadius: borderRadius.round,
     justifyContent: 'center',
     alignItems: 'center',
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: sizes.borderWidth,
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     ...shadows.sm,
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
-    borderWidth: 1,
+    borderWidth: sizes.borderWidth,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
     top: '100%',
     left: 0,
     right: 0,
-    borderWidth: 1,
+    borderWidth: sizes.borderWidth,
     borderTopWidth: 0,
     borderBottomLeftRadius: borderRadius.md,
     borderBottomRightRadius: borderRadius.md,

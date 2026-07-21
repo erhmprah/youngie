@@ -27,6 +27,44 @@ const API_URL = PRIMARY_API_URL;
 console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
 
+async function safeFetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries = 2
+): Promise<any> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      const headers = {
+        ...options.headers,
+        'x-auth-token': token || '',
+      };
+
+      const response = await fetch(url, { ...options, headers });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error: any) {
+      lastError = error;
+      const isNetworkError =
+        error.message === 'Network request failed' ||
+        error.message.includes('Network') ||
+        error.name === 'TypeError';
+
+      if (isNetworkError && attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  throw lastError!;
+}
+
 // ============== LOAD BALANCING & FAILOVER ==============
 
 /**
@@ -396,7 +434,6 @@ api.interceptors.response.use(
     const isNetworkError = !error.response;
     
     if (isNetworkError) {
-      // Log as warning instead of error to prevent Metro from showing as critical error
       console.warn('⚠️ Network Error: Could not reach backend.');
       console.warn(`   Attempted URL: ${error.config?.baseURL}${error.config?.url}`);
       console.warn('   Check your API_URL and ensure the server is running.');
@@ -404,17 +441,9 @@ api.interceptors.response.use(
       console.log('⚠️ API Error:', error.response.status, error.response.data);
     }
     
-    // Show user-friendly error alert
     showApiErrorAlert(error, isNetworkError);
     
-    // Don't re-throw the error after showing the alert - this prevents crashes
-    // The UI has already shown an error message to the user
-    // Returning a dummy response keeps the app running without breaking the flow
-    return Promise.resolve({ 
-      data: null, 
-      status: error.response?.status || 0,
-      isNetworkError: isNetworkError 
-    });
+    return Promise.reject(error);
   }
 );
 
@@ -472,66 +501,32 @@ export const userAPI = {
   deleteAccount: () => api.post('/users/delete-account'),
   restoreAccount: () => api.post('/users/restore-account'),
   uploadProfilePhoto: async (userId: string, formData: FormData) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/users/${userId}/upload-profile-photo`, {
+    const data = await safeFetchWithRetry(`${API_URL}/users/${userId}/upload-profile-photo`, {
       method: 'POST',
-      headers: {
-        'x-auth-token': token || '',
-        'Accept': 'application/json',
-      },
       body: formData,
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
     return { data };
   },
   uploadProfilePhotoBase64: async (userId: string, data: { imageData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/users/${userId}/upload-profile-photo-base64`, {
+    return safeFetchWithRetry(`${API_URL}/users/${userId}/upload-profile-photo-base64`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   uploadCoverPhoto: async (userId: string, formData: FormData) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/users/${userId}/upload-cover-photo`, {
+    const data = await safeFetchWithRetry(`${API_URL}/users/${userId}/upload-cover-photo`, {
       method: 'POST',
-      headers: {
-        'x-auth-token': token || '',
-        'Accept': 'application/json',
-      },
       body: formData,
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
     return { data };
   },
   uploadCoverPhotoBase64: async (userId: string, data: { imageData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/users/${userId}/upload-cover-photo-base64`, {
+    return safeFetchWithRetry(`${API_URL}/users/${userId}/upload-cover-photo-base64`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   searchUsers: (query: string, page?: number, limit?: number) => api.get('/users/search/query', { params: { q: query, page, limit } }),
   getNearbyUsers: (filters?: any) => api.get('/users/nearby/all', { params: filters }),
@@ -549,19 +544,11 @@ export const userAPI = {
     api.delete(`/users/${userId}/friends/${friendId}`),
   getAlbum: (userId: string, page?: number, limit?: number) => api.get(`/posts/album/user/${userId}`, { params: { page, limit } }),
   uploadAlbumPhoto: async (userId: string, data: { imageData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/posts/album`, {
+    return safeFetchWithRetry(`${API_URL}/posts/album`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   deleteAlbumPhoto: (userId: string, photoId: string) =>
     api.delete(`/posts/album/${photoId}`),
@@ -619,37 +606,18 @@ export const chatAPI = {
   updateGroupName: (chatId: string, name: string) => api.put(`/chats/${chatId}/name`, { name }),
   updateGroupPhoto: (chatId: string, groupPhoto: string) => api.put(`/chats/${chatId}/photo`, { groupPhoto }),
   uploadAttachment: async (formData: FormData, options?: any) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/chats/upload-attachment`, {
+    const data = await safeFetchWithRetry(`${API_URL}/chats/upload-attachment`, {
       method: 'POST',
-      headers: {
-        'x-auth-token': token || '',
-        'Accept': 'application/json',
-      },
       body: formData,
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
     return { data };
   },
   uploadAttachmentBase64: async (imageData: string, filename: string) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/chats/upload-attachment-base64`, {
+    return safeFetchWithRetry(`${API_URL}/chats/upload-attachment-base64`, {
       method: 'POST',
-      headers: {
-        'x-auth-token': token || '',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageData, filename }),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    return { data };
   },
   getTurnCredentials: () => api.get('/chats/turn-credentials'),
   votePoll: (chatId: string, messageId: string, optionIndex: number) => api.post(`/chats/${chatId}/messages/${messageId}/vote`, { optionIndex }),
@@ -683,62 +651,30 @@ export const postAPI = {
   getFavoritePosts: (page?: number, limit?: number) => api.get('/posts/favorites', { params: { page, limit } }),
   sharePost: (postId: string) => api.post(`/posts/${postId}/share`, {}),
   uploadPostImage: async (formData: FormData) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/posts/upload-image`, {
+    return safeFetchWithRetry(`${API_URL}/posts/upload-image`, {
       method: 'POST',
-      headers: {
-        'x-auth-token': token || '',
-      },
       body: formData,
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   uploadPostImageBase64: async (data: { imageData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/posts/upload-image-base64`, {
+    return safeFetchWithRetry(`${API_URL}/posts/upload-image-base64`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   uploadPostVideo: async (formData: FormData) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/posts/upload-video`, {
+    return safeFetchWithRetry(`${API_URL}/posts/upload-video`, {
       method: 'POST',
-      headers: {
-        'x-auth-token': token || '',
-      },
       body: formData,
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   uploadPostVideoBase64: async (data: { videoData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/posts/upload-video-base64`, {
+    return safeFetchWithRetry(`${API_URL}/posts/upload-video-base64`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
 
   searchPosts: (query: string, page?: number, limit?: number) => api.get('/posts/search', { params: { q: query, page, limit } }),
@@ -762,19 +698,11 @@ export const storyAPI = {
     api.post(`/stories/unmute/${userId}`, {}),
   getMutedUsers: () => api.get('/stories/muted/list'),
   uploadStoryImageBase64: async (data: { imageData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/stories/upload-image-base64`, {
+    return safeFetchWithRetry(`${API_URL}/stories/upload-image-base64`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
   },
   votePoll: (storyId: string, optionIndex: number) => api.post(`/stories/${storyId}/vote-poll`, { optionIndex }),
 };
@@ -799,24 +727,18 @@ export const communityAPI = {
   getInviteInfo: (inviteToken: string) => api.get(`/communities/invite/${inviteToken}`),
   joinViaInvite: (inviteToken: string) => api.post(`/communities/join/${inviteToken}`),
   uploadImageBase64: async (data: { imageData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/communities/upload-image-base64`, {
+    return safeFetchWithRetry(`${API_URL}/communities/upload-image-base64`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-auth-token': token || '' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return response.json();
   },
   uploadVideoBase64: async (data: { videoData: string; filename: string }) => {
-    const token = await AsyncStorage.getItem('authToken');
-    const response = await fetch(`${API_URL}/communities/upload-video-base64`, {
+    return safeFetchWithRetry(`${API_URL}/communities/upload-video-base64`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-auth-token': token || '' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return response.json();
   },
   getFeed: (communityId: string, page?: number, limit?: number) =>
     api.get(`/communities/${communityId}/feed`, { params: { page, limit } }),

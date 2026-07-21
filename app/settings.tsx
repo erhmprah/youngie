@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { IconSymbol, IconName } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { userAPI } from '@/utils/api';
@@ -103,12 +103,12 @@ export default function SettingsScreen() {
                     <IconSymbol name="chevron.left" size={24} color={textColor} />
                 </TouchableOpacity>
                 <ThemedText type="title" style={{ fontFamily: typography.families.bold }}>Settings</ThemedText>
-                <View style={{ width: 24 }} />
+                <View style={{ width: sizes.iconSmall }} />
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account</ThemedText>
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
                     <SettingItem icon="shield" label="Security" onPress={() => router.push('/security-settings')} />
                     <SettingItem icon="lock" label="Privacy" onPress={() => router.push('/privacy-settings')} />
                     <SettingItem icon="volume-mute" label="Muted Users" onPress={() => router.push('/muted-users')} />
@@ -116,22 +116,22 @@ export default function SettingsScreen() {
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>App Settings</ThemedText>
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
                     <SettingItem icon={mode === 'dark' ? 'moon' : mode === 'light' ? 'sun.max' : 'device-phone-portrait'} label="Appearance" value={mode.charAt(0).toUpperCase() + mode.slice(1)} onPress={() => router.push('/appearance')} />
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Support</ThemedText>
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
                     <SettingItem icon="help-circle" label="Help Center" onPress={() => router.push('/help-center')} />
                     <SettingItem icon="shield-check" label="Policies" onPress={() => router.push('/policies')} />
                     <SettingItem icon="info" label="About" onPress={() => router.push('/about')} />
                 </View>
 
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1, marginTop: spacing.lg }]}>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth, marginTop: spacing.lg }]}>
                     <SettingItem icon="log-out" label="Log Out" onPress={handleLogout} isDestructive />
                 </View>
 
-                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1, marginTop: spacing.lg }]}>
+                <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth, marginTop: spacing.lg }]}>
                     <SettingItem icon="trash" label="Delete Account" onPress={handleDeleteAccount} isDestructive />
                 </View>
                 

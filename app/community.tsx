@@ -7,7 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, typography } from '@/constants/design-tokens';
+import { spacing, typography, sizes } from '@/constants/design-tokens';
 import { communityGuidelinesData } from './community-guidelines';
 
 export default function CommunityGuidelinesView() {
@@ -38,7 +38,7 @@ export default function CommunityGuidelinesView() {
         <ThemedText style={[styles.title, { color: textColor }]}>
           Community Guidelines
         </ThemedText>
-        <View style={{ width: 24 }} />
+        <View style={{ width: sizes.iconSmall }} />
       </View>
       <ScrollView
         contentContainerStyle={styles.scrollContent}

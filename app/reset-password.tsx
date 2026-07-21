@@ -6,7 +6,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { supabase } from '@/utils/supabase';
 import { authAPI } from '@/utils/api';
@@ -421,15 +421,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
   logoContainer: {
-    width: 100,
-    height: 100,
+    width: sizes.logoSmall,
+    height: sizes.logoSmall,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
   logoImage: {
-    width: 100,
-    height: 100,
+    width: sizes.logoSmall,
+    height: sizes.logoSmall,
   },
   form: {
     gap: spacing.lg,
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: sizes.dividerWidth,
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     ...shadows.sm,
@@ -463,8 +463,8 @@ const styles = StyleSheet.create({
   },
   strengthSegment: {
     flex: 1,
-    height: 4,
-    borderRadius: 2,
+    height: sizes.dividerWidth,
+    borderRadius: sizes.borderRadiusSm,
   },
   button: {
     paddingVertical: spacing.md,

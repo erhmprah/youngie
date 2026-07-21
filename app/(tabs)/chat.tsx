@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { chatAPI, getImageUrl } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { onNewNotification, offNewNotification, getSocket } from '@/utils/socket';
 import { SelectFriendModal } from '@/components/select-friend-modal';
 import * as Haptics from 'expo-haptics';
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     editBtn: { padding: spacing.sm, borderRadius: borderRadius.md },
     listContainer: { paddingHorizontal: spacing.md },
     chatRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, borderBottomWidth: 1 },
-    avatarCircle: { width: 55, height: 55, borderRadius: borderRadius.round, justifyContent: 'center', alignItems: 'center', marginRight: spacing.md },
+    avatarCircle: { width: sizes.iconLarge + 8, height: sizes.iconLarge + 8, borderRadius: borderRadius.round, justifyContent: 'center', alignItems: 'center', marginRight: spacing.md },
     chatAvatar: { width: '100%', height: '100%', borderRadius: borderRadius.round },
     chatInfo: { flex: 1 },
     chatHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
@@ -395,19 +395,19 @@ const styles = StyleSheet.create({
     chatName: { fontSize: typography.sizes.title, fontFamily: typography.families.bold },
     chatDate: { fontSize: typography.sizes.caption },
     chatPreview: { fontSize: typography.sizes.body2 },
-    tabsContainer: { flexDirection: 'row', borderBottomWidth: 1 },
-    tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabsContainer: { flexDirection: 'row', borderBottomWidth: sizes.dividerWidth },
+    tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, borderBottomWidth: sizes.borderWidth, borderBottomColor: 'transparent' },
     tabText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
-    unreadBadge: { minWidth: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, marginLeft: spacing.sm },
-    unreadText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+    unreadBadge: { minWidth: sizes.iconSmall, height: sizes.iconSmall, borderRadius: sizes.iconSmall / 2, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.xxs, marginLeft: spacing.sm },
+    unreadText: { color: '#FFF', fontSize: typography.sizes.tiny, fontWeight: 'bold' },
     onlineIndicator: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        width: 14,
-        height: 14,
-        borderRadius: 7,
+        width: sizes.iconSmall,
+        height: sizes.iconSmall,
+        borderRadius: sizes.iconSmall / 2,
         backgroundColor: '#4CAF50',
-        borderWidth: 2,
+        borderWidth: sizes.borderWidth,
     },
 });

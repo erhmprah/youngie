@@ -9,7 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { postAPI, userAPI, communityAPI, getImageUrl } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
+import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
+import { verticalScale } from '@/utils/scale';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { CreateCommunityModal } from '@/components/create-community-modal';
@@ -35,7 +36,7 @@ const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon
 
 interface Post {
   _id: string;
-  author: {
+  author?: {
     _id: string;
     username: string;
     avatar?: string;
@@ -74,8 +75,10 @@ export default function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
+  const [showAllDiscoverUsers, setShowAllDiscoverUsers] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [myCommunities, setMyCommunities] = useState<Community[]>([]);
+  const [showAllMyCommunities, setShowAllMyCommunities] = useState(false);
   const [searchResults, setSearchResults] = useState<{ users: User[]; posts: Post[] }>({ users: [], posts: [] });
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -270,7 +273,7 @@ export default function ExploreScreen() {
 
     if (isFriend) {
       return (
-        <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
+        <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: sizes.dividerWidth, borderColor }]}>
           <ThemedText style={[styles.followText, { color: textColor }]}>Friend</ThemedText>
         </View>
       );
@@ -278,7 +281,7 @@ export default function ExploreScreen() {
 
     if (isRequestSent) {
       return (
-        <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}>
+        <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: sizes.dividerWidth, borderColor }]}>
           <ThemedText style={[styles.followText, { color: textColor }]}>Requested</ThemedText>
         </View>
       );
@@ -363,15 +366,15 @@ export default function ExploreScreen() {
                     {searchResults.posts.map((post) => (
                       <TouchableOpacity key={post._id} style={[styles.postRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${post._id}`); }}>
                         <View style={styles.postHeader}>
-                          {post.author.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(post.author.profilePhoto) }} style={styles.postAvatar} />
+                          {post.author?.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(post.author!.profilePhoto) }} style={styles.postAvatar} />
                           ) : (
                             <View style={[styles.postAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                                 <IconSymbol name="person.fill" size={12} color={lightTextColor} />
                             </View>
                           )}
                           <ThemedText type="caption" style={{ color: lightTextColor }}>
-                            by {post.author.username}
+                            by {post.author?.username || 'Unknown'}
                           </ThemedText>
                         </View>
                         <ThemedText type="body1" numberOfLines={2}>
@@ -427,7 +430,7 @@ export default function ExploreScreen() {
                             {post.content}
                           </ThemedText>
                           <ThemedText style={[styles.trendCount, { color: white }]}>
-                            by {post.author.username} • {post.likes.length} likes
+                            by {post.author?.username || 'Unknown'} • {post.likes?.length || 0} likes
                           </ThemedText>
                         </View>
                       </LinearGradient>
@@ -442,9 +445,16 @@ export default function ExploreScreen() {
 
             {/* Popular Users */}
             <View style={styles.section}>
-              <ThemedText type="title" style={styles.sectionTitle}>Discover People</ThemedText>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <ThemedText type="title" style={styles.sectionTitle}>Discover People</ThemedText>
+                {!showAllDiscoverUsers && discoverUsers.length > 5 && (
+                  <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAllDiscoverUsers(true); }}>
+                    <ThemedText type="link" style={{ color: primaryColor }}>See all</ThemedText>
+                  </TouchableOpacity>
+                )}
+              </View>
               {discoverUsers.length > 0 ? (
-                discoverUsers.map((user) => (
+                discoverUsers.slice(0, showAllDiscoverUsers ? undefined : 5).map((user) => (
                   <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${user._id}`); }}>
                     <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                       {user.profilePhoto ? (
@@ -478,7 +488,7 @@ export default function ExploreScreen() {
                 </TouchableOpacity>
               </View>
               {myCommunities.length > 0 ? (
-                myCommunities.map((community) => (
+                myCommunities.slice(0, showAllMyCommunities ? undefined : 5).map((community) => (
                   <View
                     key={community._id}
                     style={[styles.userRow, { borderBottomColor: borderColor }]}
@@ -495,7 +505,7 @@ export default function ExploreScreen() {
                       <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
                     </View>
                     <TouchableOpacity
-                      style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: 1, borderColor }]}
+                      style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: sizes.dividerWidth, borderColor }]}
                       onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}
                     >
                       <ThemedText style={[styles.followText, { color: textColor }]}>Open</ThemedText>
@@ -507,60 +517,68 @@ export default function ExploreScreen() {
                   You haven&apos;t joined any communities yet.
                 </ThemedText>
               )}
+              {!showAllMyCommunities && myCommunities.length > 5 && (
+                <View style={{ alignItems: 'center', paddingVertical: spacing.sm }}>
+                  <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAllMyCommunities(true); }}>
+                    <ThemedText type="link" style={{ color: primaryColor }}>See all</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
             {/* Communities */}
             <View style={styles.section}>
               <ThemedText type="title" style={styles.sectionTitle}>Communities</ThemedText>
-              {communities.map((community) => (
-                <TouchableOpacity key={community._id} 
-                  style={[styles.userRow, { borderBottomColor: borderColor }]}
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}
-                >
-                  <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
-                    {community.image ? (
-                      <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
-                    ) : (
-                      <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
-                    )}
-                  </View>
-                  <View style={styles.userInfo}>
-                    <ThemedText type="body1" style={{ fontFamily: typography.families.bold }}>{community.name}</ThemedText>
-                    <ThemedText type="caption" style={{ color: lightTextColor }}>{community.description}</ThemedText>
-                  </View>
-                  <TouchableOpacity 
-                    style={[
-                      styles.followButton, 
-                      { 
-                        backgroundColor: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)
-                          ? surfaceColor 
-                          : primaryColor,
-                        borderWidth: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id) ? 1 : 0,
-                        borderColor: borderColor
-                      }
-                    ]} 
-                    onPress={() => { 
-                      const isPending = pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id);
-                      if (!isPending) {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
-                        handleJoinCommunity(community._id, community.name, community.requiresApproval); 
-                      }
-                    }} 
-                    disabled={pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.communityList}>
+                {communities.map((community) => (
+                  <TouchableOpacity key={community._id} 
+                    style={[styles.communityCard, { backgroundColor: surfaceColor, borderColor }]}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}
                   >
-                    <ThemedText style={[
-                      styles.followText, 
-                      { 
-                        color: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)
-                          ? textColor 
-                          : white 
-                      }
-                    ]}>
-                      {pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id) ? 'Requested' : 'Join'}
+                    <View style={[styles.communityAvatar, { backgroundColor: surfaceColor }]}>
+                      {community.image ? (
+                        <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                      ) : (
+                        <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
+                      )}
+                    </View>
+                    <ThemedText type="body2" style={{ fontFamily: typography.families.bold, textAlign: 'center', marginTop: spacing.sm }} numberOfLines={1}>
+                      {community.name}
                     </ThemedText>
+                    <TouchableOpacity 
+                      style={[
+                        styles.communityJoinButton, 
+                        { 
+                          backgroundColor: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)
+                            ? surfaceColor 
+                            : primaryColor,
+                          borderWidth: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id) ? 1 : 0,
+                          borderColor: borderColor
+                        }
+                      ]} 
+                      onPress={() => { 
+                        const isPending = pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id);
+                        if (!isPending) {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
+                          handleJoinCommunity(community._id, community.name, community.requiresApproval); 
+                        }
+                      }} 
+                      disabled={pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)}
+                    >
+                      <ThemedText style={[
+                        styles.followText, 
+                        { 
+                          color: pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id)
+                            ? textColor 
+                            : white 
+                        }
+                      ]}>
+                        {pendingCommunityIds.includes(community._id) || community.pendingMembers?.some((m: any) => typeof m === 'string' ? m === user?._id : m._id === user?._id) ? 'Requested' : 'Join'}
+                      </ThemedText>
+                    </TouchableOpacity>
                   </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
+                ))}
+              </ScrollView>
             </View>
           </>
         )}
@@ -582,7 +600,7 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
-    borderBottomWidth: 1,
+    borderBottomWidth: sizes.dividerWidth,
   },
   sectionTitle: { paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   searchWrapper: {
@@ -590,8 +608,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
-    height: 50,
-    borderWidth: 1,
+    height: sizes.buttonHeight,
+    borderWidth: sizes.dividerWidth,
     ...shadows.sm,
   },
   searchIcon: { marginRight: spacing.sm },
@@ -606,13 +624,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.xl,
     gap: spacing.sm,
-    borderWidth: 1,
+    borderWidth: sizes.dividerWidth,
   },
   catText: { fontFamily: typography.families.bold, fontSize: typography.sizes.body2 },
   trendList: { paddingHorizontal: spacing.lg, gap: spacing.md },
   trendCard: {
     width: width * 0.7,
-    height: 180,
+    height: verticalScale(180),
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
   },
@@ -638,19 +656,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+    borderBottomWidth: sizes.dividerWidth,
   },
   userAvatar: {
-    width: 48,
-    height: 48,
+    width: sizes.iconLarge + 8,
+    height: sizes.iconLarge + 8,
     borderRadius: borderRadius.round,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
   },
   avatarImage: {
-    width: 48,
-    height: 48,
+    width: sizes.iconLarge + 8,
+    height: sizes.iconLarge + 8,
     borderRadius: borderRadius.round,
   },
   userInfo: {
@@ -668,7 +686,7 @@ const styles = StyleSheet.create({
   postRow: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+    borderBottomWidth: sizes.dividerWidth,
   },
   postHeader: {
     flexDirection: 'row',
@@ -676,14 +694,38 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   postAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: sizes.iconSmall,
+    height: sizes.iconSmall,
+    borderRadius: sizes.iconSmall / 2,
     marginRight: spacing.sm,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.xl,
+  },
+  communityList: { paddingHorizontal: spacing.lg, gap: spacing.md },
+  communityCard: {
+    width: width * 0.6,
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    alignItems: 'center',
+    borderWidth: sizes.dividerWidth,
+  },
+  communityAvatar: {
+    width: sizes.iconLarge + 16,
+    height: sizes.iconLarge + 16,
+    borderRadius: borderRadius.round,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  communityJoinButton: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
   },
 });

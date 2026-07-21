@@ -9,7 +9,8 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ChatTabIcon } from '@/components/chat-tab-icon';
 import { FirstStartupHint } from '@/components/FirstStartupHint';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { shadows, typography } from '@/constants/design-tokens';
+import { shadows, typography, sizes } from '@/constants/design-tokens';
+import { verticalScale } from '@/utils/scale';
 
 export default function TabLayout() {
   const activeTintColor = useThemeColor('primary');
@@ -86,8 +87,8 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: 80,
-    borderTopWidth: 1,
+    height: verticalScale(80),
+    borderTopWidth: sizes.dividerWidth,
     ...shadows.sm,
   },
   tabBarLabel: {

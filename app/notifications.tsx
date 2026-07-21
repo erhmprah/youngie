@@ -8,11 +8,13 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { notificationAPI, userAPI, communityAPI, chatAPI, getImageUrl, postAPI, storyAPI } from '@/utils/api';
-import { getColors, spacing, typography, borderRadius, shadows } from '@/constants/design-tokens';
+import { getColors, spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
+import { verticalScale } from '@/utils/scale';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Swipeable } from 'react-native-gesture-handler';
 import { showErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
+import { getSocket } from '@/utils/socket';
 
 interface NotificationSender {
   _id: string;
@@ -64,6 +66,33 @@ export default function NotificationsScreen() {
       fetchNotifications();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let appState: any;
+    let subscription: any;
+
+    import('react-native').then((m) => {
+      const { AppState } = m;
+      appState = AppState;
+      if (!appState?.addEventListener) return;
+
+      subscription = appState.addEventListener('change', (nextState: string) => {
+        if (nextState === 'active') {
+          fetchNotifications();
+        }
+      });
+    });
+
+    return () => {
+      try {
+        subscription?.remove?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, [user]);
+
 
   const fetchNotifications = async () => {
     setIsLoading(true);
@@ -220,6 +249,26 @@ export default function NotificationsScreen() {
     }
   };
 
+
+
+  // Real-time updates via socket when the app is online
+  useEffect(() => {
+    if (!user) return;
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNewNotification = () => {
+      fetchNotifications();
+    };
+
+    socket.on('notification:new', handleNewNotification);
+    socket.on('new-notification', handleNewNotification);
+
+    return () => {
+      socket.off('notification:new', handleNewNotification);
+      socket.off('new-notification', handleNewNotification);
+    };
+  }, [user]);
 
 
   const groupedNotifications = useMemo(() => {
@@ -646,14 +695,14 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     backgroundColor: colors.primary + '20', // More distinct tint for unread
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: sizes.iconLarge + 8,
+    height: sizes.iconLarge + 8,
+    borderRadius: (sizes.iconLarge + 8) / 2,
   },
   avatarContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: sizes.iconLarge + 8,
+    height: sizes.iconLarge + 8,
+    borderRadius: (sizes.iconLarge + 8) / 2,
     marginRight: spacing.md, // Consistent spacing
     justifyContent: 'center',
     alignItems: 'center',
@@ -664,8 +713,8 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     alignItems: 'center',
   },
   stackedAvatar: {
-    marginLeft: -16,
-    borderWidth: 2,
+    marginLeft: -spacing.md,
+    borderWidth: sizes.borderWidth,
     borderColor: colors.background,
   },
   avatarMore: {
@@ -675,7 +724,7 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
   },
   avatarMoreText: {
     color: colors.white,
-    fontSize: 12,
+    fontSize: typography.sizes.caption,
     fontWeight: typography.weights.bold,
   },
   textContainer: {
@@ -693,16 +742,16 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     marginTop: spacing.xs,
   },
   unreadDot: {
-    width: 8, // Slightly smaller dot
-    height: 8,
-    borderRadius: 4,
+    width: sizes.iconSmall,
+    height: sizes.iconSmall,
+    borderRadius: sizes.iconSmall / 2,
     backgroundColor: colors.primary,
-    marginLeft: spacing.sm, // Consistent spacing
+    marginLeft: spacing.sm,
   },
   separator: {
-    height: 1,
+    height: sizes.dividerWidth,
     backgroundColor: colors.border,
-    marginHorizontal: spacing.md, // Consistent margin
+    marginHorizontal: spacing.md,
   },
   emptyContainer: {
     flex: 1,
@@ -747,7 +796,7 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 80, // Keeping original width
+    width: verticalScale(80),
     height: '100%',
   },
   rightActionText: {
@@ -763,9 +812,9 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     borderRadius: borderRadius.md,
   },
   skeletonAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: sizes.iconLarge + 8,
+    height: sizes.iconLarge + 8,
+    borderRadius: (sizes.iconLarge + 8) / 2,
     backgroundColor: colors.border,
     marginRight: spacing.md,
   },
@@ -774,9 +823,9 @@ const dynamicStyles = (colors: ReturnType<typeof getColors>) => StyleSheet.creat
     flex: 1,
   },
   skeletonTextLine: {
-    height: 16,
+    height: verticalScale(16),
     backgroundColor: colors.border,
-    borderRadius: 4,
+    borderRadius: sizes.borderRadiusSm,
     marginBottom: spacing.xs,
   },
 });

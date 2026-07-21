@@ -1,4 +1,4 @@
-import { Alert, Platform } from 'react-native';
+import { Alert, ErrorUtils, Platform } from 'react-native';
 import { CustomAlert } from './alert';
 
 /**
@@ -120,68 +120,44 @@ function showErrorAlert(title: string, message: string, isFatal: boolean = false
  * Set up global error handlers for the app
  */
 export function setupGlobalErrorHandlers(): void {
-  // Handler for unhandled JavaScript errors
-  const handleGlobalError = (error: Error, isFatal: boolean) => {
-    const errorMessage = error?.message || 'Unknown error';
-    const stack = error?.stack || '';
+  const originalHandler = ErrorUtils && typeof ErrorUtils.getGlobalHandler === 'function' ? ErrorUtils.getGlobalHandler() : undefined;
+
+  const handleGlobalError = (error: Error | null | undefined, isFatal: boolean | undefined) => {
+    const resolvedError = error || new Error('Unknown error');
+    const resolvedIsFatal = isFatal ?? false;
+    const errorMessage = resolvedError?.message || 'Unknown error';
+    const stack = resolvedError?.stack || '';
     
     console.error('🔴 Global Error Handler:', {
       message: errorMessage,
-      isFatal,
+      isFatal: resolvedIsFatal,
       stack,
     });
     
-    // Add to error log
     addToErrorLog({
       timestamp: new Date(),
       message: errorMessage,
       stack,
-      isFatal,
+      isFatal: resolvedIsFatal,
       type: 'error',
     });
     
-    // Show appropriate error alert
     const errorInfo = getErrorType(errorMessage);
-    showErrorAlert(errorInfo.title, errorInfo.userMessage, isFatal);
+    showErrorAlert(errorInfo.title, errorInfo.userMessage, resolvedIsFatal);
     
-    // In production, you might want to show a generic error screen
-    // instead of crashing
-    if (isFatal && !__DEV__) {
-      showFatalErrorAlert(errorMessage);
+    if (resolvedIsFatal) {
+      if (__DEV__) {
+        originalHandler?.(resolvedError, resolvedIsFatal);
+      } else {
+        showFatalErrorAlert(errorMessage);
+      }
     }
   };
   
-  // Handler for unhandled promise rejections
-  const handleUnhandledRejection = (reason: any) => {
-    const errorMessage = reason instanceof Error 
-      ? reason.message 
-      : String(reason);
-    const stack = reason instanceof Error ? reason.stack : undefined;
-    
-    console.error('🔴 Unhandled Promise Rejection:', {
-      message: errorMessage,
-      stack,
-    });
-    
-    // Add to error log
-    addToErrorLog({
-      timestamp: new Date(),
-      message: errorMessage,
-      stack,
-      isFatal: false,
-      type: 'unhandledRejection',
-    });
-    
-    // Show appropriate error alert for promise rejections
-    const errorInfo = getErrorType(errorMessage);
-    showErrorAlert(errorInfo.title, errorInfo.userMessage, false);
-  };
+  if (ErrorUtils) {
+    ErrorUtils.setGlobalHandler(handleGlobalError);
+  }
   
-  // Note: In React Native, we rely on the Error Boundary components
-  // for catching errors. The React Native runtime doesn't have window.
-  // Global handlers are set up through ErrorBoundary components.
-  
-  // However, we can still log errors for debugging
   console.log('✅ Global error handlers initialized (React Native mode)');
 }
 

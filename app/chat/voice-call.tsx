@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageUrl, chatAPI } from '@/utils/api';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import CallService from '@/utils/call-service';
 
 export default function VoiceCallScreen() {
   const { chatId, name, image, offer: offerString } = useLocalSearchParams();
@@ -293,6 +294,8 @@ export default function VoiceCallScreen() {
     if (status !== 'ended') { // Avoid sending end event if call was ended by other party
         sendVoiceCallEnd(chatId as string);
     }
+
+    CallService.onEndCall({ callUUID: CallService.currentCallId });
 
     if(router.canGoBack()) {
         router.back();

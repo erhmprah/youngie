@@ -1,11 +1,12 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
+import { borderRadius, shadows, spacing, typography, sizes } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { SOCKET_URL, userAPI } from '@/utils/api';
 import { getICEServers } from '@/utils/externalServices';
+import { verticalScale } from '@/utils/scale';
 import { Ionicons } from '@expo/vector-icons';
 import InCallManager from 'react-native-incall-manager';
 import * as KeepAwake from 'expo-keep-awake';
@@ -1127,11 +1128,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.lg,
     right: spacing.lg,
-    width: 100,
-    height: 140,
+    width: verticalScale(100),
+    height: verticalScale(140),
     borderRadius: borderRadius.md,
     overflow: 'hidden',
-    borderWidth: 2,
+    borderWidth: sizes.borderWidth,
     zIndex: 20,
     ...shadows.md,
   },
@@ -1196,9 +1197,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   mediaButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: sizes.iconLarge + 10,
+    height: sizes.iconLarge + 10,
+    borderRadius: (sizes.iconLarge + 10) / 2,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1344,21 +1345,21 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: -5,
-    right: -5,
+    top: -spacing.xxs,
+    right: -spacing.xxs,
     backgroundColor: '#FF3B30',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    borderRadius: sizes.iconSmall,
+    minWidth: sizes.iconSmall,
+    height: sizes.iconSmall,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 1.5,
+    paddingHorizontal: spacing.xxs,
+    borderWidth: sizes.borderWidth,
     borderColor: 'white',
   },
   badgeText: {
     color: 'white',
-    fontSize: 10,
+    fontSize: typography.sizes.tiny,
     fontWeight: 'bold',
   },
 });

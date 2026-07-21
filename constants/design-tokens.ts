@@ -180,36 +180,39 @@ const darkMagentaColors = {
   away: '#FF9500',
 };
 
-// Spacing - A consistent and scalable spacing system
+import { scale, verticalScale, moderateScale, scaleFont, borderScale } from '@/utils/scale';
+
+export { verticalScale };
+
+// Spacing - responsive scaling (width-based)
 export const spacing = {
-  xxs: 2,
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
+  xxs: scale(2),
+  xs: scale(4),
+  sm: scale(8),
+  md: scale(12),
+  lg: scale(16),
+  xl: scale(24),
+  xxl: scale(32),
 };
 
-// Typography - Using system fonts for a native feel
+// Typography - responsive scaling (moderate font scaling)
 export const typography = {
   families: {
-    // Using system fonts for a native and professional look
     regular: 'System',
     medium: 'System-Medium',
     semibold: 'System-Semibold',
     bold: 'System-Bold',
   },
   sizes: {
-    heading1: 30,
-    heading2: 25,
-    heading3: 20,
-    heading4: 18,
-    title: 17,
-    body1: 17,
-    body2: 15,
-    caption: 13,
-    tiny: 12,
+    heading1: scaleFont(30),
+    heading2: scaleFont(25),
+    heading3: scaleFont(20),
+    heading4: scaleFont(18),
+    title: scaleFont(17),
+    body1: scaleFont(17),
+    body2: scaleFont(15),
+    caption: scaleFont(13),
+    tiny: scaleFont(12),
   },
   weights: {
     light: '300',
@@ -221,13 +224,39 @@ export const typography = {
   } as const,
 };
 
+// Common responsive sizes
+export const sizes = {
+  logo: scale(90),
+  logoSmall: scale(72),
+  iconSmall: moderateScale(14),
+  iconMedium: moderateScale(20),
+  iconLarge: moderateScale(32),
+  iconXLarge: moderateScale(40),
+  profilePhoto: scale(100),
+  actionIcon: scale(44),
+  actionIconSize: scale(22),
+  storyRing: scale(56),
+  storyBadge: scale(22),
+  inputHeight: verticalScale(52),
+  buttonHeight: verticalScale(52),
+  checkboxSize: scale(20),
+  checkboxIconSize: moderateScale(14),
+  borderRadiusSm: scale(6),
+  borderRadiusMd: scale(10),
+  borderRadiusLg: scale(14),
+  borderRadiusXl: scale(20),
+  borderRadiusRound: 999,
+  borderWidth: borderScale(1.5),
+  dividerWidth: borderScale(1),
+};
+
 // Border Radius
 export const borderRadius = {
   none: 0,
-  sm: 6,
-  md: 10,
-  lg: 14,
-  xl: 20,
+  sm: sizes.borderRadiusSm,
+  md: sizes.borderRadiusMd,
+  lg: sizes.borderRadiusLg,
+  xl: sizes.borderRadiusXl,
   full: 999,
   round: 999,
 };

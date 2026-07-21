@@ -8,6 +8,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { chatAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { getSocket } from '@/utils/socket';
 
 interface ChatTabIconProps {
     color: string;
@@ -33,7 +34,7 @@ export function ChatTabIcon({ color }: ChatTabIconProps) {
                     return;
                 }
                 
-                const chats = response.data;
+                const chats = response.data?.data || [];
                 const unread = Array.isArray(chats) ? chats.reduce((count: number, chat: any) => {
                     return count + (chat.unreadCount || 0);
                 }, 0) : 0;
@@ -51,7 +52,20 @@ export function ChatTabIcon({ color }: ChatTabIconProps) {
         // Poll every 30 seconds
         const interval = setInterval(fetchUnreadCount, 30000);
 
-        return () => clearInterval(interval);
+        // Refresh immediately when a new message arrives or chats are read
+        const socket = getSocket();
+        if (socket) {
+            socket.on('chatUpdated', fetchUnreadCount);
+            socket.on('messages-read', fetchUnreadCount);
+        }
+
+        return () => {
+            clearInterval(interval);
+            if (socket) {
+                socket.off('chatUpdated', fetchUnreadCount);
+                socket.off('messages-read', fetchUnreadCount);
+            }
+        };
     }, [user?._id]);
 
     return (
