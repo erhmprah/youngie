@@ -119,25 +119,28 @@ export default function ExploreScreen() {
 
   const fetchExploreData = useCallback(async (currentFilters?: FilterState) => {
     setIsLoading(true);
+    const activeFilters = currentFilters || filters;
+
     try {
-      const activeFilters = currentFilters || filters;
-      const promises: Promise<any>[] = [
-        postAPI.getTrendingPosts(),
-        userAPI.getNearbyUsers(activeFilters),
-        communityAPI.getAll(),
-      ];
-
-      if (user?._id) {
-        promises.push(userAPI.getProfile(user._id));
+      const trendingResponse = await postAPI.getTrendingPosts();
+      const trendingPosts = trendingResponse.data?.data || [];
+      setTrendingPosts(trendingPosts.length > 0 ? trendingPosts : []);
+    } catch (err) {
+      try {
+        const suggestedResponse = await postAPI.getSuggestedRandomPosts();
+        const suggestedPosts = suggestedResponse.data?.data || [];
+        setTrendingPosts(suggestedPosts.length > 0 ? suggestedPosts : []);
+      } catch {
+        setTrendingPosts([]);
       }
+    }
 
-      const results = await Promise.all(promises);
-      const trendingResponse = results[0];
-      const discoverResponse = results[1];
-      const communitiesResponse = results[2];
-      const profileResponse = results[3];
-
-      setTrendingPosts(trendingResponse.data.data || []);
+    try {
+      const [discoverResponse, communitiesResponse, profileResponse] = await Promise.all([
+        userAPI.getRecommendedUsers(activeFilters),
+        communityAPI.getAll(),
+        user?._id ? userAPI.getProfile(user._id) : Promise.resolve({ data: {} }),
+      ]);
 
       let discoverData = discoverResponse.data?.users || [];
       if (activeFilters.minAge) {
@@ -151,7 +154,7 @@ export default function ExploreScreen() {
       if (activeFilters.gender && activeFilters.gender.length > 0) {
         discoverData = discoverData.filter((p: any) => activeFilters.gender.includes(p.gender));
       }
-      
+
       if (activeFilters.latitude && activeFilters.longitude && activeFilters.radius) {
         discoverData = discoverData.filter((p: any) => {
             if (!p.latitude || !p.longitude) return false;
@@ -161,11 +164,10 @@ export default function ExploreScreen() {
       } else if (activeFilters.location) {
         discoverData = discoverData.filter((p: any) => p.location && p.location.toLowerCase().includes(activeFilters.location.toLowerCase()));
       }
-      setDiscoverUsers(discoverData.slice(0, 4)); // Limit to 4 for display
+      setDiscoverUsers(discoverData.slice(0, 4));
 
-      const allCommunities = communitiesResponse.data.data || [];
+      const allCommunities = communitiesResponse.data?.data || [];
 
-      // 1. My Communities (Member or Creator)
       const myComms = allCommunities.filter((community: any) => {
         const isMember = community.members.some((member: any) => member._id === user?._id);
         const isCreator = community.creator._id === user?._id;
@@ -173,12 +175,11 @@ export default function ExploreScreen() {
       });
       setMyCommunities(myComms);
 
-      // 2. Discover Communities (Not a member)
       const discoverComms = allCommunities.filter((community: any) => {
         const isMember = community.members.some((member: any) => member._id === user?._id);
         const isCreator = community.creator._id === user?._id;
         return !isMember && !isCreator;
-      }).slice(0, 4); // Limit to 4 for display
+      }).slice(0, 4);
 
       setCommunities(discoverComms);
 
@@ -421,6 +422,7 @@ export default function ExploreScreen() {
               {isLoading ? (
                 <ActivityIndicator size="large" color={primaryColor} />
               ) : (
+                trendingPosts.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendList}>
                   {trendingPosts.map((post) => (
                     <TouchableOpacity key={post._id} style={styles.trendCard} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${post._id}`); }}>
@@ -440,6 +442,11 @@ export default function ExploreScreen() {
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+                ) : (
+                  <View style={styles.emptyContainer}>
+                    <ThemedText style={{ color: lightTextColor }}>No trending posts right now.</ThemedText>
+                  </View>
+                )
               )}
             </View>
 

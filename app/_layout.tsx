@@ -119,40 +119,13 @@ function RootLayoutNav() {
   // Shared handler so the same navigation logic runs whether the app was
   // foregrounded (notification response listener) or launched cold from a
   // killed state (useLastNotificationResponse).
-  const handleNotificationNavigation = (data: NotificationData | undefined, actionIdentifier?: string) => {
+  const handleNotificationNavigation = (data: NotificationData | undefined) => {
     if (!data) return;
 
     const notificationType = data.type;
 
           switch (notificationType) {
             case 'incoming-call':
-              if (actionIdentifier === 'accept-call') {
-                const caller = data.caller || {};
-                const offer = data.offer
-                  ? (typeof data.offer === 'string' ? data.offer : JSON.stringify(data.offer))
-                  : undefined;
-                router.push({
-                  pathname: '/chat/voice-call',
-                  params: {
-                    chatId: data.chatId || '',
-                    name: caller.username || 'User',
-                    image: caller.profilePhoto,
-                    offer,
-                  }
-                });
-                break;
-              }
-
-              if (actionIdentifier === 'decline-call') {
-                const socket = getSocket();
-                if (socket?.connected) {
-                  socket.emit('voice-call-end', { chatId: data.chatId });
-                }
-                CallService.onEndCall({ callUUID: data.callId });
-                Notifications.dismissAllNotificationsAsync?.().catch(() => {});
-                break;
-              }
-
               const isCallActive = CallService.isCallActive(data.callId);
               if (isCallActive) {
                 const caller = data.caller || {};
@@ -255,8 +228,7 @@ function RootLayoutNav() {
     if (!isSignedIn) return;
     coldStartHandledRef.current = true;
     const data = lastNotificationResponse?.notification?.request?.content?.data as NotificationData | undefined;
-    const actionIdentifier = lastNotificationResponse?.actionIdentifier;
-    handleNotificationNavigation(data, actionIdentifier);
+    handleNotificationNavigation(data);
   }, [lastNotificationResponse, isSignedIn]);
 
   useEffect(() => {
@@ -275,8 +247,7 @@ function RootLayoutNav() {
 
         notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
           const data = response?.notification?.request?.content?.data as NotificationData | undefined;
-          const actionIdentifier = response?.actionIdentifier;
-          handleNotificationNavigation(data, actionIdentifier);
+          handleNotificationNavigation(data);
           Notifications.setNotificationBadgeAsync?.(0).catch(() => {});
         });
       }

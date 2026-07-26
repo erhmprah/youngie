@@ -19,6 +19,8 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
     const [username, setUsername] = useState(initialData?.username || '');
     const [bio, setBio] = useState(initialData?.bio || '');
     const [location, setLocation] = useState(initialData?.location || '');
+    const [school, setSchool] = useState(initialData?.school || '');
+    const [educationLevel, setEducationLevel] = useState(initialData?.educationLevel || '');
     const [interests, setInterests] = useState<string[]>(initialData?.interests || []);
     const [interestInput, setInterestInput] = useState('');
     const [isPrivate, setIsPrivate] = useState(initialData?.isPrivate || false);
@@ -34,6 +36,8 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
             setUsername(initialData?.username || '');
             setBio(initialData?.bio || '');
             setLocation(initialData?.location || '');
+            setSchool(initialData?.school || '');
+            setEducationLevel(initialData?.educationLevel || '');
             setInterests(initialData?.interests || []);
             setIsPrivate(initialData?.isPrivate || false);
         }
@@ -72,6 +76,8 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                 username,
                 bio,
                 location,
+                school,
+                educationLevel,
                 interests,
                 isPrivate,
             });
@@ -192,6 +198,26 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                         )}
                     </View>
                     <View style={styles.inputContainer}>
+                        <ThemedText style={styles.label}>School / University</ThemedText>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor, color: textColor }]}
+                            value={school}
+                            onChangeText={setSchool}
+                            placeholder="Your school or university"
+                            placeholderTextColor={lightTextColor}
+                        />
+                    </View>
+                    <View style={styles.inputContainer}>
+                        <ThemedText style={styles.label}>Education Level</ThemedText>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: inputBackgroundColor, borderColor: inputBorderColor, color: textColor }]}
+                            value={educationLevel}
+                            onChangeText={setEducationLevel}
+                            placeholder="e.g. High School, Bachelor's, Master's"
+                            placeholderTextColor={lightTextColor}
+                        />
+                    </View>
+                    <View style={styles.inputContainer}>
                         <ThemedText style={styles.label}>Interests</ThemedText>
                         <View style={[styles.chipsContainer, { borderColor: inputBorderColor }]}>
                             {interests.map((item) => (
@@ -249,7 +275,7 @@ export function EditProfileModal({ visible, onClose, onSave, initialData }: Edit
                             />
                         </View>
                         <ThemedText style={{ fontSize: typography.sizes.caption, color: lightTextColor }}>
-                            When your profile is private, only people you approve can see your posts and stories. Existing followers won't be affected.
+                            When your profile is private, only people you approve can see your posts and stories. Existing followers won&apos;t be affected.
                         </ThemedText>
                     </View>
                 </ScrollView>

@@ -251,7 +251,7 @@ export default function SwipeScreen() {
                 setLoadingMore(true);
             }
             const activeFilters = filterParams || filters;
-            const response = await userAPI.getNearbyUsers({ ...activeFilters, page, limit: 20 });
+            const response = await userAPI.getRecommendedUsers({ ...activeFilters, page, limit: 20 });
 
             if (!response.data) {
                 showNetworkErrorAlert(() => fetchNearbyUsers(undefined, page, false));

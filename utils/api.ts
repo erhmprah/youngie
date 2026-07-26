@@ -530,6 +530,7 @@ export const userAPI = {
   },
   searchUsers: (query: string, page?: number, limit?: number) => api.get('/users/search/query', { params: { q: query, page, limit } }),
   getNearbyUsers: (filters?: any) => api.get('/users/nearby/all', { params: filters }),
+  getRecommendedUsers: (filters?: any) => api.get('/users/nearby/recommended', { params: filters }),
   sendFriendRequest: (userId: string, targetUserId: string) =>
     api.post(`/users/${userId}/friend-request/${targetUserId}`),
   acceptFriendRequest: (userId: string, senderId: string) =>
@@ -646,6 +647,8 @@ export const postAPI = {
   deleteComment: (postId: string, commentId: string) =>
     api.delete(`/posts/${postId}/comment/${commentId}`),
   getTrendingPosts: (page?: number, limit?: number) => api.get('/posts/trending/hot', { params: { page, limit } }),
+  getCandidateFeed: (page?: number, limit?: number) => api.get('/posts/feed/candidate', { params: { page, limit } }),
+  getSuggestedRandomPosts: (page?: number, limit?: number) => api.get('/posts/suggested/random', { params: { page, limit } }),
   favoritePost: (postId: string) => api.post(`/posts/${postId}/favorite`, {}),
   unfavoritePost: (postId: string) => api.delete(`/posts/${postId}/favorite`),
   getFavoritePosts: (page?: number, limit?: number) => api.get('/posts/favorites', { params: { page, limit } }),

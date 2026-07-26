@@ -156,7 +156,6 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 export const useAlert = () => {
   const context = useContext(AlertContext);
   if (!context) {
-    // Return a no-op implementation if context is not available
     return {
       alert: defaultAlert,
       showAlert: () => {},
@@ -171,3 +170,5 @@ export const useAlert = () => {
   }
   return context;
 };
+
+export const useCustomAlert = () => useAlert();

@@ -23,6 +23,8 @@ interface UserProfile {
   coverPhoto?: string;
   avatar?: string;
   location?: string;
+  school?: string;
+  educationLevel?: string;
   interests?: string[];
   friends?: any[];
   posts?: any[];
@@ -464,6 +466,13 @@ export default function UserProfileScreen() {
                     <View style={styles.locationRow}>
                       <IconSymbol name="location" size={16} color={lightTextColor} />
                       <ThemedText style={{ color: lightTextColor }}>{profile.location}</ThemedText>
+                    </View>
+                  )}
+                  {(profile.school || profile.educationLevel) && (
+                    <View style={styles.locationRow}>
+                      <ThemedText style={{ color: lightTextColor }}>
+                        {[profile.educationLevel, profile.school].filter(Boolean).join(' at ')}
+                      </ThemedText>
                     </View>
                   )}
                 </View>

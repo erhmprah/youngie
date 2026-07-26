@@ -13,9 +13,11 @@ interface User {
    birthYear?: number;
    gender?: string;
    suspended?: boolean;
-   bio?: string;
-   location?: string;
-   interests?: string[];
+    bio?: string;
+    location?: string;
+    school?: string;
+    educationLevel?: string;
+    interests?: string[];
    avatar?: string;
    profilePhoto?: string;
    coverPhoto?: string;

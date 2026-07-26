@@ -135,13 +135,51 @@ export default function FeedScreen() {
             setLoadingMore(true);
         }
         try {
-            const [postsResponse, storiesResponse, communityFeedResponse] = await Promise.all([
-                cachedPostAPI.getPosts(isIncognito, page, 20, forceRefresh),
+            const [feedResponse, storiesResponse] = await Promise.all([
+                page > 1
+                    ? cachedPostAPI.getCandidateFeed(page)
+                    : cachedPostAPI.getCandidateFeed(1, forceRefresh),
                 page === 1 ? cachedStoryAPI.getStories(user?._id, forceRefresh) : Promise.resolve({ data: [] }),
-                page === 1 ? communityAPI.getJoinedFeed(1, 20) : Promise.resolve({ data: { data: [] } }),
             ]);
-            const postsData = postsResponse.data.posts || postsResponse.data;
-            const newPosts = (Array.isArray(postsData) ? postsData : []).filter((p: any) => p && p._id);
+
+            const candidateItems = (feedResponse.data || []).filter((p: any) => p && p._id);
+
+            const newPosts: Post[] = [];
+            const newCommunityPosts: CommunityFeedPost[] = [];
+
+            for (const item of candidateItems) {
+                if (item._candidateSource === 'community' || item._isCommunityFeed) {
+                    const communityPost: CommunityFeedPost = {
+                        _id: item._id,
+                        community: item.community || { _id: '', name: '', image: undefined, isAnonymous: false },
+                        author: {
+                            _id: item.author?._id || '',
+                            username: item.author?.username || 'Unknown',
+                            avatar: item.author?.avatar || item.author?.profilePhoto,
+                            profilePhoto: item.author?.profilePhoto || item.author?.avatar,
+                        },
+                        content: item.content,
+                        images: item.images,
+                        likes: item.likes || [],
+                        comments: item.comments || [],
+                        isFavorited: item.isFavorited,
+                        createdAt: item.createdAt,
+                    };
+                    newCommunityPosts.push(communityPost);
+                } else {
+                    const post: Post = {
+                        ...item,
+                        author: {
+                            _id: item.author?._id || '',
+                            username: item.author?.username || 'Unknown',
+                            avatar: item.author?.avatar || item.author?.profilePhoto,
+                            profilePhoto: item.author?.profilePhoto || item.author?.avatar,
+                        },
+                    };
+                    newPosts.push(post);
+                }
+            }
+
             if (page === 1) {
                 setPosts(newPosts);
                 // Calculate allViewed for each story group
@@ -156,12 +194,7 @@ export default function FeedScreen() {
                     }));
                 setStories(storiesWithAllViewed);
 
-                // Recent feed posts from communities the user has joined
-                const communityFeedData: CommunityFeedPost[] =
-                    communityFeedResponse.data?.data || communityFeedResponse.data || [];
-                const filteredCommunityPosts = (Array.isArray(communityFeedData) ? communityFeedData : []).filter(
-                    (p: any) => p && p._id && p.community
-                );
+                const filteredCommunityPosts = newCommunityPosts;
                 if (isIncognito) {
                     const masked = filteredCommunityPosts
                         .filter((p: any) => p.community && p.community.isAnonymous)
@@ -182,14 +215,20 @@ export default function FeedScreen() {
                     setCommunityPosts(filteredCommunityPosts);
                 }
 
-                if (newPosts.length === 0 && filteredCommunityPosts.length === 0) {
+                if (newPosts.length === 0 && newCommunityPosts.length === 0) {
                     setLoadingRecommended(true);
                     try {
                         const trendingResponse = await postAPI.getTrendingPosts();
                         const trendingPosts = trendingResponse.data.data || [];
                         setRecommendedPosts(trendingPosts);
                     } catch (err) {
-                        setRecommendedPosts([]);
+                        try {
+                            const suggestedResponse = await cachedPostAPI.getSuggestedRandomPosts();
+                            const suggestedPosts = suggestedResponse.data || [];
+                            setRecommendedPosts(suggestedPosts);
+                        } catch (suggestedErr) {
+                            setRecommendedPosts([]);
+                        }
                     } finally {
                         setLoadingRecommended(false);
                     }
@@ -198,8 +237,9 @@ export default function FeedScreen() {
                 }
             } else {
                 setPosts(prev => [...prev, ...newPosts]);
+                setCommunityPosts(prev => [...prev, ...newCommunityPosts]);
             }
-            setHasMorePosts(postsResponse.data.hasMore || (Array.isArray(postsData) && postsData.length === 20));
+            setHasMorePosts(newPosts.length + newCommunityPosts.length === 20);
             setPostsPage(page);
         } catch (err: any) {
             if (err.response?.status === 401) {
@@ -333,10 +373,10 @@ export default function FeedScreen() {
     }, [user?._id]);
 
     useEffect(() => {
-        if (posts.length > 0 || communityPosts.length > 0) {
+        if (posts.length > 0) {
             setRecommendedPosts([]);
         }
-    }, [posts.length, communityPosts.length]);
+    }, [posts.length]);
 
     useEffect(() => {
         if (postId && posts.length > 0 && flatListRef.current) {
@@ -713,18 +753,21 @@ export default function FeedScreen() {
     // Merge personal posts and community feed posts into a single chronological feed.
     // Community posts only come from page 1, so when loading more we keep them at the top.
     const feedItems = useMemo(() => {
-        const hasRegularContent = posts.length > 0 || communityPosts.length > 0;
+        const hasPersonalPosts = posts.length > 0;
         const merged: any[] = [];
         
-        if (hasRegularContent) {
-            communityPosts.forEach((p) => merged.push({ kind: 'community', data: p }));
-            posts.forEach((p) => merged.push({ kind: 'post', data: p }));
+        communityPosts.forEach((p) => merged.push({ kind: 'community', data: p }));
+        posts.forEach((p) => merged.push({ kind: 'post', data: p }));
+        
+        if (merged.length > 0) {
             merged.sort((a, b) => {
                 const ta = new Date(a.kind === 'post' ? a.data.createdAt : a.data.createdAt).getTime();
                 const tb = new Date(b.kind === 'post' ? b.data.createdAt : b.data.createdAt).getTime();
                 return tb - ta;
             });
-        } else if (recommendedPosts.length > 0) {
+        }
+        
+        if (!hasPersonalPosts && recommendedPosts.length > 0) {
             merged.push({ kind: 'recommended-header' });
             recommendedPosts.forEach((p) => merged.push({ kind: 'post', data: p, isRecommended: true }));
         }

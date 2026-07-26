@@ -8,15 +8,19 @@ let Device: any = null;
 try {
   Device = require('expo-device');
 } catch (e) {
-  console.warn('expo-device not available, using fallback');
+  console.log('expo-device not available, using fallback');
 }
 
 // Background notification task for handling pushes when app is backgrounded/terminated
+// Note: expo-task-manager is a native module and only works on iOS/Android with a
+// proper dev client build. It is not available in Expo Go or on web.
 let TaskManager: any = null;
-try {
-  TaskManager = require('expo-task-manager');
-} catch (e) {
-  console.warn('expo-task-manager not available, background push processing disabled');
+if (Platform.OS !== 'web') {
+  try {
+    TaskManager = require('expo-task-manager');
+  } catch (e) {
+    console.warn('expo-task-manager not available, background push processing disabled');
+  }
 }
 
 const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';

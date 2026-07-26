@@ -48,29 +48,6 @@ class CallService {
         });
       }
 
-      // Set up notification category for call actions
-      if (Notifications.setNotificationCategoryAsync) {
-        await Notifications.setNotificationCategoryAsync('incoming-call-category', {
-          actions: [
-            {
-              identifier: 'accept-call',
-              buttonTitle: 'Accept',
-              options: {
-                opensAppToForeground: true,
-              },
-            },
-            {
-              identifier: 'decline-call',
-              buttonTitle: 'Decline',
-              options: {
-                opensAppToForeground: true,
-                destructive: true,
-              },
-            },
-          ],
-        });
-      }
-
       console.log('[CallService] Notification-based call service setup completed');
     } catch (error) {
       console.error('CallService setup error:', error);
@@ -100,7 +77,6 @@ class CallService {
               offer: this.currentOffer,
               type: 'incoming-call'
             },
-            categoryIdentifier: 'incoming-call-category',
             sound: 'ringtone.mp3',
             priority: Notifications.AndroidNotificationPriority.MAX,
             sticky: true,

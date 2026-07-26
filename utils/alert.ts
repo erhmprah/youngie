@@ -1,7 +1,6 @@
 // utils/alert.ts
 
 import { Alert, AlertButton as RNAlertButton } from 'react-native';
-import { useAlert } from '@/contexts/AlertContext';
 import { AlertType, AlertButton } from '@/components/ui/CustomAlertModal';
 
 // Capture the original native Alert so the custom system can fall back to it
@@ -189,10 +188,3 @@ Alert.alert = ((
   });
 }) as typeof Alert.alert;
 
-/**
- * Hook to access the custom alert context
- * Use this in components to get access to the alert methods
- */
-export const useCustomAlert = () => {
-  return useAlert();
-};

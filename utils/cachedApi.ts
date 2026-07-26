@@ -62,6 +62,22 @@ export const cachedUserAPI = {
   },
   
   /**
+   * Get recommended users with smart ranking
+   */
+  getRecommendedUsers: async (filters?: any) => {
+    const cacheKey = `${CACHE_TTL.SHORT}_recommended_${JSON.stringify(filters || {})}`;
+    const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
+    
+    if (cachedData && !isExpired) {
+      return { data: cachedData, fromCache: true };
+    }
+    
+    const response = await userAPI.getRecommendedUsers(filters);
+    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
+    return { data: response.data, fromCache: false };
+  },
+  
+  /**
    * Search users with caching
    */
   searchUsers: async (query: string) => {
@@ -139,6 +155,43 @@ export const cachedPostAPI = {
     const trendingData = response.data.data || [];
     await cacheService.set(cacheKey, trendingData, CACHE_TTL.FEED);
     return { data: trendingData, fromCache: false };
+  },
+  
+  /**
+    * Get candidate ranked feed with caching
+    */
+  getCandidateFeed: async (page: number = 1, forceRefresh: boolean = false) => {
+    const cacheKey = page === 1 ? 'candidate_feed' : null;
+    if (cacheKey && !forceRefresh) {
+      const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
+      if (cachedData && !isExpired) {
+        return { data: cachedData, fromCache: true };
+      }
+    }
+    
+    const response = await postAPI.getCandidateFeed(page);
+    const candidateData = response.data.data || [];
+    if (cacheKey) {
+      await cacheService.set(cacheKey, candidateData, CACHE_TTL.FEED);
+    }
+    return { data: candidateData, fromCache: false };
+  },
+  
+  /**
+    * Get suggested random public posts with caching
+    */
+  getSuggestedRandomPosts: async () => {
+    const cacheKey = 'suggested_random_posts';
+    const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
+    
+    if (cachedData && !isExpired) {
+      return { data: cachedData, fromCache: true };
+    }
+    
+    const response = await postAPI.getSuggestedRandomPosts();
+    const suggestedData = response.data.data || [];
+    await cacheService.set(cacheKey, suggestedData, CACHE_TTL.FEED);
+    return { data: suggestedData, fromCache: false };
   },
   
   /**

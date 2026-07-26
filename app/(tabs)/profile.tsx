@@ -507,6 +507,13 @@ export default function ProfileScreen() {
                                 <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>{new Date().getFullYear() - user.birthYear} years old</ThemedText>
                             </View>
                         )}
+                        {(user?.school || user?.educationLevel) && (
+                            <View style={styles.detailRow}>
+                                <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.body2 }}>
+                                    {[user?.educationLevel, user?.school].filter(Boolean).join(' at ')}
+                                </ThemedText>
+                            </View>
+                        )}
                         {user?.interests && user.interests.length > 0 && (
                             <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
                                 <IconSymbol name="star.fill" size={16} color={lightTextColor} style={{ marginTop: spacing.xxs }} />
