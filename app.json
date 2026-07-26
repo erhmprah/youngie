@@ -20,14 +20,20 @@
         "NSCameraUsageDescription": "This app needs access to camera for video chat functionality.",
         "NSMicrophoneUsageDescription": "This app needs access to microphone for video chat functionality.",
         "NSLocalNetworkUsageDescription": "This app needs access to local network for peer-to-peer video chat.",
-        "UIBackgroundModes": ["remote-notification"],
+        "NSCalendarsUsageDescription": "This app needs access to your calendar to create community events.",
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to show nearby content.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select and share media.",
+        "NSPhotoLibraryAddUsageDescription": "This app needs access to save photos to your library.",
+        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to audio devices during calls.",
+        "UIBackgroundModes": ["remote-notification", "voip"],
         "CFBundleURLTypes": [
           {
             "CFBundleTypeRole": "Editor",
             "CFBundleURLName": "com.erhmprah.youngie",
             "CFBundleURLSchemes": [
               "youngie",
-              "exp+youngie"
+              "exp+youngie",
+              "com.googleusercontent.apps.274460413616-cqu0cvkqhajj72hleui5l2raovj59ssd"
             ]
           }
         ]
