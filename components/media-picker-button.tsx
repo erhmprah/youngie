@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { TouchableOpacity, View, Modal, StyleSheet, Alert, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
@@ -86,7 +85,7 @@ export function MediaPickerButton({
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             quality: 1,
         });
@@ -109,7 +108,7 @@ export function MediaPickerButton({
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            mediaTypes: ['videos'],
             allowsEditing: true,
             quality: 1,
             videoMaxDuration: 300, // 5 minutes max

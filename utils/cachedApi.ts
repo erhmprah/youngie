@@ -160,8 +160,8 @@ export const cachedPostAPI = {
   /**
     * Get candidate ranked feed with caching
     */
-  getCandidateFeed: async (page: number = 1, forceRefresh: boolean = false) => {
-    const cacheKey = page === 1 ? 'candidate_feed' : null;
+  getCandidateFeed: async (page: number = 1, forceRefresh: boolean = false, isAnonymous?: boolean) => {
+    const cacheKey = page === 1 ? `candidate_feed_${isAnonymous ? 'anonymous' : 'public'}` : null;
     if (cacheKey && !forceRefresh) {
       const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
       if (cachedData && !isExpired) {
@@ -169,7 +169,7 @@ export const cachedPostAPI = {
       }
     }
     
-    const response = await postAPI.getCandidateFeed(page);
+    const response = await postAPI.getCandidateFeed(page, 20, isAnonymous);
     const candidateData = response.data.data || [];
     if (cacheKey) {
       await cacheService.set(cacheKey, candidateData, CACHE_TTL.FEED);

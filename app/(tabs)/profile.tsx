@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { EditProfileModal } from '@/components/edit-profile-modal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { userAPI, postAPI, chatAPI, getImageUrl } from '@/utils/api';
@@ -22,6 +22,7 @@ import { SkeletonProfile, SkeletonGrid } from '@/components/ui/skeleton';
 import { spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
 import * as Haptics from 'expo-haptics';
+import { VideoView, useVideoPlayer } from 'expo-video';
 
 const { width } = Dimensions.get('window');
 
@@ -174,7 +175,7 @@ export default function ProfileScreen() {
         }
         
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.7,
@@ -212,7 +213,7 @@ export default function ProfileScreen() {
         }
         
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [2, 1],
             quality: 0.7,
@@ -251,7 +252,7 @@ export default function ProfileScreen() {
         }
         
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             quality: 0.8,
         });
@@ -677,9 +678,19 @@ export default function ProfileScreen() {
         }
 
         if (activeTab === 'posts') {
+            const thumbnailUri = item.images?.[0] || item.image;
             return (
                 <TouchableOpacity style={[styles.postItem, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${item._id}`); }}>
-                    <Image source={{ uri: getImageUrl(item.images?.[0] || item.image) }} style={styles.postThumbnail} />
+                    {thumbnailUri ? (
+                        <Image source={{ uri: getImageUrl(thumbnailUri) }} style={styles.postThumbnail} />
+                    ) : item.video ? (
+                        <PostVideoThumbnail uri={getImageUrl(item.video)!} style={styles.postThumbnail} />
+                    ) : null}
+                    {thumbnailUri && item.video && (
+                        <View style={styles.videoBadge}>
+                            <IconSymbol name="play.fill" size={12} color={white} />
+                        </View>
+                    )}
                     <View style={styles.postOverlay}>
                         <View style={styles.postStats}>
                             <View style={styles.stat}>
@@ -690,6 +701,11 @@ export default function ProfileScreen() {
                                 <IconSymbol name="message.fill" size={16} color={white} />
                                 <ThemedText style={[styles.statText, { color: white }]}>{item.comments?.length || 0}</ThemedText>
                             </View>
+                            {!thumbnailUri && item.video && (
+                                <View style={styles.stat}>
+                                    <IconSymbol name="play.fill" size={16} color={white} />
+                                </View>
+                            )}
                         </View>
                     </View>
                 </TouchableOpacity>
@@ -826,6 +842,22 @@ export default function ProfileScreen() {
     );
 }
 
+function PostVideoThumbnail({ uri, style }: { uri: string; style: any }) {
+    const player = useVideoPlayer({ uri }, (p) => {
+        p.loop = true;
+        p.muted = true;
+        p.play();
+    });
+    return (
+        <VideoView
+            player={player}
+            style={style}
+            nativeControls={false}
+            contentFit="cover"
+        />
+    );
+}
+
 const styles = StyleSheet.create({
     container: { flex: 1 },
     coverPhotoContainer: { width: '100%', height: verticalScale(180), position: 'relative' },
@@ -870,6 +902,7 @@ const styles = StyleSheet.create({
     postThumbnail: { width: '100%', height: '100%' },
     postOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', padding: spacing.sm },
     postStats: { flexDirection: 'row', justifyContent: 'space-between' },
+    videoBadge: { position: 'absolute', top: spacing.xs, right: spacing.xs, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
     stat: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     statText: { fontSize: typography.sizes.caption, fontFamily: typography.families.bold },
     friendsList: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },

@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider, useNavigationState } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider, useNavigationState } from "expo-router/react-navigation";
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,8 +12,10 @@ import { FirebaseErrorBoundary } from '@/components/FirebaseErrorBoundary';
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
 import AlertContainer from '@/components/ui/AlertContainer';
 import { AlertProvider } from '@/contexts/AlertContext';
+import { IncognitoProvider } from '@/contexts/IncognitoContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { CacheProvider } from '@/contexts/CacheContext';
+import { NetworkProvider, useNetwork } from '@/contexts/NetworkContext';
 import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
@@ -23,6 +25,7 @@ import { disconnectSocket, getSocket, initSocket, offVoiceCallEnd, offVoiceCallO
 import { supabase } from '@/utils/supabase';
 import { checkAppVersion, useUpdateAlert, setUpdateAlertStateDirect } from '@/utils/app-version';
 import { UpdateAvailableAlert } from '@/components/ui/UpdateAvailableAlert';
+import ConnectionBanner from '@/components/ConnectionBanner';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type TimeoutHandle = ReturnType<typeof setTimeout>;
@@ -377,7 +380,7 @@ function RootLayoutNav() {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
-      sound: 'default',
+      sound: null,
       showBadge: true,
     }).catch((e: any) => console.warn('Failed to create default channel:', e));
     Notifications.setNotificationChannelAsync('incoming-calls', {
@@ -457,6 +460,7 @@ function RootLayoutNav() {
         <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <ConnectionBanner />
       <UpdateAvailableAlert
         visible={updateAlert.visible}
         forceUpdate={updateAlert.forceUpdate}
@@ -489,18 +493,22 @@ export default function RootLayout() {
   return (
     <GlobalErrorBoundary>
       <FirebaseErrorBoundary>
-        <AuthProvider>
-          <CacheProvider>
-            <AppThemeProvider>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <AlertProvider>
-                  <RootLayoutNav />
-                  <AlertContainer />
-                </AlertProvider>
-              </GestureHandlerRootView>
-            </AppThemeProvider>
-          </CacheProvider>
-        </AuthProvider>
+        <NetworkProvider>
+          <AuthProvider>
+            <IncognitoProvider>
+              <CacheProvider>
+                <AppThemeProvider>
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <AlertProvider>
+                      <RootLayoutNav />
+                      <AlertContainer />
+                    </AlertProvider>
+                  </GestureHandlerRootView>
+                </AppThemeProvider>
+              </CacheProvider>
+            </IncognitoProvider>
+          </AuthProvider>
+        </NetworkProvider>
       </FirebaseErrorBoundary>
     </GlobalErrorBoundary>
   );

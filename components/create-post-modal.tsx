@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, FlatList, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
@@ -35,6 +35,19 @@ const categories = [
   { id: '5', title: 'Tech', icon: 'code', color: '#3498DB' },
 ];
 
+function VideoPreviewItem({ videoUri, videoPlayerRef }: { videoUri: string; videoPlayerRef: React.MutableRefObject<any> }) {
+    const player = useVideoPlayer({ uri: videoUri });
+    return (
+        <VideoView
+            ref={videoPlayerRef}
+            player={player}
+            style={styles.previewImage}
+            nativeControls
+            contentFit="cover"
+        />
+    );
+}
+
 export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = false }: CreatePostModalProps) {
     const { user } = useAuth();
     const [content, setContent] = useState('');
@@ -56,7 +69,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
     const [showPoll, setShowPoll] = useState(false);
     const [pollOptions, setPollOptions] = useState(['', '']);
     const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
-    const videoPlayer = useRef<Video>(null);
+    const videoPlayer = useRef<any>(null);
 
     const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
@@ -144,7 +157,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: false,
             quality: 1,
             allowsMultipleSelection: true,
@@ -174,7 +187,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                 'Adding a video will remove any selected images. Continue?',
                 async () => {
                     const result = await ImagePicker.launchImageLibraryAsync({
-                        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+                        mediaTypes: ['videos'],
                         allowsEditing: true,
                         quality: 1,
                     });
@@ -186,7 +199,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
             return;
         }
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            mediaTypes: ['videos'],
             allowsEditing: true,
             quality: 1,
         });
@@ -418,16 +431,12 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                                 <View key={index} style={styles.mediaItem}>
                                     {medium.type === 'image' ? (
                                         <Image source={{ uri: medium.uri }} style={styles.previewImage} />
-                                    ) : (
-                                        <Video
-                                            ref={videoPlayer}
-                                            source={{ uri: medium.uri }}
-                                            style={styles.previewImage}
-                                            useNativeControls
-                                            resizeMode={ResizeMode.COVER}
-                                            isLooping={false}
-                                        />
-                                    )}
+                                     ) : (
+                                         <VideoPreviewItem
+                                             videoUri={medium.uri}
+                                             videoPlayerRef={videoPlayer}
+                                         />
+                                     )}
                                     <TouchableOpacity 
                                         style={styles.removeMediaButton}
                                         onPress={() => {

@@ -15,7 +15,7 @@ import { communityAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
 import { getRelativeTime } from '@/utils/helpers';
 import { getSocket } from '@/utils/socket';
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
@@ -60,6 +60,29 @@ interface FeedCardProps {
     voteAPI?: (postId: string, optionIndex: number) => Promise<any>;
 }
 
+function InlineVideo({ uri, shouldPlay, style }: { uri: string; shouldPlay: boolean; style: any }) {
+    const player = useVideoPlayer({ uri }, (p) => {
+        p.loop = true;
+        p.muted = true;
+    });
+    useEffect(() => {
+        if (shouldPlay) {
+            player.replay();
+            player.play();
+        } else {
+            player.pause();
+        }
+    }, [shouldPlay]);
+    return (
+        <VideoView
+            player={player}
+            style={style}
+            nativeControls={false}
+            contentFit="cover"
+        />
+    );
+}
+
 export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId, voteAPI }: FeedCardProps) => {
     const { user } = useAuth();
     const [post, setPost] = useState(initialPost);
@@ -81,8 +104,6 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const lastTap = useRef<number | null>(null);
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const videoRefsMap = useRef<Map<number, Video>>(new Map());
-    const singleVideoRef = useRef<Video>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [previewMedia, setPreviewMedia] = useState<{ attachments: any[]; index: number } | null>(null);
@@ -141,34 +162,6 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             return () => anim.stop();
         }
     }, [post.author.isOnline, pulseAnim]);
-
-    useEffect(() => {
-        if (singleVideoRef.current) {
-            if (shouldPlay) {
-                singleVideoRef.current.playAsync().catch(() => {});
-            } else {
-                singleVideoRef.current.pauseAsync().catch(() => {});
-            }
-        }
-        videoRefsMap.current.forEach((video, index) => {
-            if (shouldPlay && index === activeImageIndex) {
-                video.playAsync().catch(() => {});
-            } else {
-                video.pauseAsync().catch(() => {});
-            }
-        });
-    }, [shouldPlay, activeImageIndex]);
-
-    useEffect(() => {
-        return () => {
-            if (singleVideoRef.current) {
-                singleVideoRef.current.pauseAsync().catch(() => {});
-            }
-            videoRefsMap.current.forEach((video) => {
-                video.pauseAsync().catch(() => {});
-            });
-        };
-    }, []);
 
     const normalizeMediaUrl = (rawUrl: string): string => {
         if (!rawUrl) return rawUrl;
@@ -448,7 +441,10 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                         </View>
                         <View style={styles.authorDetails}>
                             <View style={{ flexDirection: 'column' }}>
-                                <ThemedText type="default" style={styles.username}>{post.author.username}</ThemedText>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xxs }}>
+                                    <ThemedText type="default" style={styles.username}>{post.author.username}</ThemedText>
+                                    {isAnonPost && <Ionicons name="glasses" size={14} color={lightTextColor} style={styles.anonymousIndicator} />}
+                                </View>
                                 {post.tags && post.tags.length > 0 && (
                                     <ThemedText style={{ fontSize: typography.sizes.body2, color: lightTextColor }}>
                                         with {post.tags.map(tag => tag.username || '').join(', ')}
@@ -506,19 +502,10 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                                     </TouchableOpacity>
                                 ) : (
                                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
-                                        <Video
-                                            ref={(ref) => {
-                                                if (ref) {
-                                                    videoRefsMap.current.set(index, ref);
-                                                } else {
-                                                    videoRefsMap.current.delete(index);
-                                                }
-                                            }}
-                                            source={{ uri: getImageUrl(item.url) || '' }}
+                                        <InlineVideo
+                                            uri={getImageUrl(item.url) || ''}
+                                            shouldPlay={shouldPlay && activeImageIndex === index}
                                             style={styles.mediaFrame}
-                                            resizeMode={ResizeMode.COVER}
-                                            shouldPlay={false}
-                                            isLooping={true}
                                         />
                                     </TouchableOpacity>
                                 )}
@@ -582,15 +569,12 @@ source={{ uri: getImageUrl(item) }}
                             progressiveRenderingEnabled={true}
                         />
                     </TouchableOpacity>
-                ) : post.video ? (
+                )                 : post.video ? (
                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')} style={{ width: contentWidth, height: contentWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
-                        <Video
-                            ref={singleVideoRef}
-                            source={{ uri: getImageUrl(post.video) || '' }}
+                        <InlineVideo
+                            uri={getImageUrl(post.video) || ''}
+                            shouldPlay={shouldPlay}
                             style={styles.mediaFrame}
-                            resizeMode={ResizeMode.COVER}
-                            shouldPlay={false}
-                            isLooping={true}
                         />
                     </TouchableOpacity>
                 ) : null}
@@ -736,6 +720,9 @@ const styles = StyleSheet.create({
     },
     username: {
         fontFamily: typography.families.bold,
+    },
+    anonymousIndicator: {
+        marginTop: 2,
     },
     timestamp: {
         fontSize: typography.sizes.tiny,

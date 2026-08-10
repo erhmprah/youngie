@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { communityAPI, getImageUrl } from '@/utils/api';
-import { ResizeMode, Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Calendar from 'expo-calendar';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
@@ -61,6 +61,7 @@ export default function CommunityScreen() {
   const [feedContent, setFeedContent] = useState('');
   const [feedImages, setFeedImages] = useState<string[]>([]);
   const [feedVideo, setFeedVideo] = useState<string | null>(null);
+  const feedVideoPlayer = useVideoPlayer(feedVideo ? { uri: feedVideo } : undefined);
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [feedPosting, setFeedPosting] = useState(false);
@@ -157,7 +158,7 @@ export default function CommunityScreen() {
 
   const handlePickFeedImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.8,
       allowsMultipleSelection: true,
@@ -172,7 +173,7 @@ export default function CommunityScreen() {
 
   const handlePickFeedVideo = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: ['videos'],
       allowsEditing: true,
       quality: 1,
     });
@@ -604,12 +605,11 @@ export default function CommunityScreen() {
                   )}
                   {feedVideo && (
                     <View style={styles.composerVideoWrapper}>
-                      <Video
-                        source={{ uri: feedVideo.startsWith('http') || feedVideo.startsWith('/uploads') ? feedVideo : feedVideo }}
+                      <VideoView
+                        player={feedVideoPlayer}
                         style={styles.composerVideo}
-                        useNativeControls
-                        resizeMode={ResizeMode.COVER}
-                        isLooping={false}
+                        nativeControls
+                        contentFit="cover"
                       />
                       <TouchableOpacity style={styles.composerRemoveImage} onPress={() => setFeedVideo(null)}>
                         <IconSymbol name="xmark.circle.fill" size={20} color="white" />

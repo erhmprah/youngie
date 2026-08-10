@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, NativeModules, 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from 'react-native-webrtc';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync } from 'expo-audio';
 import { getSocket, joinChat, sendVoiceCallOffer, sendVoiceCallAnswer, sendVoiceCallIceCandidate, sendVoiceCallEnd, sendCallLog, onVoiceCallAnswer, onVoiceCallIceCandidate, onVoiceCallEnd, offVoiceCallAnswer, offVoiceCallIceCandidate, offVoiceCallEnd } from '@/utils/socket';
 import InCallManager from 'react-native-incall-manager';
 import { useAuth } from '@/contexts/AuthContext';
@@ -122,12 +122,11 @@ export default function VoiceCallScreen() {
               return;
             }
 
-            await Audio.setAudioModeAsync({
-              allowsRecordingIOS: true,
-              playsInSilentModeIOS: true,
-              shouldDuckAndroid: true,
-              playThroughEarpieceAndroid: false,
-              staysActiveInBackground: true,
+            await setAudioModeAsync({
+              allowsRecording: true,
+              playsInSilentMode: true,
+              interruptionMode: 'mixWithOthers',
+              shouldPlayInBackground: true,
             });
 
             const pc = new RTCPeerConnection({ iceServers });
@@ -179,7 +178,7 @@ export default function VoiceCallScreen() {
                     if (callStatus === 'Ringing...') {
                         hangUp('missed');
                     }
-                }, 60000);
+                }, 60000) as unknown as number;
             }
         } catch (error) {
             console.error('Failed to start call:', error);
@@ -295,7 +294,7 @@ export default function VoiceCallScreen() {
         sendVoiceCallEnd(chatId as string);
     }
 
-    CallService.onEndCall({ callUUID: CallService.currentCallId });
+    CallService.onEndCall({ callUUID: (CallService as any).currentCallId });
 
     if(router.canGoBack()) {
         router.back();

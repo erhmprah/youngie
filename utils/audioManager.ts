@@ -1,31 +1,24 @@
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import { setAudioModeAsync, requestRecordingPermissionsAsync, createAudioPlayer } from 'expo-audio';
+import type { AudioPlayer, AudioRecorder } from 'expo-audio';
 import { AppState, AppStateStatus } from 'react-native';
 
-/**
- * Audio Manager - Centralized audio resource management
- * Prevents memory leaks from unreleased audio resources
- */
 class AudioManager {
-  private sounds = new Map<string, Audio.Sound>();
-  private recordings = new Map<string, Audio.Recording>();
+  private sounds = new Map<string, AudioPlayer>();
+  private recordings = new Map<string, AudioRecorder>();
   private appStateSubscription: any = null;
   private isInitialized = false;
 
-  /**
-   * Initialize audio settings
-   */
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: true,
+        interruptionMode: 'mixWithOthers',
+        shouldPlayInBackground: true,
       });
-      
+
       this.setupAppStateListener();
       this.isInitialized = true;
     } catch (error) {
@@ -33,9 +26,6 @@ class AudioManager {
     }
   }
 
-  /**
-   * Listen for app state changes to clean up resources
-   */
   private setupAppStateListener(): void {
     this.appStateSubscription = AppState.addEventListener(
       'change',
@@ -43,29 +33,19 @@ class AudioManager {
     );
   }
 
-  /**
-   * Handle app state changes - clean up when backgrounded
-   */
   private handleAppStateChange = (nextAppState: AppStateStatus): void => {
     if (nextAppState === 'background' || nextAppState === 'inactive') {
       this.pauseAllSounds();
     }
   };
 
-  /**
-   * Load a sound and cache it
-   */
-  async loadSound(key: string, uri: string): Promise<Audio.Sound> {
-    // Return cached sound if available
+  async loadSound(key: string, uri: string): Promise<AudioPlayer> {
     if (this.sounds.has(key)) {
       return this.sounds.get(key)!;
     }
 
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: false }
-      );
+      const sound = createAudioPlayer({ uri });
       this.sounds.set(key, sound);
       return sound;
     } catch (error) {
@@ -74,51 +54,42 @@ class AudioManager {
     }
   }
 
-  /**
-   * Play a sound by key or URI
-   */
   async playSound(key: string, uri?: string): Promise<void> {
     let sound = this.sounds.get(key);
-    
+
     if (!sound && uri) {
       sound = await this.loadSound(key, uri);
     }
-    
+
     if (!sound) {
       console.warn(`Sound ${key} not found`);
       return;
     }
 
     try {
-      await sound.setPositionAsync(0);
-      await sound.playAsync();
+      sound.play();
     } catch (error) {
       console.error(`Failed to play sound ${key}:`, error);
     }
   }
 
-  /**
-   * Pause a specific sound
-   */
   async pauseSound(key: string): Promise<void> {
     const sound = this.sounds.get(key);
     if (sound) {
       try {
-        await sound.pauseAsync();
+        sound.pause();
       } catch (error) {
         console.error(`Failed to pause sound ${key}:`, error);
       }
     }
   }
 
-  /**
-   * Unload a specific sound
-   */
   async unloadSound(key: string): Promise<void> {
     const sound = this.sounds.get(key);
     if (sound) {
       try {
-        await sound.unloadAsync();
+        sound.pause();
+        sound.remove();
       } catch (error) {
         console.error(`Failed to unload sound ${key}:`, error);
       }
@@ -126,15 +97,11 @@ class AudioManager {
     }
   }
 
-  /**
-   * Pause all loaded sounds
-   */
   async pauseAllSounds(): Promise<void> {
     for (const sound of this.sounds.values()) {
       try {
-        const status = await sound.getStatusAsync();
-        if (status.isLoaded && status.isPlaying) {
-          await sound.pauseAsync();
+        if (sound.currentStatus.playing) {
+          sound.pause();
         }
       } catch (error) {
         // Ignore errors during mass pause
@@ -142,13 +109,11 @@ class AudioManager {
     }
   }
 
-  /**
-   * Unload all sounds - call when cleaning up
-   */
   async unloadAllSounds(): Promise<void> {
     for (const sound of this.sounds.values()) {
       try {
-        await sound.unloadAsync();
+        sound.pause();
+        sound.remove();
       } catch (error) {
         // Ignore errors during cleanup
       }
@@ -156,14 +121,11 @@ class AudioManager {
     this.sounds.clear();
   }
 
-  /**
-   * Stop and unload a recording
-   */
   async stopRecording(key: string): Promise<void> {
     const recording = this.recordings.get(key);
     if (recording) {
       try {
-        await recording.stopAndUnloadAsync();
+        await recording.stop();
       } catch (error) {
         console.error(`Failed to stop recording ${key}:`, error);
       }
@@ -171,20 +133,14 @@ class AudioManager {
     }
   }
 
-  /**
-   * Unload all resources - call on app cleanup
-   */
   async cleanup(): Promise<void> {
-    // Remove app state listener
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;
     }
 
-    // Unload all sounds
     await this.unloadAllSounds();
 
-    // Stop all recordings
     for (const key of this.recordings.keys()) {
       await this.stopRecording(key);
     }
@@ -193,10 +149,8 @@ class AudioManager {
   }
 }
 
-// Singleton instance
 export const audioManager = new AudioManager();
 
-// React hook for using the audio manager
 export function useAudioManager() {
   return audioManager;
 }

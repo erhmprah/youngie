@@ -7,14 +7,9 @@
     "icon": "./assets/images/youngie_icon.png",
     "scheme": "youngie",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.erhmprah.youngie",
-      "notification": {
-        "icon": "youngie_icon",
-        "color": "#FF231F7C"
-      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "This app needs access to camera for video chat functionality.",
@@ -25,7 +20,10 @@
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select and share media.",
         "NSPhotoLibraryAddUsageDescription": "This app needs access to save photos to your library.",
         "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to audio devices during calls.",
-        "UIBackgroundModes": ["remote-notification", "voip"],
+        "UIBackgroundModes": [
+          "remote-notification",
+          "voip"
+        ],
         "CFBundleURLTypes": [
           {
             "CFBundleTypeRole": "Editor",
@@ -45,7 +43,6 @@
         "foregroundImage": "./assets/images/youngie_icon.png",
         "backgroundColor": "#E6F4FE"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
@@ -106,20 +103,36 @@
         {
           "android": {
             "usesCleartextTraffic": true,
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "buildToolsVersion": "35.0.0"
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
           }
         }
       ],
       [
         "expo-notifications",
         {
-          "googleServicesFile": "./google-services.json"
+          "icon": "./assets/images/youngie_icon.png",
+          "color": "#FF231F7C",
+          "googleServicesFile": "./google-services.json",
+          "sounds": [
+            "./assets/sounds/ringtone.mp3"
+          ]
         }
       ],
       "./withCallKeep",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-font",
+      "expo-image",
+      "expo-asset",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundRecording": true
+        }
+      ],
+      "expo-status-bar",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,4 +1,4 @@
-const { withAndroidManifest, AndroidConfig } = require('@expo/config-plugins');
+const { withAndroidManifest, AndroidConfig } = require('expo/config-plugins');
 
 const withCallKeep = (config) => {
   return withAndroidManifest(config, async (config) => {

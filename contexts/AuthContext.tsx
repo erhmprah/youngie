@@ -1,6 +1,7 @@
 import React, { createContext, useState, useCallback, useEffect } from 'react';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNetwork } from '@/contexts/NetworkContext';
 import api, { BASE_URL, isNetworkErrorResponse } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
@@ -46,8 +47,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    console.log('AuthProvider mounted');
    const [user, setUser] = useState<User | null>(null);
    const [isLoading, setIsLoading] = useState(true);
-   const [isOffline, setIsOffline] = useState(false);
    const [sessionId, setSessionId] = useState<string | null>(null);
+   const { isOffline } = useNetwork();
 
     // Restore token and user data on app start
     useEffect(() => {

@@ -1,8 +1,8 @@
 // components/story-viewer.tsx
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal, StyleSheet, View, Image, TouchableOpacity, Dimensions, Animated, Easing, Alert, TouchableWithoutFeedback } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { Modal, StyleSheet, View, Image, Dimensions, Animated, Easing, Alert, Pressable } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
@@ -65,9 +65,10 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const [currentPollOptions, setCurrentPollOptions] = useState<PollOption[]>([]);
     const progressAnim = useRef(new Animated.Value(0)).current;
     const currentValueRef = useRef(0);
-
     const group = storyGroups[currentGroupIndex];
     const story = group?.stories[currentStoryIndex];
+    const storyVideoUri = story?.video ? getImageUrl(story.video) : undefined;
+    const storyPlayer = useVideoPlayer(storyVideoUri ? { uri: storyVideoUri } : undefined);
     const storyGroupsLengthRef = useRef(storyGroups.length);
 
     // Reset to initial index when storyGroups changes (e.g., after deletion)
@@ -262,16 +263,17 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const storyContent = (
         <ThemedView style={styles.container}>
             {/* Story Media */}
-            {story.image && <Image source={{ uri: getImageUrl(story.image) }} style={styles.media} />}
-            {story.video && getImageUrl(story.video) && (
-                <Video
-                    source={{ uri: getImageUrl(story.video)! }}
+            {story.video && getImageUrl(story.video) ? (
+                <VideoView
+                    key={storyVideoUri}
+                    player={storyPlayer}
                     style={styles.media}
-                    shouldPlay
-                    isLooping
-                    resizeMode={ResizeMode.COVER}
+                    nativeControls
+                    contentFit="cover"
                 />
-            )}
+            ) : story.image && getImageUrl(story.image) ? (
+                <Image source={{ uri: getImageUrl(story.image) }} style={styles.media} />
+            ) : null}
             {story.content && (
                 <View style={styles.contentOverlay}>
                     <ThemedText style={styles.storyContentText}>{story.content}</ThemedText>
@@ -295,7 +297,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
             {/* User Info */}
             <View style={[styles.userInfoContainer, { top: insets.top + spacing.xl }]}>
-                <TouchableOpacity
+                <Pressable
                     style={{ flexDirection: 'row', alignItems: 'center' }}
                     onPress={() => {
                         if (group.user?._id !== user?._id) {
@@ -306,27 +308,27 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                 >
                     <Image source={{ uri: getImageUrl(group.user?.profilePhoto) }} style={styles.avatar} />
                     <ThemedText style={styles.username}>{group.user?.username || 'User'}</ThemedText>
-                </TouchableOpacity>
+                </Pressable>
                 <ThemedText style={styles.time}>{getRelativeTime(story.createdAt)}</ThemedText>
                 {!isOwnStory && (
-                    <TouchableOpacity onPress={handleMuteUser} style={styles.moreButton}>
+                    <Pressable onPress={handleMuteUser} style={styles.moreButton}>
                         <IconSymbol name="ellipsis" size={24} color={white} />
-                    </TouchableOpacity>
+                    </Pressable>
                 )}
                 {isOwnStory && (
-                    <TouchableOpacity onPress={handleDeleteStory} style={styles.deleteButton}>
+                    <Pressable onPress={handleDeleteStory} style={styles.deleteButton}>
                         <IconSymbol name="trash" size={20} color={white} />
-                    </TouchableOpacity>
+                    </Pressable>
                 )}
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Pressable onPress={onClose} style={styles.closeButton}>
                     <IconSymbol name="x" size={24} color={white} />
-                </TouchableOpacity>
+                </Pressable>
             </View>
 
             {/* Navigation Gestures */}
             <View style={styles.navigationOverlay}>
-                <TouchableOpacity style={styles.navButton} onPress={handlePrevStory} />
-                <TouchableOpacity style={styles.navButton} onPress={handleNextStory} />
+                <Pressable style={styles.navButton} onPress={handlePrevStory} />
+                <Pressable style={styles.navButton} onPress={handleNextStory} />
             </View>
 
             {/* Poll */}
@@ -342,7 +344,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
             )}
 
             {isOwnStory && (
-                <TouchableOpacity
+                <Pressable
                     style={[styles.viewersButton, { paddingBottom: insets.bottom + spacing.md }]}
                     onPress={() => setShowViewersModal(true)}
                 >
@@ -350,7 +352,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                     <ThemedText style={styles.viewersCount}>
                         {story.viewers?.length || 0}
                     </ThemedText>
-                </TouchableOpacity>
+                </Pressable>
             )}
         </ThemedView>
     );
@@ -358,9 +360,9 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     return (
         <Modal visible={visible} animationType="fade" transparent={true} onRequestClose={onClose}>
             {showViewersModal || showReactions ? storyContent : (
-                <TouchableWithoutFeedback onPressIn={handlePressIn} onPressOut={handlePressOut}>
+                <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
                     {storyContent}
-                </TouchableWithoutFeedback>
+                </Pressable>
             )}
 
             {/* Reaction Controls */}
@@ -372,12 +374,12 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                             onClose={() => setShowReactions(false)}
                         />
                     ) : (
-                        <TouchableOpacity
+                        <Pressable
                             style={styles.reactButton}
                             onPress={() => setShowReactions(true)}
                         >
                             <IconSymbol name="heart" size={28} color={white} />
-                        </TouchableOpacity>
+                        </Pressable>
                     )}
                 </View>
             )}

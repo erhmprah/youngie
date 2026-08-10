@@ -29,7 +29,7 @@ export default function IncomingCallScreen() {
     // Auto-decline after 60 seconds
     timeoutRef.current = setTimeout(() => {
       declineCall();
-    }, 60000);
+    }, 60000) as unknown as number;
 
     // Handle call ended by caller
     const handleCallEnd = () => {

@@ -1,6 +1,6 @@
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageUrl } from '@/utils/api';
-import { ResizeMode, Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import { useEffect, useRef, useState } from 'react';
@@ -103,8 +103,6 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
         setMediaError(false);
     }, [attachment, visible, currentIndex]);
 
-    if (attachmentsList.length === 0) return null;
-
     const currentAttachment = attachmentsList[currentIndex] ?? attachment;
 
     const parseAttachment = (value: any): any => {
@@ -169,22 +167,25 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
         return undefined;
     };
 
-    const parsedAttachment = parseAttachment(currentAttachment);
+    const parsedAttachment = parseAttachment(currentAttachment) ?? {};
     let uri = extractUri(parsedAttachment);
 
     if (!uri && typeof currentAttachment === 'string') {
         uri = currentAttachment;
     }
-    if (!uri) return null;
+    const hasUri = !!uri;
 
-    const normalizedUri = String(uri).trim().replace(/\\/g, '/');
-    const normalizedPath = normalizedUri.startsWith('/') ? normalizedUri : `/${normalizedUri}`;
+    const normalizedUri = String(uri || '').trim().replace(/\\/g, '/');
+    const hasUriScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(normalizedUri);
+    const normalizedPath = (normalizedUri.startsWith('/') || hasUriScheme) ? normalizedUri : `/${normalizedUri}`;
     const finalUri = /^(http|https):/.test(normalizedUri)
         ? normalizedUri
         : normalizedUri.startsWith('//')
             ? `http:${normalizedUri}`
             : getImageUrl(normalizedPath) || normalizedUri;
-    const uriToDisplay = encodeURI(finalUri);
+    const uriToDisplay = finalUri ? encodeURI(finalUri) : '';
+
+    const player = useVideoPlayer({ uri: uriToDisplay });
 
     const inferType = (value: any, fallback: string): string => {
         if (!value) return fallback;
@@ -198,14 +199,6 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
     const type = parsedAttachment.type ?? parsedAttachment.mimeType ?? parsedAttachment.contentType ?? inferType(finalUri, 'image');
     const isVideo = type === 'video' || (typeof type === 'string' && type.startsWith('video'));
     const isLocalFile = uriToDisplay.startsWith('file://');
-
-    console.log('MediaPreviewModal URI debug:', {
-      rawUri: parsedAttachment.uri ?? parsedAttachment.url ?? parsedAttachment.mediaUrl ?? parsedAttachment.imageUrl ?? parsedAttachment.thumbnailUrl ?? parsedAttachment.downloadUrl,
-      finalUri: uriToDisplay,
-      isLocalFile,
-      attachment: parsedAttachment,
-    });
-
 
     const handleSave = async () => {
         try {
@@ -263,7 +256,7 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
 
                     <View style={styles.mediaContainer}>
                         <View style={styles.mediaWrapper}>
-                            {mediaError ? (
+                            {hasUri ? (mediaError ? (
                                 <View style={styles.errorContainer}>
                                     <IconSymbol name="exclamationmark.triangle" size={48} color={white} />
                                     <ThemedText style={{ color: white, marginTop: 8 }}>Failed to load media</ThemedText>
@@ -271,17 +264,11 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
                             ) : (
                                 <>
                                     {isVideo ? (
-                                        <Video
-                                            source={{ uri: uriToDisplay }}
+                                        <VideoView
+                                            player={player}
                                             style={styles.media}
-                                            useNativeControls
-                                            resizeMode={ResizeMode.CONTAIN}
-                                            shouldPlay={false}
-                                            key={uriToDisplay}
-                                            onError={(e) => {
-                                                console.log('Video load error:', e);
-                                                setMediaError(true);
-                                            }}
+                                            nativeControls
+                                            contentFit="contain"
                                         />
                                     ) : (
                                         <Image
@@ -307,6 +294,11 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
 
                                     )}
                                 </>
+                            )) : (
+                                <View style={styles.errorContainer}>
+                                    <IconSymbol name="exclamationmark.triangle" size={48} color={white} />
+                                    <ThemedText style={{ color: white, marginTop: 8 }}>No media available</ThemedText>
+                                </View>
                             )}
                         </View>
                     </View>

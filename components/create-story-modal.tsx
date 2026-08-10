@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -35,7 +36,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
 
     const handlePickImage = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [9, 16], // Story aspect ratio
             quality: 1,
@@ -49,7 +50,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
 
     const handlePickVideo = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            mediaTypes: ['videos'],
             allowsEditing: true,
             aspect: [9, 16],
             quality: 1,
@@ -75,8 +76,8 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
     };
 
     const handleCreateStory = async () => {
-        if (!content && !image) {
-            Alert.alert('Error', 'Please add some content or an image to your story.');
+        if (!content && !image && !video) {
+            Alert.alert('Error', 'Please add some content, an image, or a video to your story.');
             return;
         }
 
@@ -93,24 +94,29 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
         setIsLoading(true);
         try {
             let uploadedImageUrl = undefined;
+            let uploadedVideoUrl = undefined;
+
             if (image) {
-                // Convert image to base64 and upload
-                const response = await fetch(image);
-                const blob = await response.blob();
-                const base64 = await new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.readAsDataURL(blob);
-                });
+                const base64 = await FileSystem.readAsStringAsync(image, { encoding: 'base64' });
                 const filename = `story-image-${Date.now()}.jpg`;
                 const uploadResponse = await storyAPI.uploadStoryImageBase64({
-                    imageData: base64,
+                    imageData: `data:image/jpeg;base64,${base64}`,
                     filename,
                 });
                 uploadedImageUrl = uploadResponse.imageUrl;
             }
 
-            await storyAPI.createStory({ content, image: uploadedImageUrl, pollOptions: finalPollOptions });
+            if (video) {
+                const base64 = await FileSystem.readAsStringAsync(video, { encoding: 'base64' });
+                const filename = `story-video-${Date.now()}.mp4`;
+                const uploadResponse = await storyAPI.uploadStoryVideoBase64({
+                    videoData: `data:video/mp4;base64,${base64}`,
+                    filename,
+                });
+                uploadedVideoUrl = uploadResponse.videoUrl;
+            }
+
+            await storyAPI.createStory({ content, image: uploadedImageUrl, video: uploadedVideoUrl, pollOptions: finalPollOptions });
             onCreate(true);
             onClose();
             setContent('');

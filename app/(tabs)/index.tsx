@@ -16,6 +16,7 @@ import { CommentModal } from '@/components/comment-modal';
 import { NotificationBell } from '@/components/notification-bell';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIncognito } from '@/contexts/IncognitoContext';
 import { postAPI, storyAPI, communityAPI, getImageUrl } from '@/utils/api';
 import { verticalScale } from '@/utils/scale';
 import { cachedPostAPI, cachedStoryAPI } from '@/utils/cachedApi';
@@ -113,7 +114,9 @@ export default function FeedScreen() {
     const [selectedPostForComments, setSelectedPostForComments] = useState<Post | null>(null);
     const [showCommunityCommentModal, setShowCommunityCommentModal] = useState(false);
     const [selectedCommunityPostForComments, setSelectedCommunityPostForComments] = useState<CommunityFeedPost | null>(null);
-    const [isIncognito, setIsIncognito] = useState(false);
+    const { isIncognito, toggleIncognito, setIncognito } = useIncognito();
+    const isIncognitoRef = useRef(isIncognito);
+    isIncognitoRef.current = isIncognito;
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [playingPostId, setPlayingPostId] = useState<string | null>(null);
     
@@ -137,8 +140,8 @@ export default function FeedScreen() {
         try {
             const [feedResponse, storiesResponse] = await Promise.all([
                 page > 1
-                    ? cachedPostAPI.getCandidateFeed(page)
-                    : cachedPostAPI.getCandidateFeed(1, forceRefresh),
+                    ? cachedPostAPI.getCandidateFeed(page, false, isIncognito)
+                    : cachedPostAPI.getCandidateFeed(1, forceRefresh, isIncognito),
                 page === 1 ? cachedStoryAPI.getStories(user?._id, forceRefresh) : Promise.resolve({ data: [] }),
             ]);
 
@@ -215,7 +218,7 @@ export default function FeedScreen() {
                     setCommunityPosts(filteredCommunityPosts);
                 }
 
-                if (newPosts.length === 0 && newCommunityPosts.length === 0) {
+                if (newPosts.length === 0 && newCommunityPosts.length === 0 && !isIncognito) {
                     setLoadingRecommended(true);
                     try {
                         const trendingResponse = await postAPI.getTrendingPosts();
@@ -313,6 +316,7 @@ export default function FeedScreen() {
 
         const handlePostCreated = (newPost: any) => {
             if (!newPost || !newPost._id || !user) return;
+            if (isIncognitoRef.current && !newPost.isAnonymous) return;
             setPosts(prevPosts => {
                 if (prevPosts.some(p => p._id === newPost._id)) return prevPosts;
                 const isSelf = newPost.author?._id === user._id;
@@ -395,6 +399,12 @@ export default function FeedScreen() {
             }
         }
     }, [postId, posts]);
+
+    useFocusEffect(
+        useCallback(() => {
+            setIncognito(false);
+        }, [setIncognito])
+    );
 
     useFocusEffect(
         useCallback(() => {
@@ -746,6 +756,12 @@ export default function FeedScreen() {
 
     const renderHeaderContent = () => (
         <>
+            {isIncognito && (
+                <View style={[styles.anonBanner, { backgroundColor: primaryColor }]}>
+                    <Ionicons name="glasses" size={16} color={white} />
+                    <ThemedText style={[styles.anonBannerText, { color: white }]}>Anonymous Feed</ThemedText>
+                </View>
+            )}
             {renderHeader()}
         </>
     );
@@ -846,7 +862,7 @@ export default function FeedScreen() {
                         <ThemedText style={[styles.logo, { color: textColor }]}>Youngie</ThemedText>
                     </View>
                     <View style={styles.appBarIcons}>
-                        <TouchableOpacity style={[styles.iconCircle, isIncognito && { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setIsIncognito(!isIncognito); }}>
+                        <TouchableOpacity style={[styles.iconCircle, isIncognito && { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); toggleIncognito(); }}>
                             <Ionicons name="glasses" size={20} color={isIncognito ? white : textColor} />
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.iconCircle, { backgroundColor: surfaceColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/explore'); }}>
@@ -939,6 +955,7 @@ export default function FeedScreen() {
                     onClose={() => setShowCommunityCommentModal(false)}
                     post={selectedCommunityPostForComments as any}
                     communityContext={selectedCommunityPostForComments ? { communityId: selectedCommunityPostForComments.community._id } : undefined}
+                    initialAnonymous={isIncognito}
                 />
             </ThemedView>
         </SafeAreaView>
@@ -1188,5 +1205,19 @@ const styles = StyleSheet.create({
         borderRadius: (sizes.iconLarge + 16) / 2,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    anonBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.xs,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.lg,
+        marginBottom: spacing.sm,
+    },
+    anonBannerText: {
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.bold,
+        letterSpacing: 0.3,
     },
 });

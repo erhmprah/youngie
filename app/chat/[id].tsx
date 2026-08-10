@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert, Text , Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { Video, Audio, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { AudioModule, setAudioModeAsync, requestRecordingPermissionsAsync, createAudioPlayer, RecordingPresets } from 'expo-audio';
+import type { AudioRecorder, AudioPlayer } from 'expo-audio';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
@@ -78,6 +80,43 @@ interface Chat {
    isGroupChat?: boolean;
 }
 
+const InlineVideoPreview = ({ 
+  uri, 
+  containerStyle, 
+  contentStyle, 
+  showPlayIcon = true, 
+  playIconSize = 24, 
+  playIconStyle, 
+  autoPlay = false,
+  playIconColor = '#fff'
+}: { 
+  uri: string; 
+  containerStyle: any; 
+  contentStyle?: any; 
+  showPlayIcon?: boolean; 
+  playIconSize?: number; 
+  playIconStyle?: any;
+  autoPlay?: boolean;
+  playIconColor?: string;
+}) => {
+  const player = useVideoPlayer({ uri });
+  useEffect(() => {
+    if (autoPlay) {
+      player.play();
+    }
+  }, [player, uri, autoPlay]);
+  return (
+    <View style={containerStyle}>
+      <VideoView player={player} style={contentStyle} contentFit="cover" nativeControls={false} />
+      {showPlayIcon && (
+        <View style={playIconStyle}>
+          <IconSymbol name="play.fill" size={playIconSize} color={playIconColor} />
+        </View>
+      )}
+    </View>
+  );
+};
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
   const { user } = useAuth();
@@ -111,7 +150,7 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [typingUser, setTypingUser] = useState<string>('');
   const [isRecording, setIsRecording] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [recording, setRecording] = useState<AudioRecorder | null>(null);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [audioStatus, setAudioStatus] = useState<Record<string, any>>({});
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
@@ -147,12 +186,13 @@ export default function ChatScreen() {
   const typingTimeoutRef = useRef<number | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const swipeRefs = useRef(new Map<string, Swipeable>());
-  const soundRefs = useRef(new Map<string, Audio.Sound>());
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const soundRefs = useRef(new Map<string, AudioPlayer>());
+  const recordingRef = useRef<AudioRecorder | null>(null);
+  const statusIntervalRef = useRef<number | null>(null);
   const isRecordingDesired = useRef(false);
   const [meteringLevels, setMeteringLevels] = useState<number[]>([]);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const previewSound = useRef<Audio.Sound | null>(null);
+  const previewSound = useRef<AudioPlayer | null>(null);
   const [previewStatus, setPreviewStatus] = useState<any>(null);
 
   const backgroundColor = useThemeColor('background');
@@ -367,7 +407,7 @@ export default function ChatScreen() {
       
       // Clean up preview sound
       if (previewSound.current) {
-        previewSound.current.unloadAsync();
+        previewSound.current.remove();
         previewSound.current = null;
       }
       
@@ -375,7 +415,7 @@ export default function ChatScreen() {
       if (soundRefs.current) {
         soundRefs.current.forEach(async (sound) => {
           try {
-            await sound.unloadAsync();
+            await sound.remove();
           } catch (e) {
             // Ignore cleanup errors
           }
@@ -542,7 +582,7 @@ export default function ChatScreen() {
     setReplyTo(null);
     setAttachment(null);
     if (previewSound.current) {
-      await previewSound.current.unloadAsync();
+      await previewSound.current.remove();
       previewSound.current = null;
     }
     setPreviewStatus(null);
@@ -593,7 +633,7 @@ export default function ChatScreen() {
       content: currentMessageContent,
       isAnonymous: currentIsAnonymous,
       replyTo: currentReplyTo ? currentReplyTo._id : undefined,
-      attachment: attachmentData ? JSON.stringify(attachmentData) : undefined,
+      attachment: attachmentData || undefined,
     };
 
     try {
@@ -691,7 +731,7 @@ export default function ChatScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ['images', 'videos'],
       allowsEditing: false,
       quality: 1,
       videoMaxDuration: 300, // 5 minutes max
@@ -715,8 +755,10 @@ export default function ChatScreen() {
   };
 
   const startRecording = async () => {
+    if (isRecording) return;
+
     if (previewSound.current) {
-      await previewSound.current.unloadAsync();
+      await previewSound.current.remove();
       previewSound.current = null;
       setPreviewStatus(null);
     }
@@ -726,7 +768,7 @@ export default function ChatScreen() {
       const sound = soundRefs.current.get(playingAudio);
       if (sound) {
         try {
-          await sound.stopAsync();
+          await sound.pause();
         } catch (e) {  }
       }
       setPlayingAudio(null);
@@ -737,14 +779,15 @@ export default function ChatScreen() {
     isRecordingDesired.current = true;
     if (recordingRef.current) {
       try {
-        await recordingRef.current.stopAndUnloadAsync();
+        await recordingRef.current.stop();
+        recordingRef.current.release();
       } catch (error) {
       }
       recordingRef.current = null;
       setRecording(null);
     }
     try {
-      const { status } = await Audio.requestPermissionsAsync();
+      const { status } = await requestRecordingPermissionsAsync();
       console.log('Audio permission status:', status);
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant permission to record audio');
@@ -753,30 +796,40 @@ export default function ChatScreen() {
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        interruptionMode: 'duckOthers',
+        shouldRouteThroughEarpiece: false,
+        allowsBackgroundRecording: true,
       });
       console.log('Audio mode set successfully');
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
-        (status) => {
-          if (status.isRecording) {
-            if (status.metering !== undefined) setMeteringLevels(prev => [...prev.slice(-40), status.metering || -160]);
-            setRecordingDuration(status.durationMillis);
-          }
-        },
-        100
-      );
+      const recorder = new AudioModule.AudioRecorder({
+        ...RecordingPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      });
+      await recorder.prepareToRecordAsync();
+
+      statusIntervalRef.current = setInterval(() => {
+        const status = recorder.getStatus();
+        if (status.isRecording) {
+          if (status.metering !== undefined) setMeteringLevels(prev => [...prev.slice(-40), status.metering || -160]);
+          setRecordingDuration(status.durationMillis);
+        }
+      }, 100);
+
+      recorder.record();
       console.log('Recording created successfully');
 
       if (!isRecordingDesired.current) {
+        if (statusIntervalRef.current) {
+          clearInterval(statusIntervalRef.current);
+          statusIntervalRef.current = null;
+        }
         try {
-          await newRecording.stopAndUnloadAsync();
+          await recorder.stop();
+          recorder.release();
         } catch (error) {
           // Ignore error if stopped too quickly
         }
@@ -784,8 +837,8 @@ export default function ChatScreen() {
         return;
       }
 
-      recordingRef.current = newRecording;
-      setRecording(newRecording);
+      recordingRef.current = recorder;
+      setRecording(recorder);
       setIsRecording(true);
     } catch (error: any) {
       console.error('Failed to start recording:', error);
@@ -800,22 +853,21 @@ export default function ChatScreen() {
 
   const stopRecording = async () => {
     isRecordingDesired.current = false;
+    if (statusIntervalRef.current) {
+      clearInterval(statusIntervalRef.current);
+      statusIntervalRef.current = null;
+    }
     const currentRecording = recordingRef.current;
     if (!currentRecording) return;
 
     try {
-      let status;
-      try {
-        status = await currentRecording.getStatusAsync();
-      } catch (e) {
-        throw new Error('Recording is not prepared or already unloaded');
-      }
-      const duration = status.durationMillis;
+      const duration = currentRecording.getStatus().durationMillis;
 
       // If recording is too short (e.g. < 500ms), discard it
       if (duration < 500) {
         try {
-          await currentRecording.stopAndUnloadAsync();
+          await currentRecording.stop();
+          currentRecording.release();
         } catch (error) {
           // Ignore "no valid audio data" error
         }
@@ -827,8 +879,9 @@ export default function ChatScreen() {
         return;
       }
 
-      await currentRecording.stopAndUnloadAsync();
-      const uri = currentRecording.getURI();
+      await currentRecording.stop();
+      const uri = currentRecording.uri;
+      currentRecording.release();
       recordingRef.current = null;
       setMeteringLevels([]);
       setRecordingDuration(0);
@@ -861,7 +914,7 @@ export default function ChatScreen() {
       if (playingAudio && playingAudio !== messageId) {
         const currentSound = soundRefs.current.get(playingAudio);
         if (currentSound) {
-          await currentSound.unloadAsync();
+          await currentSound.remove();
         }
       }
 
@@ -1067,16 +1120,14 @@ export default function ChatScreen() {
     } else if (attachment.type && attachment.type.startsWith('video')) {
       return (
         <TouchableOpacity onPress={() => handleMediaPreview(attachment, attachmentUrl)} style={{ position: 'relative' }}>
-          <Video
-            source={{ uri: attachmentUrl }}
-            style={styles.attachmentVideo}
-            useNativeControls={false}
-            isLooping={false}
-            resizeMode={ResizeMode.COVER}
+          <InlineVideoPreview
+            uri={attachmentUrl}
+            containerStyle={styles.attachmentVideo}
+            contentStyle={styles.attachmentVideo}
+            playIconStyle={styles.videoPlayOverlay}
+            playIconSize={48}
+            playIconColor={white}
           />
-          <View style={styles.videoPlayOverlay}>
-            <IconSymbol name="play.fill" size={48} color={white} />
-          </View>
         </TouchableOpacity>
       );
     } else if (attachment.type && attachment.type.startsWith('audio/')) {
@@ -1171,12 +1222,14 @@ export default function ChatScreen() {
                       }
                       if (attachment.type && attachment.type.startsWith('video')) {
                         return (
-                          <View style={styles.replyMediaThumb}>
-                            <Video source={{ uri: attachmentUrl }} style={styles.replyMediaThumb} resizeMode={ResizeMode.COVER} useNativeControls={false} isLooping={false} />
-                            <View style={styles.replyMediaPlayOverlay}>
-                              <IconSymbol name="play.fill" size={12} color={white} />
-                            </View>
-                          </View>
+                          <InlineVideoPreview
+                            uri={attachmentUrl}
+                            containerStyle={styles.replyMediaThumb}
+                            contentStyle={styles.replyMediaThumb}
+                            playIconStyle={styles.replyMediaPlayOverlay}
+                            playIconSize={12}
+                            playIconColor={white}
+                          />
                         );
                       }
                       return <View style={styles.replyMediaThumb}><IconSymbol name="doc" size={14} color={textColor} /></View>;
@@ -1394,14 +1447,9 @@ export default function ChatScreen() {
                   </View>
                 </View>
               ) : (
-                <TouchableOpacity onPress={() => setShowMediaPreview(true)} style={styles.attachmentPreview}>
+                <TouchableOpacity onPress={() => handleMediaPreview(attachment)} style={styles.attachmentPreview}>
                   {attachment.type?.startsWith('video') || attachment.type === 'video' ? (
-                    <View style={styles.videoPreview}>
-                      <Video source={{ uri: attachment.uri }} style={styles.previewMedia} resizeMode={ResizeMode.COVER} />
-                      <View style={styles.playIcon}>
-                        <IconSymbol name="play.fill" size={24} color={white} />
-                      </View>
-                    </View>
+                    <InlineVideoPreview uri={attachment.uri} containerStyle={styles.videoPreview} contentStyle={styles.previewMedia} autoPlay playIconColor={white} />
                   ) : (
                     <Image source={{ uri: attachment.uri }} style={styles.previewMedia} />
                   )}

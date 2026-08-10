@@ -169,14 +169,14 @@ export function usePushNotifications() {
         return false;
       }
 
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      const { granted: existingStatus } = await Notifications.getPermissionsAsync() as any;
       
-      if (existingStatus === 'granted') {
+      if (existingStatus) {
         setState(prev => ({ ...prev, hasPermission: true }));
         return true;
       }
 
-      if (existingStatus === 'denied') {
+      if (!existingStatus) {
         setState(prev => ({ 
           ...prev, 
           hasPermission: false,
@@ -187,12 +187,12 @@ export function usePushNotifications() {
       }
 
       // Request permissions
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { granted } = await Notifications.requestPermissionsAsync() as any;
       
-      if (status === 'granted') {
+      if (granted) {
         setState(prev => ({ ...prev, hasPermission: true }));
         return true;
-      } else if (status === 'denied') {
+      } else if (!granted) {
         setState(prev => ({ 
           ...prev, 
           hasPermission: false,
@@ -322,7 +322,7 @@ export function usePushNotifications() {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF231F7C',
-        sound: 'default',
+        sound: undefined,
         showBadge: true,
       });
     } catch (error) {

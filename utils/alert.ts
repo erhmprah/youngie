@@ -34,7 +34,7 @@ type AlertContextValue = {
 
 let alertContextRef: AlertContextValue = null;
 
-export const setAlertContext = (context: ReturnType<typeof useAlert>) => {
+export const setAlertContext = (context: AlertContextValue) => {
   alertContextRef = context;
 };
 

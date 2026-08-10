@@ -15,7 +15,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, FlatList, KeyboardAvoidingView, PanResponder, PermissionsAndroid, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Socket, io } from 'socket.io-client';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync } from 'expo-audio';
 
 type Message = {
   id: string;
@@ -315,12 +315,11 @@ const VideoChatScreen: React.FC = () => {
         throw new Error('WebRTC not supported. Please use a development build.');
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        interruptionMode: 'mixWithOthers',
+        shouldPlayInBackground: true,
       });
 
       const stream = await mediaDevices.getUserMedia({

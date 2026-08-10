@@ -284,6 +284,50 @@ function getNetworkErrorMessage(error: any): { title: string; message: string } 
 let retryCallback: (() => void) | null = null;
 
 /**
+ * Track offline state to suppress duplicate alerts
+ */
+export let isAppOffline = false;
+
+/**
+ * Queue of callbacks to run when network is restored
+ */
+const reconnectHandlers: (() => void)[] = [];
+
+/**
+ * Register a handler to run when network is restored
+ */
+export function registerReconnectHandler(handler: () => void): () => void {
+  reconnectHandlers.push(handler);
+  return () => {
+    const index = reconnectHandlers.indexOf(handler);
+    if (index > -1) reconnectHandlers.splice(index, 1);
+  };
+}
+
+/**
+ * Trigger all registered reconnect handlers
+ */
+export function triggerReconnectHandlers(): void {
+  reconnectHandlers.forEach((handler) => {
+    try {
+      handler();
+    } catch (error) {
+      console.warn('Reconnect handler failed:', error);
+    }
+  });
+}
+
+/**
+ * Set offline state and suppress alerts when offline
+ */
+export function setAppOfflineState(offline: boolean): void {
+  isAppOffline = offline;
+  if (!offline) {
+    triggerReconnectHandlers();
+  }
+}
+
+/**
  * Check if an API response indicates a network error
  * Use this to check responses from API calls that use the interceptor
  * @returns true if the response indicates a network error
@@ -296,8 +340,8 @@ export function isNetworkErrorResponse(response: any): boolean {
  * Show API error alert - always show for critical errors
  */
 function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?: () => void, showAlert: boolean = true): void {
-  if (!showAlert) {
-    // Alert suppressed - caller will handle showing error to user
+  if (!showAlert || isAppOffline) {
+    // Alert suppressed when offline - caller will handle showing error to user
     return;
   }
 
@@ -501,11 +545,8 @@ export const userAPI = {
   deleteAccount: () => api.post('/users/delete-account'),
   restoreAccount: () => api.post('/users/restore-account'),
   uploadProfilePhoto: async (userId: string, formData: FormData) => {
-    const data = await safeFetchWithRetry(`${API_URL}/users/${userId}/upload-profile-photo`, {
-      method: 'POST',
-      body: formData,
-    });
-    return { data };
+    const response = await uploadAPI.post(`/users/${userId}/upload-profile-photo`, formData);
+    return { data: response.data };
   },
   uploadProfilePhotoBase64: async (userId: string, data: { imageData: string; filename: string }) => {
     return safeFetchWithRetry(`${API_URL}/users/${userId}/upload-profile-photo-base64`, {
@@ -515,11 +556,8 @@ export const userAPI = {
     });
   },
   uploadCoverPhoto: async (userId: string, formData: FormData) => {
-    const data = await safeFetchWithRetry(`${API_URL}/users/${userId}/upload-cover-photo`, {
-      method: 'POST',
-      body: formData,
-    });
-    return { data };
+    const response = await uploadAPI.post(`/users/${userId}/upload-cover-photo`, formData);
+    return { data: response.data };
   },
   uploadCoverPhotoBase64: async (userId: string, data: { imageData: string; filename: string }) => {
     return safeFetchWithRetry(`${API_URL}/users/${userId}/upload-cover-photo-base64`, {
@@ -607,11 +645,8 @@ export const chatAPI = {
   updateGroupName: (chatId: string, name: string) => api.put(`/chats/${chatId}/name`, { name }),
   updateGroupPhoto: (chatId: string, groupPhoto: string) => api.put(`/chats/${chatId}/photo`, { groupPhoto }),
   uploadAttachment: async (formData: FormData, options?: any) => {
-    const data = await safeFetchWithRetry(`${API_URL}/chats/upload-attachment`, {
-      method: 'POST',
-      body: formData,
-    });
-    return { data };
+    const response = await uploadAPI.post('/chats/upload-attachment', formData, options);
+    return { data: response.data };
   },
   uploadAttachmentBase64: async (imageData: string, filename: string) => {
     return safeFetchWithRetry(`${API_URL}/chats/upload-attachment-base64`, {
@@ -647,17 +682,15 @@ export const postAPI = {
   deleteComment: (postId: string, commentId: string) =>
     api.delete(`/posts/${postId}/comment/${commentId}`),
   getTrendingPosts: (page?: number, limit?: number) => api.get('/posts/trending/hot', { params: { page, limit } }),
-  getCandidateFeed: (page?: number, limit?: number) => api.get('/posts/feed/candidate', { params: { page, limit } }),
+  getCandidateFeed: (page?: number, limit?: number, isAnonymous?: boolean) => api.get('/posts/feed/candidate', { params: { page, limit, isAnonymous } }),
   getSuggestedRandomPosts: (page?: number, limit?: number) => api.get('/posts/suggested/random', { params: { page, limit } }),
   favoritePost: (postId: string) => api.post(`/posts/${postId}/favorite`, {}),
   unfavoritePost: (postId: string) => api.delete(`/posts/${postId}/favorite`),
   getFavoritePosts: (page?: number, limit?: number) => api.get('/posts/favorites', { params: { page, limit } }),
   sharePost: (postId: string) => api.post(`/posts/${postId}/share`, {}),
   uploadPostImage: async (formData: FormData) => {
-    return safeFetchWithRetry(`${API_URL}/posts/upload-image`, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await uploadAPI.post('/posts/upload-image', formData);
+    return { data: response.data };
   },
   uploadPostImageBase64: async (data: { imageData: string; filename: string }) => {
     return safeFetchWithRetry(`${API_URL}/posts/upload-image-base64`, {
@@ -667,10 +700,8 @@ export const postAPI = {
     });
   },
   uploadPostVideo: async (formData: FormData) => {
-    return safeFetchWithRetry(`${API_URL}/posts/upload-video`, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await uploadAPI.post('/posts/upload-video', formData);
+    return { data: response.data };
   },
   uploadPostVideoBase64: async (data: { videoData: string; filename: string }) => {
     return safeFetchWithRetry(`${API_URL}/posts/upload-video-base64`, {
@@ -702,6 +733,13 @@ export const storyAPI = {
   getMutedUsers: () => api.get('/stories/muted/list'),
   uploadStoryImageBase64: async (data: { imageData: string; filename: string }) => {
     return safeFetchWithRetry(`${API_URL}/stories/upload-image-base64`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  },
+  uploadStoryVideoBase64: async (data: { videoData: string; filename: string }) => {
+    return safeFetchWithRetry(`${API_URL}/stories/upload-video-base64`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -776,8 +814,7 @@ export const getImageUrl = (imagePath?: string): string | undefined => {
   
   // Return Supabase URLs as-is - they should work
   if (imagePath.startsWith('http')) {
-return imagePath;
-
+    return imagePath;
   }
   if (imagePath.startsWith('/uploads/')) {
     return `${BASE_URL}${imagePath}`;

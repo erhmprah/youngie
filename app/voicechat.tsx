@@ -2,10 +2,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomAlert } from '@/utils/alert';
 import { SOCKET_URL } from '@/utils/api';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from "expo-router/react-navigation";
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, StyleSheet, View, Text, TouchableOpacity, Platform, PermissionsAndroid } from 'react-native';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync } from 'expo-audio';
 import { Socket, io } from 'socket.io-client';
 import InCallManager from 'react-native-incall-manager';
 
@@ -166,12 +166,11 @@ const VoiceChatScreen: React.FC = () => {
         return null;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        interruptionMode: 'mixWithOthers',
+        shouldPlayInBackground: true,
       });
 
       const stream = await mediaDevices.getUserMedia({
