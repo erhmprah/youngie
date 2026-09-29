@@ -20,6 +20,12 @@ import { getSocket } from '@/utils/socket';
 import * as Haptics from 'expo-haptics';
 import { showErrorAlert, showNetworkErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
+import { useInterstitialAdHelper } from '@/hooks/useInterstitialAdHelper';
+
+// Interstitial cadence: show a full-screen ad every N completed swipes.
+// Kept high enough that it never interrupts the core swipe loop, but low
+// enough to be worth anything to the ad account.
+const INTERSTITIAL_INTERVAL = 10;
 
 const { width, height } = Dimensions.get('window');
 
@@ -55,6 +61,12 @@ export default function SwipeScreen() {
     const [loadingMore, setLoadingMore] = useState(false);
     const [viewMode, setViewMode] = useState<'swipe' | 'grid'>('swipe');
     const [swipeHistory, setSwipeHistory] = useState<any[]>([]);
+    // Tracks how many swipes have completed since the last interstitial was
+    // shown, so the ad fires at a predictable cadence instead of on every
+    // action.
+    const [swipesSinceAd, setSwipesSinceAd] = useState(0);
+
+    const { showIfNeeded } = useInterstitialAdHelper();
 
     const pan = useRef(new Animated.ValueXY()).current;
     const gestureStart = useRef({ x: 0, y: 0 });
@@ -164,16 +176,16 @@ export default function SwipeScreen() {
             toValue: { x, y: 0 },
             duration: 300,
             useNativeDriver: false,
-        }).start(async () => {
+}).start(async () => {
             pan.setValue({ x: 0, y: 0 });
 
             setCurrentImageIndex(0); // Reset image index when swiping
-            
+
             // Add to swipe history
             if (currentProfile) {
                 setSwipeHistory(prev => [...prev, currentProfile]);
             }
-            
+
             if (direction === 'right' && currentProfile && user?._id) {
                 try {
                     await userAPI.sendFriendRequest(user._id, currentProfile._id);
@@ -192,6 +204,20 @@ export default function SwipeScreen() {
             } else {
                 setCurrentIndex((prev) => prev + 1);
             }
+
+            // Interstitial cadence: after every N completed swipes, pause the
+            // swipe loop for a full-screen ad. This runs after the card has
+            // already flown off-screen so the transition feels intentional.
+            setSwipesSinceAd(prev => {
+                const next = prev + 1;
+                if (next >= INTERSTITIAL_INTERVAL) {
+                    // Fire-and-forget: the helper loads/shows based on state.
+                    // Don't block the swipe loop on ad latency.
+                    setTimeout(() => showIfNeeded(), 250);
+                    return 0;
+                }
+                return next;
+            });
         });
     };
 

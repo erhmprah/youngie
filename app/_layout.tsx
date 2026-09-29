@@ -14,6 +14,8 @@ import AlertContainer from '@/components/ui/AlertContainer';
 import { AlertProvider } from '@/contexts/AlertContext';
 import { IncognitoProvider } from '@/contexts/IncognitoContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { AdsProvider } from '@/contexts/AdsContext';
+import { AppOpenAdProvider } from '@/components/AppOpenAdProvider';
 import { CacheProvider } from '@/contexts/CacheContext';
 import { NetworkProvider, useNetwork } from '@/contexts/NetworkContext';
 import { ThemeProvider as AppThemeProvider, useTheme } from '@/contexts/ThemeContext';
@@ -496,22 +498,26 @@ export default function RootLayout() {
   return (
     <GlobalErrorBoundary>
       <FirebaseErrorBoundary>
-        <NetworkProvider>
-          <AuthProvider>
-            <IncognitoProvider>
-              <CacheProvider>
-                <AppThemeProvider>
-                  <GestureHandlerRootView style={{ flex: 1 }}>
-                    <AlertProvider>
-                      <RootLayoutNav />
-                      <AlertContainer />
-                    </AlertProvider>
-                  </GestureHandlerRootView>
-                </AppThemeProvider>
-              </CacheProvider>
-            </IncognitoProvider>
-          </AuthProvider>
-        </NetworkProvider>
+        <AdsProvider>
+          <AppOpenAdProvider>
+            <NetworkProvider>
+              <AuthProvider>
+                <IncognitoProvider>
+                  <CacheProvider>
+                    <AppThemeProvider>
+                      <GestureHandlerRootView style={{ flex: 1 }}>
+                        <AlertProvider>
+                          <RootLayoutNav />
+                          <AlertContainer />
+                        </AlertProvider>
+                      </GestureHandlerRootView>
+                    </AppThemeProvider>
+                  </CacheProvider>
+                </IncognitoProvider>
+              </AuthProvider>
+            </NetworkProvider>
+          </AppOpenAdProvider>
+        </AdsProvider>
       </FirebaseErrorBoundary>
     </GlobalErrorBoundary>
   );

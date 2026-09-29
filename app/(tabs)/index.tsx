@@ -14,6 +14,7 @@ import { CreateStoryModal } from '@/components/create-story-modal';
 import { StoryViewer } from '@/components/story-viewer';
 import { CommentModal } from '@/components/comment-modal';
 import { NotificationBell } from '@/components/notification-bell';
+import AdBanner from '@/components/ads/AdBanner';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIncognito } from '@/contexts/IncognitoContext';
@@ -26,6 +27,14 @@ import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated } from '@/utils/socket';
 import { getRelativeTime } from '@/utils/helpers';
+import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { ViewToken } from 'react-native';
+
+// Feed ad cadence. The first ad appears after AD_FIRST_INDEX posts, then every
+// AD_INTERVAL items. AdMob counts every banner impression against your
+// account, so keep this conservative rather than aggressive.
+const AD_FIRST_INDEX = 4;
+const AD_INTERVAL = 6;
 
 interface User {
     _id: string;
@@ -91,6 +100,157 @@ interface CommunityFeedPost {
     isAdmin?: boolean;
     createdAt: string;
 }
+
+// Memoized CommunityPostCard component to prevent re-renders
+const CommunityPostCard = memo(({ 
+    item, 
+    user, 
+    primaryColor, 
+    lightTextColor, 
+    white, 
+    backgroundColor, 
+    surfaceColor, 
+    borderColor, 
+    textColor, 
+    spacing, 
+    typography, 
+    shadows,
+    getImageUrl,
+    router,
+    communityAPI,
+    Haptics,
+    IconSymbol,
+    ThemedText,
+    Image,
+    TouchableOpacity,
+    View,
+    joinCommunity,
+    promptToJoin,
+    communityId,
+    handleCommunityLike,
+    handleCommunityFavorite,
+    openComments,
+}: {
+    item: CommunityFeedPost;
+    user: User | null;
+    primaryColor: string;
+    lightTextColor: string;
+    white: string;
+    backgroundColor: string;
+    surfaceColor: string;
+    borderColor: string;
+    textColor: string;
+    spacing: typeof spacing;
+    typography: typeof typography;
+    shadows: typeof shadows;
+    getImageUrl: typeof getImageUrl;
+    router: any;
+    communityAPI: typeof communityAPI;
+    Haptics: typeof Haptics;
+    IconSymbol: typeof IconSymbol;
+    ThemedText: typeof ThemedText;
+    Image: typeof Image;
+    TouchableOpacity: typeof TouchableOpacity;
+    View: typeof View;
+    joinCommunity: (communityId: string, communityName: string) => void;
+    promptToJoin: (communityId: string, communityName: string) => void;
+    communityId: string;
+    handleCommunityLike: () => void;
+    handleCommunityFavorite: () => void;
+    openComments: () => void;
+}) => {
+    const isMember = item.isMember !== false;
+    const liked = (item.likes || []).some((l: any) => String(l?._id || l) === String(user?._id));
+    const likeCount = (item.likes || []).length;
+    const favorited = !!item.isFavorited;
+    const commentCount = item.comments?.length || 0;
+    const commId = item.community._id;
+    const communityName = item.community.name;
+
+    return (
+        <View style={[styles.communityPostCard, { backgroundColor: surfaceColor, borderColor }]}>
+            <TouchableOpacity
+                activeOpacity={0.9}
+                style={styles.communityPostHeader}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
+            >
+                {item.community.image ? (
+                    <Image source={{ uri: getImageUrl(item.community.image) }} style={styles.communityPostAvatar} />
+                ) : (
+                    <View style={[styles.communityPostAvatar, styles.communityImagePlaceholder, { backgroundColor: primaryColor + '20' }]}>
+                        <IconSymbol name="person.3.fill" size={16} color={primaryColor} />
+                    </View>
+                )}
+                <View style={styles.communityPostHeaderText}>
+                    <ThemedText style={[styles.communityPostName, { color: textColor }]} numberOfLines={1}>
+                        {item.community.name || 'Community'}
+                    </ThemedText>
+                    <View style={styles.communityPostAuthorRow}>
+                        {item.author.profilePhoto || item.author.avatar ? (
+                            <Image source={{ uri: getImageUrl(item.author.profilePhoto || item.author.avatar) }} style={styles.communityPostAuthorAvatar} />
+                        ) : (
+                            <View style={[styles.communityPostAuthorAvatar, styles.communityImagePlaceholder, { backgroundColor: surfaceColor }]}>
+                                <IconSymbol name="person.fill" size={9} color={lightTextColor} />
+                            </View>
+                        )}
+                        <ThemedText style={[styles.communityPostAuthor, { color: lightTextColor }]} numberOfLines={1}>
+                            Posted by {item.author.username} · {getRelativeTime(item.createdAt)}
+                        </ThemedText>
+                    </View>
+                </View>
+                <IconSymbol name="chevron.right" size={16} color={lightTextColor} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
+            >
+                {item.content ? (
+                    <ThemedText style={[styles.communityPostContent, { color: textColor }]}>
+                        {item.content}
+                    </ThemedText>
+                ) : null}
+
+                {item.images && item.images.length > 0 && (
+                    <Image source={{ uri: getImageUrl(item.images[0]) }} style={styles.communityPostImage} />
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.communityPostActionBar}>
+                <View style={styles.communityPostLeftActions}>
+                    <TouchableOpacity style={styles.communityPostAction} onPress={handleCommunityLike}>
+                        <IconSymbol name="heart.fill" size={22} color={liked ? '#FF3B30' : lightTextColor} />
+                        <ThemedText style={[styles.communityPostActionText, { color: liked ? '#FF3B30' : lightTextColor }]}>
+                            {likeCount}
+                        </ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.communityPostAction} onPress={openComments}>
+                        <IconSymbol name="message.fill" size={22} color={lightTextColor} />
+                        <ThemedText style={[styles.communityPostActionText, { color: lightTextColor }]}>
+                            {commentCount}
+                        </ThemedText>
+                    </TouchableOpacity>
+                </View>
+                <View style={styles.communityPostRightActions}>
+                    {!isMember && (
+                        <TouchableOpacity
+                            style={[styles.communityJoinPill, { backgroundColor: primaryColor }]}
+                            onPress={() => joinCommunity(commId, communityName)}
+                        >
+                            <IconSymbol name="person.badge.plus" size={14} color={white} />
+                            <ThemedText style={styles.communityJoinPillText}>Join</ThemedText>
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={styles.communityPostAction} onPress={handleCommunityFavorite}>
+                        <IconSymbol name={favorited ? "bookmark.fill" : "bookmark"} size={22} color={favorited ? primaryColor : lightTextColor} />
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    );
+});
+
+CommunityPostCard.displayName = 'CommunityPostCard';
 
 export default function FeedScreen() {
     const { user, isSignedIn, logout, isLoading: authLoading } = useAuth();
@@ -865,6 +1025,22 @@ export default function FeedScreen() {
                 return tb - ta;
             });
         }
+
+        // Interleave banner ads into the feed rather than stacking them at the
+        // bottom. A single trailing banner is easy to scroll past forever;
+        // spacing them through the feed is the pattern that actually gets
+        // viewed. Ads are only injected into the user's own feed — never into
+        // the "recommended" fallback, where an unlabeled ad between strangers'
+        // posts reads as user-generated content.
+        if (merged.length > 0) {
+            const withAds: any[] = [];
+            merged.forEach((item, index) => {
+                withAds.push(item);
+                const isAdSlot = index >= AD_FIRST_INDEX && (index - AD_FIRST_INDEX) % AD_INTERVAL === AD_INTERVAL - 1;
+                if (isAdSlot) withAds.push({ kind: 'ad', slot: index });
+            });
+            merged.splice(0, merged.length, ...withAds);
+        }
         
         if (!hasPersonalPosts && recommendedPosts.length > 0) {
             merged.push({ kind: 'recommended-header' });
@@ -875,6 +1051,10 @@ export default function FeedScreen() {
     }, [posts, communityPosts, recommendedPosts]);
 
     const renderFeedItem = ({ item }: { item: any }) => {
+        if (item.kind === 'ad') {
+            return <AdBanner style={styles.adSlot} />;
+        }
+
         if (item.kind === 'recommended-header') {
             return (
                 <View style={[styles.recommendedCard, { backgroundColor: surfaceColor, borderColor, shadowColor: backgroundColor }, shadows.sm]}>
@@ -961,7 +1141,7 @@ export default function FeedScreen() {
                     ref={flatListRef}
                     data={feedItems}
                     renderItem={renderFeedItem}
-                    keyExtractor={(item) => item.kind === 'post' ? item.data._id : item.kind === 'community' ? 'c_' + item.data._id : 'recommended-header'}
+                    keyExtractor={(item, index) => item.kind === 'post' ? item.data._id : item.kind === 'community' ? 'c_' + item.data._id : item.kind === 'ad' ? 'ad_' + index : 'recommended-header'}
                     ListHeaderComponent={renderHeaderContent}
                     refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={primaryColor} />}
                     contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: spacing.lg }}
@@ -1269,6 +1449,9 @@ const styles = StyleSheet.create({
     communityPostActionText: {
         fontSize: typography.sizes.body2,
         fontFamily: typography.families.medium,
+    },
+    adSlot: {
+        marginVertical: spacing.md,
     },
     recommendedCard: {
         flexDirection: 'row',

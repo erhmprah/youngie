@@ -12,6 +12,7 @@ import InCallManager from 'react-native-incall-manager';
 import * as KeepAwake from 'expo-keep-awake';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useInterstitialAdHelper } from '@/hooks/useInterstitialAdHelper';
 import { ActivityIndicator, Animated, Dimensions, FlatList, KeyboardAvoidingView, PanResponder, PermissionsAndroid, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Socket, io } from 'socket.io-client';
@@ -58,6 +59,8 @@ const VideoChatScreen: React.FC = () => {
   const textColor = useThemeColor('text');
   const errorColor = useThemeColor('error');
   const surfaceColor = useThemeColor('surface');
+
+  const { isClosed: interstitialClosed, showIfNeeded } = useInterstitialAdHelper();
 
   const [webRTC, setWebRTC] = useState<any>(null);
 
@@ -397,32 +400,25 @@ const VideoChatScreen: React.FC = () => {
     KeepAwake.deactivateKeepAwake().catch(() => {});
   }, [stopInCallManager]);
 
-  resetChatRef.current = resetChat;
+resetChatRef.current = resetChat;
 
-  const startVideoChat = useCallback(async () => {
-     if (!webRTCSupported) {
-       CustomAlert.error('WebRTC Not Available', 'Please ensure you are running a development build with react-native-webrtc installed.');
-       return;
-     }
+  // The actual connection logic, held in a ref so the interstitial's close
+  // handler can invoke it after the ad dismisses — without depending on
+  // component state that may have changed in the meantime.
+  const startChatRef = useRef<() => void>(() => {});
 
-     await checkPermissions();
+  startChatRef.current = async () => {
+      resetChat();
+      setIsConnecting(true);
 
-     if (!hasPermissions) {
-       CustomAlert.warning('Permissions Required', 'Camera and microphone permissions are required for video chat.');
-       return;
-     }
+      const stream = await initLocalStream();
+      if (!stream) {
+        setIsConnecting(false);
+        return;
+      }
 
-    resetChat();
-    setIsConnecting(true);
-
-    const stream = await initLocalStream();
-    if (!stream) {
-      setIsConnecting(false);
-      return;
-    }
-
-    try {
-      socket.current = io(SOCKET_URL, {
+      try {
+        socket.current = io(SOCKET_URL, {
         auth: async (cb) => {
           cb({ token: await AsyncStorage.getItem('authToken') });
         },
@@ -682,11 +678,51 @@ const VideoChatScreen: React.FC = () => {
         }
       });
 
-     } catch (error) {
-       CustomAlert.error('Error', 'Failed to start video chat.');
-       setIsConnecting(false);
+} catch (error) {
+        CustomAlert.error('Error', 'Failed to start video chat.');
+        setIsConnecting(false);
+      }
+    };
+
+  // Track the interstitial's closed transition so we can resume the
+  // "Start Matching" flow exactly once after the ad dismisses. Watching the
+  // raw isClosed flag is unreliable because it stays true between sessions,
+  // so we diff against the previous value.
+  const wasShowingAdRef = useRef(false);
+  const prevClosedRef = useRef(interstitialClosed);
+  useEffect(() => {
+    const justClosed = !prevClosedRef.current && interstitialClosed;
+    prevClosedRef.current = interstitialClosed;
+
+    if (wasShowingAdRef.current && justClosed) {
+      wasShowingAdRef.current = false;
+      startChatRef.current();
+    }
+  }, [interstitialClosed]);
+
+  // Track whether an interstitial is currently blocking the start tap.
+  const startVideoChat = useCallback(async () => {
+      if (!webRTCSupported) {
+        CustomAlert.error('WebRTC Not Available', 'Please ensure you are running a development build with react-native-webrtc installed.');
+        return;
+      }
+
+      await checkPermissions();
+
+      if (!hasPermissions) {
+        CustomAlert.warning('Permissions Required', 'Camera and microphone permissions are required for video chat.');
+        return;
+      }
+
+     const adShown = showIfNeeded();
+     if (adShown) {
+       // Block until the ad closes; the effect above resumes the flow.
+       wasShowingAdRef.current = true;
+       return;
      }
-  }, [webRTCSupported, hasPermissions, checkPermissions, resetChat, initLocalStream, createPeerConnection, RTCSessionDescription, RTCIceCandidate]);
+
+     startChatRef.current();
+  }, [webRTCSupported, hasPermissions, checkPermissions, showIfNeeded]);
 
   const handleReportUser = useCallback(() => {
     CustomAlert.confirm(

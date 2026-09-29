@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { showErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
+import AdBanner from '@/components/ads/AdBanner';
 
 const { width } = Dimensions.get('window');
 
@@ -418,6 +419,13 @@ export default function ExploreScreen() {
               </ScrollView>
             </View>
 
+            {/* Promoted slot — a single banner between the category rail and the
+            trending posts. It sits in its own card so it never visually merges
+            with user content, and it renders nothing when ads are unavailable. */}
+            <View style={[styles.adSection, { backgroundColor: surfaceColor, borderColor }]}>
+                <AdBanner style={styles.adBanner} />
+            </View>
+
             {/* Trending Posts */}
             <View style={styles.section}>
               <ThemedText type="title" style={styles.sectionTitle}>Trending Posts</ThemedText>
@@ -625,6 +633,18 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: typography.sizes.body1, fontFamily: typography.families.regular },
   scrollBody: { paddingBottom: spacing.xxl },
   section: { marginTop: spacing.xl },
+  adSection: {
+    marginTop: spacing.xl,
+    marginHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: sizes.dividerWidth,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  adBanner: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
   categoryList: { paddingHorizontal: spacing.lg, gap: spacing.md },
   catPill: {
     flexDirection: 'row',

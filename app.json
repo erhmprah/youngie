@@ -133,7 +133,18 @@
         }
       ],
       "expo-status-bar",
-      "expo-video"
+      "expo-video",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-9585572957292639~4429666684",
+          "iosAppId": "ca-app-pub-9585572957292639~2921143892",
+          "delayAppMeasurementInit": true,
+          "optimizeInitialization": true,
+          "optimizeAdLoading": true,
+          "userTrackingUsageDescription": "This identifier will be used to deliver personalised ads to you on this device."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

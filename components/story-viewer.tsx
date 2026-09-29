@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ReactionPicker, ReactionType } from './reaction-picker';
 import { StoryViewersModal } from './story-viewers-modal';
 import { useRouter } from 'expo-router';
+import { useInterstitialAdHelper } from '@/hooks/useInterstitialAdHelper';
 
 interface User {
     _id: string;
@@ -64,12 +65,20 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const [showViewersModal, setShowViewersModal] = useState(false);
     const [currentPollOptions, setCurrentPollOptions] = useState<PollOption[]>([]);
     const [progressAnim] = useState(() => new Animated.Value(0));
+    const [storiesViewedSinceAd, setStoriesViewedSinceAd] = useState(0);
+    const [adShownForStory, setAdShownForStory] = useState(false);
     const currentValueRef = useRef(0);
     const group = storyGroups[currentGroupIndex];
     const story = group?.stories[currentStoryIndex];
     const storyVideoUri = story?.video ? getImageUrl(story.video) : undefined;
     const storyPlayer = useVideoPlayer(storyVideoUri ? { uri: storyVideoUri } : undefined);
     const storyGroupsLengthRef = useRef(storyGroups.length);
+    const { showIfNeeded } = useInterstitialAdHelper();
+
+    // Show a full-screen ad after the user has viewed about N stories.
+    // The counter resets each time the viewer closes, so it only fires
+    // during a single continuous viewing session.
+    const INTERSTITIAL_STORY_INTERVAL = 5;
 
     // Reset to initial index when storyGroups changes (e.g., after deletion)
     useEffect(() => {
@@ -148,11 +157,11 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         });
     }, [progressAnim, currentGroupIndex, currentStoryIndex, showReactions, showViewersModal]);
 
-    useEffect(() => {
+useEffect(() => {
         if (visible && story) {
             // Mark as viewed if not already viewed AND not the author
             const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
-            if (user && !isAuthor && !story.viewers?.some((v: any) => v && v.user && v.user._id === user._id)) {
+            if (user && !isAuthor && !story.viewers?.some((v: any) => v && v.user && v.user._id === user?._id)) {
                  storyAPI.viewStory(story._id).then(() => {
                      onStoryViewed?.(story._id);
                  }).catch(() => {});
@@ -164,6 +173,45 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
             }
         }
     }, [visible, story, startProgressAnimation, showReactions, showViewersModal, user, progressAnim, onStoryViewed]);
+
+    // Reset the per-session story counter whenever the viewer closes, so the
+    // ad cadence only accumulates during a single continuous viewing session.
+    useEffect(() => {
+        if (!visible) {
+            setStoriesViewedSinceAd(0);
+            setAdShownForStory(false);
+        }
+    }, [visible]);
+
+    // Fire a full-screen interstitial after the user has watched about N
+    // stories. The ad pauses the auto-advance; once it closes, viewing
+    // resumes naturally on the next tick.
+    useEffect(() => {
+        if (!visible || !story) return;
+        if (adShownForStory) return;
+        if (storiesViewedSinceAd >= INTERSTITIAL_STORY_INTERVAL) {
+            setAdShownForStory(true);
+            progressAnim.stopAnimation();
+            const shown = showIfNeeded();
+            if (!shown) {
+                // Ad not ready — reset the counter so it tries again on the
+                // next story instead of permanently blocking the flow.
+                setStoriesViewedSinceAd(0);
+            }
+        }
+    }, [visible, story, storiesViewedSinceAd, adShownForStory, showIfNeeded]);
+
+    // Count stories actually consumed by the user. A story counts once its
+    // id changes while the viewer is open — the progress-bar timer reaching
+    // the end calls handleNextStory, which moves us here.
+    const lastStoryIdRef = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (!visible || !story) return;
+        if (lastStoryIdRef.current !== undefined && lastStoryIdRef.current !== story._id) {
+            setStoriesViewedSinceAd(prev => prev + 1);
+        }
+        lastStoryIdRef.current = story._id;
+    }, [visible, story]);
 
     // Reset viewers modal when story changes or viewer is closed
     useEffect(() => {
