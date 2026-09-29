@@ -1,13 +1,13 @@
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useNetwork } from '@/contexts/NetworkContext';
-import { View, Text, StyleSheet, Animated } from 'react-native';
-import { useEffect, useRef } from 'react';
+import { Text, StyleSheet, Animated } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 
 export default function ConnectionBanner() {
   const { isOffline } = useNetwork();
   const backgroundColor = useThemeColor('error');
   const textColor = '#FFFFFF';
-  const translateY = useRef(new Animated.Value(-100)).current;
+  const [translateY] = useState(() => new Animated.Value(-100));
   const previousOffline = useRef(isOffline);
 
   useEffect(() => {
@@ -35,8 +35,6 @@ export default function ConnectionBanner() {
     }
     previousOffline.current = isOffline;
   }, [isOffline, translateY]);
-
-  if (!isOffline && previousOffline.current === false) return null;
 
   return (
     <Animated.View

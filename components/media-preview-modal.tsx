@@ -36,6 +36,8 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
 
     useEffect(() => {
         if (visible) {
+            // Opening the modal intentionally resets its local navigation state.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCurrentIndex(initialIndex);
             translateY.value = 0;
         }
@@ -70,6 +72,7 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
     const onGestureEvent = (event: any) => {
         dragRef.current.startY = event.nativeEvent.y;
         if (event.nativeEvent.y < 0) {
+            // eslint-disable-next-line react-hooks/immutability
             translateY.value = event.nativeEvent.y;
         } else {
             translateY.value = event.nativeEvent.y * 0.4;
@@ -83,6 +86,7 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
             const VELOCITY_THRESHOLD = -800;
 
             if (y <= -SWIPE_THRESHOLD || velocityY <= VELOCITY_THRESHOLD) {
+                // eslint-disable-next-line react-hooks/immutability
                 translateY.value = withTiming(-height, { duration: 250 }, () => {
                     runOnJS(goToNext)();
                     translateY.value = 0;
@@ -100,6 +104,7 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
 
     // Reset error state when attachment or visibility changes
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMediaError(false);
     }, [attachment, visible, currentIndex]);
 

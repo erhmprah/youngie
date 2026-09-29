@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios, { AxiosInstance } from 'axios';
 import { router } from 'expo-router';
 import { CustomAlert } from './alert';
+import { Platform } from 'react-native';
 
 // Use machine IP for iOS simulator or physical devices.
 // For Android emulator, '10.0.2.2' maps to the host machine's localhost.
@@ -9,17 +10,19 @@ import { CustomAlert } from './alert';
 // For physical devices, you MUST use your machine's actual local IP address (e.g., '192.168.1.X').
 // Ensure your backend server is running and accessible on the specified port.
 // If you encounter a 'Network Error', verify this URL is correct for your device/emulator and network.
-// Default to 10.0.2.2 for Android emulator (backend runs on port 5001)
-// For physical devices, use machine's IP (e.g., '192.168.1.61:5001')
+
+// Pick the right host for the current platform when no explicit override is set.
+// Android emulator needs 10.0.2.2; iOS simulator and web can use localhost.
+const DEFAULT_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 
 // Load Balancing Configuration
 // Support multiple server endpoints for failover and load distribution
-const SERVER_ENDPOINTS = process.env.EXPO_PUBLIC_SERVER_ENDPOINTS 
+const SERVER_ENDPOINTS = process.env.EXPO_PUBLIC_SERVER_ENDPOINTS
   ? process.env.EXPO_PUBLIC_SERVER_ENDPOINTS.split(',').map(s => s.trim())
-  : ['http://10.0.2.2:5001'];
+  : [`http://${DEFAULT_HOST}:5001`];
 
 // Primary API URL (main server)
-const PRIMARY_API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5001/api';
+const PRIMARY_API_URL = process.env.EXPO_PUBLIC_API_URL || `http://${DEFAULT_HOST}:5001/api`;
 
 // For backwards compatibility, use single URL
 const API_URL = PRIMARY_API_URL;
@@ -228,6 +231,11 @@ const ALERT_COOLDOWN_MS = 3000;
 /**
  * Get user-friendly error message based on status code
  */
+function isSuspendedError(message?: string): boolean {
+  if (!message) return false;
+  return /suspended|not authorized to use this app/i.test(message);
+}
+
 function getApiErrorMessage(status: number, data?: any): { title: string; message: string; shouldRedirect?: boolean } {
   const serverMessage = data?.msg || data?.message;
   
@@ -237,6 +245,9 @@ function getApiErrorMessage(status: number, data?: any): { title: string; messag
     case 401:
       return { title: 'Session Expired', message: 'Your session has expired. Please log in again.', shouldRedirect: true };
     case 403:
+      if (isSuspendedError(serverMessage)) {
+        return { title: 'Account Suspended', message: serverMessage || 'Your account has been suspended.', shouldRedirect: true };
+      }
       return { title: 'Access Denied', message: serverMessage || 'You do not have permission to perform this action.' };
     case 404:
       return { title: 'Not Found', message: serverMessage || 'The requested item was not found.' };
@@ -371,6 +382,11 @@ function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?
     if (error.response.status === 401) {
       AsyncStorage.removeItem('authToken');
       AsyncStorage.removeItem('sessionId');
+    } else if (error.response.status === 403 && isSuspendedError(error.response.data?.msg || error.response.data?.message)) {
+      // Clear tokens on suspension so a mid-session suspension fully logs the
+      // user out instead of leaving them in a broken state.
+      AsyncStorage.removeItem('authToken');
+      AsyncStorage.removeItem('sessionId');
     }
   }
 
@@ -410,6 +426,7 @@ const api: AxiosInstance = axios.create({
 // Retry configuration constants
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+const RATE_LIMIT_RETRY_DELAY_MS = 5000; // 5 seconds base delay for 429
 
 // Retry logic for failed requests
 api.interceptors.response.use(
@@ -417,10 +434,14 @@ api.interceptors.response.use(
   async (error) => {
     const config = error.config;
     
-    // Only retry on network errors or 5xx errors
+    // Check if it's a 429 (rate limit) error
+    const isRateLimited = error.response?.status === 429;
+    
+    // Only retry on network errors, 5xx errors, or 429 rate limit
     const shouldRetry = 
       !error.response || 
       (error.response.status >= 500 && error.response.status <= 599) ||
+      isRateLimited ||
       error.code === 'ECONNABORTED' ||
       error.message.includes('Network Error');
     
@@ -432,8 +453,10 @@ api.interceptors.response.use(
         
         console.warn(`🔄 Retrying request (attempt ${config.__retryCount})...`);
         
-        // Add delay before retry
-        const delay = config.__retryCount * RETRY_DELAY_MS;
+        // Add delay before retry - exponential backoff for 429
+        const delay = isRateLimited 
+          ? RATE_LIMIT_RETRY_DELAY_MS * Math.pow(2, config.__retryCount - 1) // Exponential backoff: 5s, 10s, 20s
+          : config.__retryCount * RETRY_DELAY_MS;
         await new Promise(resolve => setTimeout(resolve, delay));
         
         return api(config);
@@ -454,6 +477,45 @@ const uploadAPI: AxiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 30000, // 30 seconds for file uploads
 });
+
+// Retry logic for upload requests (including 429 handling)
+uploadAPI.interceptors.response.use(
+  null,
+  async (error) => {
+    const config = error.config;
+    
+    // Check if it's a 429 (rate limit) error
+    const isRateLimited = error.response?.status === 429;
+    
+    // Only retry on network errors, 5xx errors, or 429 rate limit
+    const shouldRetry = 
+      !error.response || 
+      (error.response.status >= 500 && error.response.status <= 599) ||
+      isRateLimited ||
+      error.code === 'ECONNABORTED' ||
+      error.message.includes('Network Error');
+    
+    if (shouldRetry && config && !config.__retryCount) {
+      config.__retryCount = config.__retryCount || 0;
+      
+      if (config.__retryCount < MAX_RETRIES) {
+        config.__retryCount += 1;
+        
+        console.warn(`🔄 Retrying upload request (attempt ${config.__retryCount})...`);
+        
+        // Add delay before retry - exponential backoff for 429
+        const delay = isRateLimited 
+          ? RATE_LIMIT_RETRY_DELAY_MS * Math.pow(2, config.__retryCount - 1)
+          : config.__retryCount * RETRY_DELAY_MS;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        return uploadAPI(config);
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 // Add token to requests
 api.interceptors.request.use(
@@ -626,6 +688,7 @@ export const notificationAPI = {
 
 export const chatAPI = {
   getUserChats: (userId: string, page?: number, limit?: number) => api.get(`/chats/user/${userId}`, { params: { page, limit } }),
+  getUnreadCount: () => api.get('/chats/unread-count'),
   getChat: (chatId: string, page?: number, limit?: number) => api.get(`/chats/${chatId}`, { params: { page, limit } }),
   createChat: (data: any) => api.post('/chats', data),
   sendMessage: (chatId: string, data: { content?: string; isAnonymous?: boolean; replyTo?: string; attachment?: any; pollOptions?: { text: string }[] }) =>
@@ -823,9 +886,9 @@ export const getImageUrl = (imagePath?: string): string | undefined => {
 };
 
 // Get base URL (without /api) for Socket.IO
-export const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL 
-  ? process.env.EXPO_PUBLIC_API_URL.replace('/api', '') 
-  : 'http://10.0.2.2:5001'; // Uses load balancer for WebSocket connections
+export const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL
+  ? process.env.EXPO_PUBLIC_API_URL.replace('/api', '')
+  : `http://${DEFAULT_HOST}:5001`; // Uses load balancer for WebSocket connections
 
 export { BASE_URL };
 

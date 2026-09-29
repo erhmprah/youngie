@@ -9,6 +9,7 @@ import {
   getStoriesCacheKey
 } from './cache';
 import { userAPI, postAPI, notificationAPI, chatAPI, communityAPI, storyAPI } from './api';
+import { notifyUnreadChatInvalidated, notifyUnreadNotificationInvalidated } from './unreadStore';
 
 /**
  * Cached API - Wraps existing API calls with caching
@@ -233,6 +234,8 @@ export const cachedPostAPI = {
 };
 
 // Notifications caching
+const NOTIFICATION_UNREAD_COUNT_KEY = 'notification_unread_count';
+
 export const cachedNotificationAPI = {
   /**
    * Get notifications with caching
@@ -252,10 +255,15 @@ export const cachedNotificationAPI = {
   },
   
   /**
-   * Get unread count with caching
+   * Get unread count with caching.
+   * `force` bypasses the cached total so the badge reflects the server
+   * immediately after a read/delete/clear instead of after the TTL.
    */
-  getUnreadCount: async () => {
-    const cacheKey = 'notification_unread_count';
+  getUnreadCount: async (force = false) => {
+    const cacheKey = NOTIFICATION_UNREAD_COUNT_KEY;
+    if (force) {
+      await cacheService.remove(cacheKey);
+    }
     const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
     
     if (cachedData && !isExpired) {
@@ -271,9 +279,13 @@ export const cachedNotificationAPI = {
    * Mark as read and invalidate cache
    */
   markAsRead: async (notificationId: string) => {
+    // Drop the cached total before the PUT: a badge refetch racing this call
+    // would otherwise re-populate the cache with the pre-read total and keep
+    // the badge stale for the whole TTL.
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
     const response = await notificationAPI.markAsRead(notificationId);
-    // Invalidate notifications cache
-    await cacheService.remove(getNotificationsCacheKey());
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
+    notifyUnreadNotificationInvalidated();
     return response;
   },
   
@@ -281,15 +293,58 @@ export const cachedNotificationAPI = {
    * Mark all as read and invalidate cache
    */
   markAllAsRead: async () => {
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
     const response = await notificationAPI.markAllAsRead();
-    // Invalidate notifications cache
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
+    notifyUnreadNotificationInvalidated();
+    return response;
+  },
+
+  /**
+   * Delete a single notification and invalidate cache
+   */
+  deleteNotification: async (notificationId: string) => {
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
+    const response = await notificationAPI.deleteNotification(notificationId);
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
     await cacheService.remove(getNotificationsCacheKey());
+    notifyUnreadNotificationInvalidated();
+    return response;
+  },
+
+  /**
+   * Clear all notifications and invalidate cache
+   */
+  clearAll: async () => {
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
+    const response = await notificationAPI.clearAll();
+    await cacheService.remove(NOTIFICATION_UNREAD_COUNT_KEY);
+    await cacheService.remove(getNotificationsCacheKey());
+    notifyUnreadNotificationInvalidated();
     return response;
   },
 };
 
 // Chats caching
+const CHAT_UNREAD_COUNT_KEY = 'chat_unread_count';
+
 export const cachedChatAPI = {
+  /**
+   * Get unread chat count with caching
+   */
+  getUnreadCount: async () => {
+    const cacheKey = CHAT_UNREAD_COUNT_KEY;
+    const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
+    
+    if (cachedData && !isExpired) {
+      return { data: cachedData, fromCache: true };
+    }
+    
+    const response = await chatAPI.getUnreadCount();
+    await cacheService.set(cacheKey, response.data, CACHE_TTL.SHORT);
+    return { data: response.data, fromCache: false };
+  },
+
   /**
    * Get user chats with caching
    */
@@ -330,6 +385,22 @@ export const cachedChatAPI = {
     const response = await chatAPI.sendMessage(chatId, data);
     // Invalidate chat cache
     await cacheService.remove(`chat_${chatId}`);
+    // The badge must not keep a stale total after a send
+    await cacheService.remove(CHAT_UNREAD_COUNT_KEY);
+    return response;
+  },
+
+  /**
+   * Mark chat as read and invalidate the unread count cache
+   */
+  markAsRead: async (chatId: string) => {
+    // Drop the cached total before the PUT: a badge refetch racing this call
+    // would otherwise re-populate the cache with the pre-read total and keep
+    // the badge stale for the whole TTL.
+    await cacheService.remove(CHAT_UNREAD_COUNT_KEY);
+    const response = await chatAPI.markAsRead(chatId);
+    await cacheService.remove(CHAT_UNREAD_COUNT_KEY);
+    notifyUnreadChatInvalidated();
     return response;
   },
 };

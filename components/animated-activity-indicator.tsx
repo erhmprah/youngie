@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { ActivityIndicator, Animated, ViewStyle } from 'react-native';
 
 interface AnimatedActivityIndicatorProps {
@@ -8,7 +8,7 @@ interface AnimatedActivityIndicatorProps {
 }
 
 const AnimatedActivityIndicatorComponent = ({ size = 'large', color, style }: AnimatedActivityIndicatorProps) => {
-  const scale = useRef(new Animated.Value(1)).current;
+  const [scale] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     const pulse = Animated.loop(

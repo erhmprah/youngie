@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { userAPI, getImageUrl } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { Ionicons } from '@expo/vector-icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { verticalScale } from '@/utils/scale';
@@ -351,7 +352,7 @@ export default function SwipeScreen() {
                         </ThemedView>
                     ) : !currentProfile ? (
                         <ThemedView style={styles.centerContainer}>
-                            <ThemedText type="heading1">{activeFilterCount > 0 ? '🔍' : '✨'}</ThemedText>
+            <Ionicons name={activeFilterCount > 0 ? 'search-outline' : 'sparkles-outline'} size={56} color={lightTextColor} />
                             <ThemedText type="title">{activeFilterCount > 0 ? 'No Matches Found' : 'Discovery Finished'}</ThemedText>
                             <ThemedText style={{ color: lightTextColor, textAlign: 'center', marginTop: spacing.sm }}>
                                 {activeFilterCount > 0 ? 'Try adjusting your filters to see more people.' : 'Check back later for more people nearby.'}
@@ -653,7 +654,7 @@ const GridView = ({
     if (profiles.length === 0) {
         return (
             <ThemedView style={styles.centerContainer}>
-                <ThemedText type="heading1">{activeFilterCount > 0 ? '🔍' : '✨'}</ThemedText>
+                            <Ionicons name={activeFilterCount > 0 ? 'search-outline' : 'sparkles-outline'} size={56} color={lightTextColor} />
                 <ThemedText type="title">{activeFilterCount > 0 ? 'No Matches Found' : 'Discovery Finished'}</ThemedText>
                 <ThemedText style={{ color: lightTextColor, textAlign: 'center', marginTop: spacing.sm }}>
                     {activeFilterCount > 0 ? 'Try adjusting your filters to see more people.' : 'Check back later for more people nearby.'}

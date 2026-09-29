@@ -8,7 +8,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
-import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { communityAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
@@ -17,7 +16,7 @@ import { getSocket } from '@/utils/socket';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
 
 interface FeedPost {
@@ -60,6 +59,8 @@ interface FeedCardProps {
     voteAPI?: (postId: string, optionIndex: number) => Promise<any>;
 }
 
+const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
+
 function InlineVideo({ uri, shouldPlay, style }: { uri: string; shouldPlay: boolean; style: any }) {
     const player = useVideoPlayer({ uri }, (p) => {
         p.loop = true;
@@ -72,7 +73,7 @@ function InlineVideo({ uri, shouldPlay, style }: { uri: string; shouldPlay: bool
         } else {
             player.pause();
         }
-    }, [shouldPlay]);
+    }, [player, shouldPlay]);
     return (
         <VideoView
             player={player}
@@ -84,7 +85,6 @@ function InlineVideo({ uri, shouldPlay, style }: { uri: string; shouldPlay: bool
 }
 
 export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId, voteAPI }: FeedCardProps) => {
-    const { user } = useAuth();
     const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
@@ -101,20 +101,18 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const isAnonPost = !!post.isAnonymous;
     const isLiked = post.likes.some(l => l._id === currentUserId);
     const [isFavorited, setIsFavorited] = useState(post.isFavorited ?? false);
-    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const [pulseAnim] = useState(() => new Animated.Value(1));
     const lastTap = useRef<number | null>(null);
-    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [previewMedia, setPreviewMedia] = useState<{ attachments: any[]; index: number } | null>(null);
     const mediaTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0 && viewableItems[0].index !== null) {
             setActiveImageIndex(viewableItems[0].index);
         }
-    }).current;
-    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+    }, []);
 
     useEffect(() => {
         setPost(initialPost);
@@ -191,11 +189,10 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     };
 
     const handleMediaTap = (url: string, type?: string) => {
-        const now = Date.now();
         const DOUBLE_PRESS_DELAY = 300;
         const resolvedUrl = normalizeMediaUrl(url);
 
-        if (lastTap.current && (now - lastTap.current) < DOUBLE_PRESS_DELAY) {
+        if (lastTap.current) {
             if (mediaTapTimer.current) {
                 clearTimeout(mediaTapTimer.current);
                 mediaTapTimer.current = null;
@@ -205,7 +202,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             }
             lastTap.current = null;
         } else {
-            lastTap.current = now;
+            lastTap.current = 1;
             mediaTapTimer.current = setTimeout(() => {
                 const items = getAllMediaItems();
                 const index = items.findIndex((item) => item.uri === resolvedUrl);
@@ -679,6 +676,7 @@ source={{ uri: getImageUrl(item) }}
 });
 
 FeedCard.displayName = 'FeedCard';
+export default FeedCard;
 
 const styles = StyleSheet.create({
     card: {

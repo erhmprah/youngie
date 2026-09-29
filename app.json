@@ -31,11 +31,12 @@
             "CFBundleURLSchemes": [
               "youngie",
               "exp+youngie",
-              "com.googleusercontent.apps.274460413616-cqu0cvkqhajj72hleui5l2raovj59ssd"
+              "com.googleusercontent.apps.274460413616-7qlmlc0nu5r2a3ba8ksupq36qdeo9ne2"
             ]
           }
         ]
-      }
+      },
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.erhmprah.youngie",

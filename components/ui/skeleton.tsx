@@ -1,12 +1,11 @@
 // components/ui/skeleton.tsx
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Animated, 
   StyleSheet, 
-  ViewStyle, 
-  LayoutChangeEvent 
+  ViewStyle
 } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors } from '@/constants/design-tokens';
@@ -27,7 +26,7 @@ export function Skeleton({
   style,
   isLoading = true,
 }: SkeletonProps) {
-  const animatedValue = useRef(new Animated.Value(0)).current;
+  const [animatedValue] = useState(() => new Animated.Value(0));
   const systemColorScheme = useColorScheme();
   const theme: 'light' | 'dark' = systemColorScheme === 'dark' ? 'dark' : 'light';
   const { colorScheme } = useTheme();
@@ -194,11 +193,6 @@ interface SkeletonProfileProps {
 }
 
 export function SkeletonProfile({ style, isLoading = true }: SkeletonProfileProps) {
-  const systemColorScheme = useColorScheme();
-  const theme: 'light' | 'dark' = systemColorScheme === 'dark' ? 'dark' : 'light';
-  const { colorScheme } = useTheme();
-  const colors = getColors(theme, colorScheme);
-
   return (
     <View style={[styles.profile, style]}>
       {/* Avatar and basic info */}

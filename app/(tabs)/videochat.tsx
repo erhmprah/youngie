@@ -16,6 +16,7 @@ import { ActivityIndicator, Animated, Dimensions, FlatList, KeyboardAvoidingView
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Socket, io } from 'socket.io-client';
 import { setAudioModeAsync } from 'expo-audio';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Message = {
   id: string;
@@ -422,6 +423,9 @@ const VideoChatScreen: React.FC = () => {
 
     try {
       socket.current = io(SOCKET_URL, {
+        auth: async (cb) => {
+          cb({ token: await AsyncStorage.getItem('authToken') });
+        },
         transports: ['websocket'],
         timeout: 10000,
         reconnection: true,

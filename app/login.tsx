@@ -24,6 +24,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const { updateUser } = useAuth();
 
+
   useEffect(() => {
     const checkSupabaseSession = async () => {
       try {
@@ -99,7 +100,7 @@ export default function LoginScreen() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [router]);
+    }, [router]);
 
   const primaryColor = useThemeColor('primary');
   const primaryDark = useThemeColor('primaryDark');

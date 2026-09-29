@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { notificationAPI, userAPI, communityAPI, chatAPI, getImageUrl, postAPI, storyAPI } from '@/utils/api';
+import { cachedNotificationAPI } from '@/utils/cachedApi';
 import { getColors, spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
 import { verticalScale } from '@/utils/scale';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -26,7 +27,7 @@ interface NotificationSender {
 interface Notification {
   _id: string;
   sender: NotificationSender;
-  type: 'like' | 'comment' | 'follow' | 'match' | 'message' | 'community_join_request' | 'chat_invitation' | 'tag';
+  type: 'like' | 'comment' | 'follow' | 'match' | 'message' | 'community_join_request' | 'community_join_request_approved' | 'community_join_request_rejected' | 'chat_invitation' | 'tag';
   message: string;
   isRead: boolean;
   createdAt: string;
@@ -125,7 +126,7 @@ export default function NotificationsScreen() {
 
   const handleMarkAsRead = useCallback(async (notificationId: string) => {
     try {
-      await notificationAPI.markAsRead(notificationId);
+      await cachedNotificationAPI.markAsRead(notificationId);
       setNotifications(prev => prev.map(notif =>
         notif._id === notificationId ? { ...notif, isRead: true } : notif
       ));
@@ -137,7 +138,7 @@ export default function NotificationsScreen() {
     if (!user?._id) return;
     try {
       await userAPI.acceptFriendRequest(user._id, senderId);
-       await notificationAPI.markAsRead(notificationId);
+       await cachedNotificationAPI.markAsRead(notificationId);
        setNotifications(prev => prev.map(notif =>
          notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request accepted' } : notif
        ));
@@ -151,7 +152,7 @@ export default function NotificationsScreen() {
     if (!user?._id) return;
     try {
       await userAPI.ignoreFriendRequest(user._id, senderId);
-      await notificationAPI.markAsRead(notificationId);
+      await cachedNotificationAPI.markAsRead(notificationId);
        setNotifications(prev => prev.map(notif =>
          notif._id === notificationId ? { ...notif, isRead: true, message: 'Friend request ignored' } : notif
        ));
@@ -164,7 +165,7 @@ export default function NotificationsScreen() {
    const handleApproveCommunity = async (communityId: string, senderId: string, notificationId: string) => {
      try {
        await communityAPI.approveMember(communityId, senderId);
-       await notificationAPI.markAsRead(notificationId);
+       await cachedNotificationAPI.markAsRead(notificationId);
        setNotifications(prev => prev.map(notif =>
          notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request approved' } : notif
        ));
@@ -177,7 +178,7 @@ export default function NotificationsScreen() {
    const handleRejectCommunity = async (communityId: string, senderId: string, notificationId: string) => {
       try {
         await communityAPI.rejectMember(communityId, senderId);
-        await notificationAPI.markAsRead(notificationId);
+        await cachedNotificationAPI.markAsRead(notificationId);
         setNotifications(prev => prev.map(notif =>
           notif._id === notificationId ? { ...notif, isRead: true, message: 'Community join request rejected' } : notif
         ));
@@ -190,7 +191,7 @@ export default function NotificationsScreen() {
    const handleAcceptChatInvitation = async (chatId: string, notificationId: string) => {
      try {
        await chatAPI.acceptInvitation(chatId);
-       await notificationAPI.markAsRead(notificationId);
+       await cachedNotificationAPI.markAsRead(notificationId);
        setNotifications(prev => prev.map(notif =>
          notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation accepted' } : notif
        ));
@@ -203,7 +204,7 @@ export default function NotificationsScreen() {
    const handleRejectChatInvitation = async (chatId: string, notificationId: string) => {
      try {
        await chatAPI.rejectInvitation(chatId);
-       await notificationAPI.markAsRead(notificationId);
+       await cachedNotificationAPI.markAsRead(notificationId);
        setNotifications(prev => prev.map(notif =>
          notif._id === notificationId ? { ...notif, isRead: true, message: 'Chat invitation rejected' } : notif
        ));
@@ -227,7 +228,7 @@ export default function NotificationsScreen() {
            style: 'destructive',
            onPress: async () => {
              try {
-               await notificationAPI.clearAll();
+               await cachedNotificationAPI.clearAll();
                setNotifications([]);
                CustomAlert.success('Success', 'All notifications cleared');
              } catch (error) {
@@ -242,7 +243,7 @@ export default function NotificationsScreen() {
 
   const handleMarkAllAsRead = async () => {
     try {
-      await notificationAPI.markAllAsRead();
+      await cachedNotificationAPI.markAllAsRead();
       setNotifications(prev => prev.map(notif => ({ ...notif, isRead: true })));
     } catch (error) {
       console.error('Failed to mark all as read:', error);
@@ -350,7 +351,7 @@ export default function NotificationsScreen() {
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
 
           try {
-            await notificationAPI.deleteNotification(notification._id);
+            await cachedNotificationAPI.deleteNotification(notification._id);
           } catch {
             // ignore
           }
@@ -364,7 +365,7 @@ export default function NotificationsScreen() {
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
 
           try {
-            await notificationAPI.deleteNotification(notification._id);
+            await cachedNotificationAPI.deleteNotification(notification._id);
           } catch {
             // ignore
           }
@@ -391,7 +392,7 @@ export default function NotificationsScreen() {
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
 
           try {
-            await notificationAPI.deleteNotification(notification._id);
+            await cachedNotificationAPI.deleteNotification(notification._id);
           } catch {
             // ignore
           }
@@ -405,7 +406,7 @@ export default function NotificationsScreen() {
           setNotifications(prev => prev.filter(n => n._id !== notification._id));
 
           try {
-            await notificationAPI.deleteNotification(notification._id);
+            await cachedNotificationAPI.deleteNotification(notification._id);
           } catch {
             // ignore
           }

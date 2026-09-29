@@ -51,6 +51,8 @@ export const ICONS = {
   bell: 'notifications-outline',
   checkmark: 'checkmark-circle',
   checkmarkOutline: 'checkmark-circle-outline',
+  success: 'checkmark-circle',
+  error: 'close-circle',
   alert: 'alert-circle-outline',
   info: 'information-circle-outline',
   warning: 'warning-outline',

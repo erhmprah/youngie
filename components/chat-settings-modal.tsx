@@ -45,13 +45,15 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
         } catch (error) {
             console.error('Failed to load chat settings:', error);
         }
-    }, [user?._id, chat?._id]);
+    }, [user, chat]);
 
     useEffect(() => {
         if (visible && chat?._id && user?._id) {
+            // Settings must be restored when the modal opens.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             loadChatSettings();
         }
-    }, [visible, chat?._id, user?._id, loadChatSettings]);
+    }, [visible, chat, user, loadChatSettings]);
 
     const saveChatSettings = useCallback(async (newSettings: { isMuted?: boolean; fontSize?: 'small' | 'medium' | 'large' }) => {
         try {
@@ -62,7 +64,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
         } catch (error) {
             console.error('Failed to save chat settings:', error);
         }
-    }, [user?._id, chat?._id, isMuted, fontSize]);
+    }, [user, chat, isMuted, fontSize]);
 
     // Get theme colors at the top level (hooks must be called at top level)
     const backgroundColor = useThemeColor('background');
@@ -73,18 +75,6 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
     const surfaceColor = useThemeColor('surface');
     const borderColor = useThemeColor('border');
     const errorColor = useThemeColor('error');
-
-    // Memoize theme colors object for reference
-    const themeColors = useMemo(() => ({
-        backgroundColor,
-        textColor,
-        primaryColor,
-        whiteColor,
-        lightTextColor,
-        surfaceColor,
-        borderColor,
-        errorColor,
-    }), [backgroundColor, textColor, primaryColor, whiteColor, lightTextColor, surfaceColor, borderColor, errorColor]);
 
     // For backward compatibility
     const white = whiteColor;
@@ -107,7 +97,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
             Alert.alert('Info', 'Chat name update not yet implemented in backend');
             // const response = await chatAPI.updateChat(chat._id, { name: chatName });
             // onChatUpdate(response.data);
-        } catch (error) {
+        } catch {
             Alert.alert('Error', 'Failed to update chat name');
         } finally {
             setIsLoading(false);
@@ -245,29 +235,6 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                         } finally {
                             setIsLoading(false);
                         }
-                    }
-                }
-            ]
-        );
-    };
-
-    const handleClearChat = () => {
-        Alert.alert(
-            'Clear Chat History',
-            'Are you sure you want to clear your chat history? Messages will be hidden from your view but remain visible to other participants.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Clear',
-                    style: 'destructive',
-                    onPress: async () => {
-                        // Clear messages from local state
-                        onChatUpdate({ ...chat, messages: [] });
-                        // TODO: Optionally save "cleared_at" timestamp to user preferences
-                        // so old messages don't reappear on refresh
-                        Alert.alert('Success', 'Chat history cleared');
-                        onMessagesUpdate([]);
-                        onClose();
                     }
                 }
             ]

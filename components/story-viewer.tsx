@@ -63,7 +63,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const [showReactions, setShowReactions] = useState(false);
     const [showViewersModal, setShowViewersModal] = useState(false);
     const [currentPollOptions, setCurrentPollOptions] = useState<PollOption[]>([]);
-    const progressAnim = useRef(new Animated.Value(0)).current;
+    const [progressAnim] = useState(() => new Animated.Value(0));
     const currentValueRef = useRef(0);
     const group = storyGroups[currentGroupIndex];
     const story = group?.stories[currentStoryIndex];
@@ -121,6 +121,17 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
         startProgressAnimation(currentValueRef.current);
     };
 
+    function handleNextStory() {
+        if (group && currentStoryIndex < group.stories.length - 1) {
+            setCurrentStoryIndex(prev => prev + 1);
+        } else if (currentGroupIndex < storyGroups.length - 1) {
+            setCurrentGroupIndex(prev => prev + 1);
+            setCurrentStoryIndex(0);
+        } else {
+            onClose();
+        }
+    }
+
     const startProgressAnimation = useCallback((fromValue?: number) => {
         if (showReactions || showViewersModal) return; // Pause when reacting or viewing viewers
         const startValue = fromValue !== undefined ? fromValue : 0;
@@ -158,17 +169,6 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     useEffect(() => {
         setShowViewersModal(false);
     }, [currentStoryIndex, currentGroupIndex, visible]);
-
-    const handleNextStory = () => {
-        if (group && currentStoryIndex < group.stories.length - 1) {
-            setCurrentStoryIndex(prev => prev + 1);
-        } else if (currentGroupIndex < storyGroups.length - 1) {
-            setCurrentGroupIndex(prev => prev + 1);
-            setCurrentStoryIndex(0);
-        } else {
-            onClose();
-        }
-    };
 
     const handlePrevStory = () => {
         if (currentStoryIndex > 0) {

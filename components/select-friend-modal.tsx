@@ -91,6 +91,8 @@ export function SelectFriendModal({ visible, onClose, onSelectFriend, onCreateGr
 
     useEffect(() => {
         if (visible) {
+            // Opening the modal intentionally refreshes data and resets its form.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             fetchFriends(1);
             setIsGroupMode(false);
             setSelectedFriends([]);

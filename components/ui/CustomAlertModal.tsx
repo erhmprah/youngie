@@ -14,6 +14,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { getColors , borderRadius, spacing, typography } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { ICONS } from '@/constants/icons';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info' | 'confirm' | 'loading';
 
@@ -53,17 +54,17 @@ const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
       case 'success':
         return {
           iconColor: colors.success,
-          iconName: 'checkmark.circle',
+          iconName: ICONS.success,
         };
       case 'error':
         return {
           iconColor: colors.error,
-          iconName: 'close.circle',
+          iconName: ICONS.error,
         };
       case 'warning':
         return {
           iconColor: colors.warning,
-          iconName: 'exclamationmark.triangle',
+          iconName: ICONS.warning,
         };
       case 'confirm':
         return {
@@ -78,7 +79,7 @@ const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
       default:
         return {
           iconColor: colors.primary,
-          iconName: 'info.circle',
+          iconName: ICONS.info,
         };
     }
   };

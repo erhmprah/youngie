@@ -58,6 +58,8 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
   // Reset state when modal opens
   useEffect(() => {
     if (visible) {
+      // The modal form must reset from its incoming filters when opened.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMinAge(initialFilters.minAge);
       setMaxAge(initialFilters.maxAge);
       setSelectedGenders(initialFilters.gender);
@@ -107,7 +109,7 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
           });
           setSuggestions(places);
         }
-      } catch (error) {
+      } catch {
         console.log('Location search error:', error);
         setSuggestions([]);
       }
@@ -201,7 +203,7 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
           setLocation('Unknown Location');
         }
       }
-    } catch (error: any) {
+    } catch {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const inferredLocation = timeZone ? timeZone.split('/').pop()?.replace(/_/g, ' ') : null;
       setLocation(inferredLocation || 'Unknown Location');
@@ -367,15 +369,19 @@ interface RangeSliderProps {
 }
 
 function RangeSlider({ min, max, low, high, onChange, primaryColor, backgroundColor, borderColor }: RangeSliderProps) {
-  const [width, setWidth] = useState(0);
   const widthRef = useRef(0);
   const values = useRef({ low, high });
-  values.current = { low, high };
+
+  useEffect(() => {
+    values.current = { low, high };
+  }, [low, high]);
 
   const startLow = useRef(low);
   const startHigh = useRef(high);
 
-  const panResponderLow = useRef(
+  // PanResponder must be created once with event handlers that read gesture refs.
+  // eslint-disable-next-line react-hooks/refs
+  const [panResponderLow] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
@@ -390,9 +396,10 @@ function RangeSlider({ min, max, low, high, onChange, primaryColor, backgroundCo
         if (newLow !== values.current.low) onChange(newLow, values.current.high);
       },
     })
-  ).current;
+  );
 
-  const panResponderHigh = useRef(
+  // eslint-disable-next-line react-hooks/refs
+  const [panResponderHigh] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
@@ -407,7 +414,7 @@ function RangeSlider({ min, max, low, high, onChange, primaryColor, backgroundCo
         if (newHigh !== values.current.high) onChange(values.current.low, newHigh);
       },
     })
-  ).current;
+  );
 
   const lowPercent = ((low - min) / (max - min)) * 100;
   const highPercent = ((high - min) / (max - min)) * 100;
@@ -415,7 +422,6 @@ function RangeSlider({ min, max, low, high, onChange, primaryColor, backgroundCo
   return (
     <View style={{ height: 40, justifyContent: 'center', marginHorizontal: 12 }} onLayout={(e) => {
       const w = e.nativeEvent.layout.width;
-      setWidth(w);
       widthRef.current = w;
     }}>
       <View style={{ height: 4, backgroundColor: borderColor, borderRadius: 2, position: 'absolute', width: '100%' }} />

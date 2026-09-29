@@ -1,15 +1,18 @@
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { supabase } from './supabase';
 
 GoogleSignin.configure({
   webClientId: '274460413616-cqu0cvkqhajj72hleui5l2raovj59ssd.apps.googleusercontent.com',
+  iosClientId: '274460413616-7qlmlc0nu5r2a3ba8ksupq36qdeo9ne2.apps.googleusercontent.com',
   offlineAccess: true,
 });
 
 export const signInWithGoogle = async () => {
   try {
-    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    if (Platform.OS === 'android') {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    }
     const userInfo = await GoogleSignin.signIn();
     
     const idToken = userInfo.data?.idToken;

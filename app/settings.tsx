@@ -1,22 +1,83 @@
 import React from 'react';
-import { StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, View, Linking } from 'react-native';
+import { StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol, IconName } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { userAPI } from '@/utils/api';
 import * as Haptics from 'expo-haptics';
 
+interface SettingItemProps {
+    icon: IconName;
+    label: string;
+    value?: string | boolean;
+    onPress?: () => void;
+    isDestructive?: boolean;
+    borderColor: string;
+    errorColor: string;
+    surfaceColor: string;
+    textColor: string;
+    lightTextColor: string;
+    primaryColor: string;
+}
+
+function SettingItem({
+    icon,
+    label,
+    value,
+    onPress,
+    isDestructive = false,
+    borderColor,
+    errorColor,
+    surfaceColor,
+    textColor,
+    lightTextColor,
+    primaryColor,
+}: SettingItemProps) {
+    return (
+        <TouchableOpacity
+            style={[styles.item, { borderBottomColor: borderColor }]}
+            onPress={() => {
+                if (onPress) {
+                    Haptics.selectionAsync();
+                    onPress();
+                }
+            }}
+            disabled={value === undefined && !onPress}
+        >
+            <View style={styles.itemLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: isDestructive ? errorColor + '20' : surfaceColor }]}>
+                    <IconSymbol name={icon} size={20} color={isDestructive ? errorColor : textColor} />
+                </View>
+                <ThemedText style={[styles.label, isDestructive && { color: errorColor }]}>{label}</ThemedText>
+            </View>
+            <View style={styles.itemRight}>
+                {typeof value === 'string' && (
+                    <ThemedText style={{ color: lightTextColor, marginRight: spacing.sm }}>{value}</ThemedText>
+                )}
+                {(onPress || typeof value === 'string') && (
+                    <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
+                )}
+                {typeof value === 'boolean' && (
+                    <Switch
+                        value={value}
+                        onValueChange={onPress}
+                        trackColor={{ false: surfaceColor, true: primaryColor }}
+                    />
+                )}
+            </View>
+        </TouchableOpacity>
+    );
+}
+
 export default function SettingsScreen() {
     const router = useRouter();
     const { logout } = useAuth();
     const { mode } = useTheme();
-    const colorScheme = useColorScheme();
     const backgroundColor = useThemeColor('background');
     const textColor = useThemeColor('text');
     const lightTextColor = useThemeColor('lightText');
@@ -52,7 +113,7 @@ export default function SettingsScreen() {
                             await userAPI.deleteAccount();
                             Alert.alert('Account deleted', 'Your account has been scheduled for deletion.');
                             await logout();
-                        } catch (error) {
+                        } catch {
                             Alert.alert('Error', 'Could not delete your account. Please try again.');
                         }
                     },
@@ -61,40 +122,7 @@ export default function SettingsScreen() {
         );
     };
 
-    const SettingItem = ({ icon, label, value, onPress, isDestructive = false }: { icon: IconName, label: string, value?: string | boolean, onPress?: () => void, isDestructive?: boolean }) => (
-        <TouchableOpacity 
-            style={[styles.item, { borderBottomColor: borderColor }]} 
-            onPress={() => {
-                if (onPress) {
-                    Haptics.selectionAsync();
-                    onPress();
-                }
-            }}
-            disabled={value === undefined && !onPress}
-        >
-            <View style={styles.itemLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: isDestructive ? errorColor + '20' : surfaceColor }]}>
-                    <IconSymbol name={icon} size={20} color={isDestructive ? errorColor : textColor} />
-                </View>
-                <ThemedText style={[styles.label, isDestructive && { color: errorColor }]}>{label}</ThemedText>
-            </View>
-            <View style={styles.itemRight}>
-                {typeof value === 'string' && (
-                    <ThemedText style={{ color: lightTextColor, marginRight: spacing.sm }}>{value}</ThemedText>
-                )}
-                {(onPress || typeof value === 'string') && (
-                    <IconSymbol name="chevron.right" size={20} color={lightTextColor} />
-                )}
-                {typeof value === 'boolean' && (
-                    <Switch 
-                        value={value} 
-                        onValueChange={onPress}
-                        trackColor={{ false: surfaceColor, true: primaryColor }}
-                    />
-                )}
-            </View>
-        </TouchableOpacity>
-    );
+    const settingColors = { borderColor, errorColor, surfaceColor, textColor, lightTextColor, primaryColor };
 
     return (
         <ThemedView style={[styles.container, { backgroundColor }]} safe>
@@ -109,30 +137,30 @@ export default function SettingsScreen() {
             <ScrollView contentContainerStyle={styles.content}>
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Account</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
-                    <SettingItem icon="shield" label="Security" onPress={() => router.push('/security-settings')} />
-                    <SettingItem icon="lock" label="Privacy" onPress={() => router.push('/privacy-settings')} />
-                    <SettingItem icon="volume-mute" label="Muted Users" onPress={() => router.push('/muted-users')} />
-                    <SettingItem icon="person.slash" label="Blocked Users" onPress={() => router.push('/blocked-users')} />
+                    <SettingItem {...settingColors} icon="shield" label="Security" onPress={() => router.push('/security-settings')} />
+                    <SettingItem {...settingColors} icon="lock" label="Privacy" onPress={() => router.push('/privacy-settings')} />
+                    <SettingItem {...settingColors} icon="volume-mute" label="Muted Users" onPress={() => router.push('/muted-users')} />
+                    <SettingItem {...settingColors} icon="person.slash" label="Blocked Users" onPress={() => router.push('/blocked-users')} />
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>App Settings</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
-                    <SettingItem icon={mode === 'dark' ? 'moon' : mode === 'light' ? 'sun.max' : 'device-phone-portrait'} label="Appearance" value={mode.charAt(0).toUpperCase() + mode.slice(1)} onPress={() => router.push('/appearance')} />
+                    <SettingItem {...settingColors} icon={mode === 'dark' ? 'moon' : mode === 'light' ? 'sun.max' : 'device-phone-portrait'} label="Appearance" value={mode.charAt(0).toUpperCase() + mode.slice(1)} onPress={() => router.push('/appearance')} />
                 </View>
 
                 <ThemedText style={[styles.sectionTitle, { color: lightTextColor }]}>Support</ThemedText>
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth }]}>
-                    <SettingItem icon="help-circle" label="Help Center" onPress={() => router.push('/help-center')} />
-                    <SettingItem icon="shield-check" label="Policies" onPress={() => router.push('/policies')} />
-                    <SettingItem icon="info" label="About" onPress={() => router.push('/about')} />
+                    <SettingItem {...settingColors} icon="help-circle" label="Help Center" onPress={() => router.push('/help-center')} />
+                    <SettingItem {...settingColors} icon="shield-check" label="Policies" onPress={() => router.push('/policies')} />
+                    <SettingItem {...settingColors} icon="info" label="About" onPress={() => router.push('/about')} />
                 </View>
 
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth, marginTop: spacing.lg }]}>
-                    <SettingItem icon="log-out" label="Log Out" onPress={handleLogout} isDestructive />
+                    <SettingItem {...settingColors} icon="log-out" label="Log Out" onPress={handleLogout} isDestructive />
                 </View>
 
                 <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: sizes.dividerWidth, marginTop: spacing.lg }]}>
-                    <SettingItem icon="trash" label="Delete Account" onPress={handleDeleteAccount} isDestructive />
+                    <SettingItem {...settingColors} icon="trash" label="Delete Account" onPress={handleDeleteAccount} isDestructive />
                 </View>
                 
                 <ThemedText style={[styles.version, { color: lightTextColor }]}>Version 1.0.0</ThemedText>

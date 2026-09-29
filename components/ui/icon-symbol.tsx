@@ -73,7 +73,16 @@ const MAPPING: IconMapping = {
   'alert': 'alert-triangle',
   'info': 'info',
   'warning': 'alert-triangle',
-  
+
+  // Ionicons-style names (compatibility with icons.ts ICONS constant)
+  'checkmark-circle': 'check-circle',
+  'checkmark-circle-outline': 'check-circle',
+  'close-circle': 'x-circle',
+  'close-circle-outline': 'x-circle',
+  'alert-circle-outline': 'alert-circle',
+  'information-circle-outline': 'info',
+  'warning-outline': 'alert-triangle',
+
   // Additional icons
   'grid': 'grid',
   'photo.fill': 'image',

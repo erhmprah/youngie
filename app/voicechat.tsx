@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, StyleSheet, View, Text, TouchableOpacity, Platform, PermissionsAndroid } from 'react-native';
 import { setAudioModeAsync } from 'expo-audio';
 import { Socket, io } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import InCallManager from 'react-native-incall-manager';
 
 const SOCKET_SERVER_URL = SOCKET_URL;
@@ -199,6 +200,9 @@ const VoiceChatScreen: React.FC = () => {
     }
 
     socket.current = io(SOCKET_SERVER_URL, {
+      auth: async (cb) => {
+        cb({ token: await AsyncStorage.getItem('authToken') });
+      },
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: 5,

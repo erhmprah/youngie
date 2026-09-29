@@ -42,9 +42,23 @@ interface CommentModalProps {
     } | null;
     initialAnonymous?: boolean;
     communityContext?: { communityId: string };
+    onCommentsChange?: (comments: Comment[]) => void;
+    canInteract?: boolean;
+    onJoinPress?: () => void;
+    onMembershipLost?: () => void;
 }
 
-export function CommentModal({ visible, onClose, post, initialAnonymous = false, communityContext }: CommentModalProps) {
+export function CommentModal({
+    visible,
+    onClose,
+    post,
+    initialAnonymous = false,
+    communityContext,
+    onCommentsChange,
+    canInteract = true,
+    onJoinPress,
+    onMembershipLost,
+}: CommentModalProps) {
     const { user } = useAuth();
     const [comment, setComment] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -212,12 +226,14 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false,
 
             // The API returns the updated post, so get comments from it
             setComments(response.data.comments || []);
+            onCommentsChange?.(response.data.comments || []);
             setComment('');
             setReplyingTo(null);
             setTaggedUsers([]);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error adding comment:', error);
-            Alert.alert('Error', 'Failed to add comment.');
+            if (error?.response?.status === 403) onMembershipLost?.();
+            Alert.alert('Error', error?.response?.data?.msg || 'Failed to add comment.');
         } finally {
             setIsLoading(false);
         }
@@ -243,15 +259,25 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false,
                                 );
                                 if (response.data?.comments) {
                                     setComments(response.data.comments);
+                                    onCommentsChange?.(response.data.comments);
                                 } else {
-                                    setComments(prev => prev.filter(c => c._id !== commentId));
+                                    setComments(prev => {
+                                        const next = prev.filter(c => c._id !== commentId);
+                                        onCommentsChange?.(next);
+                                        return next;
+                                    });
                                 }
                             } else {
                                 const response = await postAPI.deleteComment(post._id, commentId);
                                 if (response.data?.comments) {
                                     setComments(response.data.comments);
+                                    onCommentsChange?.(response.data.comments);
                                 } else if (response.data) {
-                                    setComments(prev => prev.filter(c => c._id !== commentId));
+                                    setComments(prev => {
+                                        const next = prev.filter(c => c._id !== commentId);
+                                        onCommentsChange?.(next);
+                                        return next;
+                                    });
                                 }
                             }
                         } catch (error: any) {
@@ -401,6 +427,18 @@ export function CommentModal({ visible, onClose, post, initialAnonymous = false,
                     {post?.commentsDisabled ? (
                         <View style={[styles.inputContainer, { justifyContent: 'center' }]}>
                             <ThemedText style={{ color: lightTextColor, fontStyle: 'italic' }}>Comments are disabled for this post.</ThemedText>
+                        </View>
+                    ) : !canInteract ? (
+                        <View style={[styles.inputContainer, { justifyContent: 'center' }]}>
+                            <ThemedText style={{ color: lightTextColor, marginRight: spacing.sm }}>
+                                Join this community to comment.
+                            </ThemedText>
+                            <TouchableOpacity
+                                style={[styles.joinButton, { backgroundColor: primaryColor }]}
+                                onPress={onJoinPress}
+                            >
+                                <ThemedText style={styles.joinButtonText}>Join</ThemedText>
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         <View style={styles.inputContainer}>
@@ -595,6 +633,16 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         fontSize: typography.sizes.body1,
+    },
+    joinButton: {
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.xs,
+        borderRadius: borderRadius.full,
+    },
+    joinButtonText: {
+        color: '#FFFFFF',
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.bold,
     },
     tagButton: {
         paddingHorizontal: spacing.xs,

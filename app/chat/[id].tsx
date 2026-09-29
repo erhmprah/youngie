@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { AudioModule, setAudioModeAsync, requestRecordingPermissionsAsync, createAudioPlayer, RecordingPresets } from 'expo-audio';
-import type { AudioRecorder, AudioPlayer } from 'expo-audio';
+import type { AudioRecorder, AudioPlayer, AudioStatus } from 'expo-audio';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { chatAPI, getImageUrl } from '@/utils/api';
+import { cachedChatAPI } from '@/utils/cachedApi';
 import { getSocket, joinChat, leaveChat, sendMessage, sendTypingStart, sendTypingStop, onMessageReceived, offMessageReceived, onMessagesRead, offMessagesRead, onUserTyping, offUserTyping, onUserStopTyping, offUserStopTyping } from '@/utils/socket';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ChatSettingsModal } from '@/components/chat-settings-modal';
@@ -285,7 +286,7 @@ export default function ChatScreen() {
         setMessages(response.data.messages || []);
         setMessagePage(1);
         setHasMoreMessages(response.data.messagesPagination?.hasNextPage || false);
-        chatAPI.markAsRead(id as string); // Mark as read when opening
+        cachedChatAPI.markAsRead(id as string); // Mark as read when opening
       } catch (error) {
       } finally {
         setIsLoading(false);
@@ -336,7 +337,7 @@ export default function ChatScreen() {
           // Add as new message
           return [...prevMessages, message];
         });
-        chatAPI.markAsRead(id as string); // Mark as read if receiving while open
+        cachedChatAPI.markAsRead(id as string); // Mark as read if receiving while open
       }
     };
 
@@ -404,21 +405,25 @@ export default function ChatScreen() {
         socket.off('user_status_change', handleStatusChange);
       }
       leaveChat(id as string);
-      
+
       // Clean up preview sound
       if (previewSound.current) {
+        const sub = (previewSound.current as any).__previewSub;
+        if (sub) {
+          try { sub.remove(); } catch (e) { /* ignore */ }
+        }
         previewSound.current.remove();
         previewSound.current = null;
       }
-      
+
       // Clean up all sound refs to prevent memory leaks
       if (soundRefs.current) {
-        soundRefs.current.forEach(async (sound) => {
-          try {
-            await sound.remove();
-          } catch (e) {
-            // Ignore cleanup errors
+        soundRefs.current.forEach((sound) => {
+          const sub = (sound as any).__statusSub;
+          if (sub) {
+            try { sub.remove(); } catch (e) { /* ignore */ }
           }
+          try { sound.remove(); } catch (e) { /* ignore cleanup errors */ }
         });
         soundRefs.current.clear();
       }
@@ -502,7 +507,7 @@ export default function ChatScreen() {
       };
 
       // Send via REST API
-      await chatAPI.sendMessage(id as string, messageData);
+      await cachedChatAPI.sendMessage(id as string, messageData);
 
       // Emit via socket
       sendMessage(id as string, user!._id, message.content, message.replyTo?._id, message.isAnonymous, message.attachment);
@@ -638,7 +643,7 @@ export default function ChatScreen() {
 
     try {
       // Send via REST API for persistence
-      await chatAPI.sendMessage(id as string, messageData);
+      await cachedChatAPI.sendMessage(id as string, messageData);
 
       // Also emit via socket for real-time updates to other users
       sendMessage(id as string, user._id, currentMessageContent, currentReplyTo?._id, messageData.isAnonymous, attachmentData, tempId);
@@ -914,12 +919,14 @@ export default function ChatScreen() {
       if (playingAudio && playingAudio !== messageId) {
         const currentSound = soundRefs.current.get(playingAudio);
         if (currentSound) {
-          await currentSound.remove();
+          const sub = (currentSound as any).__statusSub;
+          if (sub) { sub.remove(); (currentSound as any).__statusSub = null; }
+          currentSound.remove();
         }
       }
 
-      let sound = soundRefs.current.get(messageId);
-      if (!sound) {
+      let player = soundRefs.current.get(messageId);
+      if (!player) {
         const rawUrl = attachment.url || attachment.uri;
         const normalizedUrl = rawUrl ? rawUrl.replace(/\\/g, '/') : '';
         const isLocalFile = /^(file|content):/.test(normalizedUrl);
@@ -930,29 +937,28 @@ export default function ChatScreen() {
           : getImageUrl(normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`);
 
         if (!uri) throw new Error('Invalid audio URL');
-        const source = { uri };
-        const { sound: newSound } = await Audio.Sound.createAsync(source);
-        sound = newSound;
-        soundRefs.current.set(messageId, sound);
+        player = createAudioPlayer({ uri });
+        soundRefs.current.set(messageId, player);
 
-        sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+        const onStatus = (status: AudioStatus) => {
           setAudioStatus(prev => ({ ...prev, [messageId]: status }));
-          if ((status as any).didJustFinish) {
+          if (status.didJustFinish) {
             setPlayingAudio(null);
-            if (sound) sound.setPositionAsync(0);
+            player.seekTo(0);
           }
-        });
+        };
+        (player as any).__statusSub = player.addListener('playbackStatusUpdate', onStatus);
       }
 
-      const status = await sound.getStatusAsync();
-      if ((status as any).isPlaying) {
-        await sound.pauseAsync();
+      const status = player.currentStatus;
+      if (status.playing) {
+        player.pause();
         setPlayingAudio(null);
       } else {
-        if ((status as any).durationMillis && (status as any).positionMillis >= (status as any).durationMillis) {
-          await sound.setPositionAsync(0);
+        if (status.isLoaded && status.duration > 0 && status.currentTime >= status.duration) {
+          player.seekTo(0);
         }
-        await sound.playAsync();
+        player.play();
         setPlayingAudio(messageId);
       }
     } catch (error) {
@@ -970,45 +976,45 @@ export default function ChatScreen() {
     });
   };
 
-  const togglePreviewPlayback = async () => {
+  const togglePreviewPlayback = () => {
     if (!attachment || !attachment.uri) return;
 
     try {
       // Ensure audio mode is configured for playback
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: true,
+      setAudioModeAsync({
+        playsInSilentMode: true,
+        interruptionMode: 'duckOthers',
+        allowsRecording: false,
+        shouldPlayInBackground: true,
+        shouldRouteThroughEarpiece: false,
       });
 
       if (previewSound.current) {
-        const status = await previewSound.current.getStatusAsync();
+        const status = previewSound.current.currentStatus;
         if (status.isLoaded) {
-          if (status.isPlaying) {
-            await previewSound.current.pauseAsync();
+          if (status.playing) {
+            previewSound.current.pause();
           } else {
-            await previewSound.current.playAsync();
+            if (status.duration > 0 && status.currentTime >= status.duration) {
+              previewSound.current.seekTo(0);
+            }
+            previewSound.current.play();
           }
           return;
         }
       }
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: attachment.uri },
-        { shouldPlay: true }
-      );
-      previewSound.current = sound;
+      const player = createAudioPlayer({ uri: attachment.uri });
+      previewSound.current = player;
 
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded) {
-          setPreviewStatus(status);
-          if (status.didJustFinish) {
-            sound.setPositionAsync(0);
-          }
+      const onStatus = (status: AudioStatus) => {
+        setPreviewStatus(status);
+        if (status.isLoaded && status.didJustFinish) {
+          player.seekTo(0);
         }
-      });
+      };
+      (player as any).__previewSub = player.addListener('playbackStatusUpdate', onStatus);
+      player.play();
     } catch (error) {
     }
   };
@@ -1132,9 +1138,9 @@ export default function ChatScreen() {
       );
     } else if (attachment.type && attachment.type.startsWith('audio/')) {
       const status = audioStatus[messageId || ''];
-      const isPlaying = playingAudio === messageId && status?.isPlaying;
-      const position = status?.positionMillis || 0;
-      const duration = status?.durationMillis || attachment.duration || 0;
+      const isPlaying = playingAudio === messageId && status?.playing;
+      const position = (status?.currentTime || 0) * 1000;
+      const duration = (status?.duration || 0) * 1000 || attachment.duration || 0;
       const progress = duration > 0 ? position / duration : 0;
 
       // Fake waveform bars
@@ -1433,8 +1439,8 @@ export default function ChatScreen() {
                   <View style={{ marginLeft: spacing.sm }}>
                     <View style={styles.waveformContainer}>
                       {[3, 7, 4, 10, 6, 12, 8, 5, 9, 4, 8, 6, 10, 5, 7, 3, 6, 9, 4, 8].map((height, index) => {
-                        const position = previewStatus?.positionMillis || 0;
-                        const duration = attachment.duration || previewStatus?.durationMillis || 0;
+                        const position = (previewStatus?.currentTime || 0) * 1000;
+                        const duration = attachment.duration || (previewStatus?.duration || 0) * 1000 || 0;
                         const progress = duration > 0 ? position / duration : 0;
                         return (
                           <View key={index} style={[styles.waveformBar, { height, backgroundColor: (index / 20) <= progress ? primaryColor : lightTextColor, opacity: (index / 20) <= progress ? 1 : 0.5 }]} />
@@ -1442,7 +1448,7 @@ export default function ChatScreen() {
                       })}
                     </View>
                     <ThemedText style={{ fontSize: typography.sizes.caption, color: lightTextColor }}>
-                      {previewStatus ? formatDuration(previewStatus.positionMillis) : '0:00'} / {attachment.duration ? formatDuration(attachment.duration) : '0:00'}
+                      {previewStatus ? formatDuration((previewStatus.currentTime || 0) * 1000) : '0:00'} / {attachment.duration ? formatDuration(attachment.duration) : formatDuration((previewStatus?.duration || 0) * 1000)}
                     </ThemedText>
                   </View>
                 </View>
@@ -1457,7 +1463,7 @@ export default function ChatScreen() {
               )}
               <TouchableOpacity onPress={async () => {
                 if (previewSound.current) {
-                  await previewSound.current.unloadAsync();
+                  previewSound.current.remove();
                   previewSound.current = null;
                 }
                 setPreviewStatus(null);
@@ -1589,7 +1595,7 @@ export default function ChatScreen() {
                   style={[styles.forwardOption, { backgroundColor: primaryColor }]}
                   onPress={async () => {
                     try {
-                      await chatAPI.sendMessage(item._id, { content: messageToForward.content });
+                      await cachedChatAPI.sendMessage(item._id, { content: messageToForward.content });
                       Alert.alert('Success', 'Message forwarded successfully');
                       setShowForwardModal(false);
                       setMessageToForward(null);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert, ViewToken, Dimensions } from 'react-native';
+import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,9 +17,10 @@ import { NotificationBell } from '@/components/notification-bell';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIncognito } from '@/contexts/IncognitoContext';
-import { postAPI, storyAPI, communityAPI, getImageUrl } from '@/utils/api';
+import { postAPI, communityAPI, getImageUrl } from '@/utils/api';
 import { verticalScale } from '@/utils/scale';
 import { cachedPostAPI, cachedStoryAPI } from '@/utils/cachedApi';
+import { cacheService } from '@/utils/cache';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
@@ -86,6 +87,8 @@ interface CommunityFeedPost {
     likes: { _id: string }[];
     comments?: { _id: string; author?: { _id: string; username: string }; content?: string; createdAt?: string }[];
     isFavorited?: boolean;
+    isMember?: boolean;
+    isAdmin?: boolean;
     createdAt: string;
 }
 
@@ -102,7 +105,7 @@ export default function FeedScreen() {
     const [postsPage, setPostsPage] = useState(1);
     const [hasMorePosts, setHasMorePosts] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [, setError] = useState<string | null>(null);
     const [recommendedPosts, setRecommendedPosts] = useState<Post[]>([]);
     const [loadingRecommended, setLoadingRecommended] = useState(false);
     
@@ -115,9 +118,6 @@ export default function FeedScreen() {
     const [showCommunityCommentModal, setShowCommunityCommentModal] = useState(false);
     const [selectedCommunityPostForComments, setSelectedCommunityPostForComments] = useState<CommunityFeedPost | null>(null);
     const { isIncognito, toggleIncognito, setIncognito } = useIncognito();
-    const isIncognitoRef = useRef(isIncognito);
-    isIncognitoRef.current = isIncognito;
-    const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [playingPostId, setPlayingPostId] = useState<string | null>(null);
     
     const flatListRef = useRef<FlatList>(null);
@@ -166,6 +166,8 @@ export default function FeedScreen() {
                         likes: item.likes || [],
                         comments: item.comments || [],
                         isFavorited: item.isFavorited,
+                        isMember: item.isCommunityMember !== false,
+                        isAdmin: !!item.isCommunityAdmin,
                         createdAt: item.createdAt,
                     };
                     newCommunityPosts.push(communityPost);
@@ -224,12 +226,12 @@ export default function FeedScreen() {
                         const trendingResponse = await postAPI.getTrendingPosts();
                         const trendingPosts = trendingResponse.data.data || [];
                         setRecommendedPosts(trendingPosts);
-                    } catch (err) {
+                    } catch {
                         try {
                             const suggestedResponse = await cachedPostAPI.getSuggestedRandomPosts();
                             const suggestedPosts = suggestedResponse.data || [];
                             setRecommendedPosts(suggestedPosts);
-                        } catch (suggestedErr) {
+                        } catch {
                             setRecommendedPosts([]);
                         }
                     } finally {
@@ -248,7 +250,7 @@ export default function FeedScreen() {
             if (err.response?.status === 401) {
                 try {
                     await logout();
-                } catch (logoutErr) {
+                } catch {
                 }
                 setError(null);
             } else {
@@ -261,7 +263,7 @@ export default function FeedScreen() {
                 setLoadingMore(false);
             }
         }
-    }, [isIncognito]);
+    }, [isIncognito, user, logout]);
 
     const loadMorePosts = useCallback(() => {
         if (!loadingMore && hasMorePosts && isSignedIn) {
@@ -293,6 +295,8 @@ export default function FeedScreen() {
 
     useEffect(() => {
         console.log('Feed useEffect triggered', { isSignedIn, authLoading });
+        // Feed refresh intentionally synchronizes with authentication state.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchFeedIfLoggedIn();
     }, [fetchFeedIfLoggedIn, authLoading, isSignedIn]);
 
@@ -316,7 +320,7 @@ export default function FeedScreen() {
 
         const handlePostCreated = (newPost: any) => {
             if (!newPost || !newPost._id || !user) return;
-            if (isIncognitoRef.current && !newPost.isAnonymous) return;
+            if (isIncognito && !newPost.isAnonymous) return;
             setPosts(prevPosts => {
                 if (prevPosts.some(p => p._id === newPost._id)) return prevPosts;
                 const isSelf = newPost.author?._id === user._id;
@@ -334,7 +338,7 @@ export default function FeedScreen() {
             offPostUpdated();
             offPostCreated();
         };
-    }, [user?._id]);
+    }, [user?._id, user, isIncognito]);
 
     // Listen for story updates via socket
     useEffect(() => {
@@ -378,6 +382,8 @@ export default function FeedScreen() {
 
     useEffect(() => {
         if (posts.length > 0) {
+            // Recommendations are intentionally cleared once feed posts arrive.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setRecommendedPosts([]);
         }
     }, [posts.length]);
@@ -398,7 +404,7 @@ export default function FeedScreen() {
                 }, 500);
             }
         }
-    }, [postId, posts]);
+    }, [postId, focus, posts]);
 
     useFocusEffect(
         useCallback(() => {
@@ -425,7 +431,7 @@ export default function FeedScreen() {
             const response = await postAPI.likePost(postId);
             const updatedPost = response?.data?.post ?? response?.data;
             setPosts(posts.map(p => (p._id === postId ? updatedPost : p)));
-        } catch (error: any) {
+        } catch {
         }
     };
 
@@ -434,7 +440,7 @@ export default function FeedScreen() {
         try {
             await postAPI.deletePost(postId);
             setPosts(posts.filter(p => p._id !== postId));
-        } catch (error: any) {
+        } catch {
             Alert.alert('Error', 'Failed to delete post');
         }
     };
@@ -511,9 +517,9 @@ export default function FeedScreen() {
         );
     };
 
-    const viewabilityConfig = useRef({
+    const viewabilityConfig = {
         itemVisiblePercentThreshold: 50,
-    }).current;
+    };
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0) {
@@ -645,38 +651,100 @@ export default function FeedScreen() {
         );
     };
 
-    const CommunityPostCard = ({ item }: { item: CommunityFeedPost }) => {
-        const [liked, setLiked] = useState(
-            (item.likes || []).some((l: any) => String(l?._id || l) === String(user?._id))
+    const joinCommunity = async (communityId: string, communityName: string) => {
+        const name = communityName || 'this community';
+        try {
+            const response = await communityAPI.join(communityId);
+            const message = response?.data?.msg || '';
+            if (message.toLowerCase().includes('approval') || message.toLowerCase().includes('pending')) {
+                Alert.alert('Request sent', `Your request to join ${name} is awaiting approval.`);
+                return;
+            }
+            setCommunityPosts(prev => prev.map(p => (
+                p.community?._id === communityId ? { ...p, isMember: true } : p
+            )));
+            // Membership changed, so the cached candidate feed is stale.
+            cacheService.invalidateByPrefix('candidate_feed');
+            Alert.alert('Joined', `You joined ${name}. You can now like, comment and save its posts.`);
+        } catch (err: any) {
+            Alert.alert('Could not join', err?.response?.data?.msg || `Failed to join ${name}.`);
+        }
+    };
+
+    const promptToJoin = (communityId: string, communityName: string) => {
+        const name = communityName || 'this community';
+        Alert.alert(
+            'Members only',
+            `Join ${name} to like, comment on and save its posts.`,
+            [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'View community', onPress: () => router.push(`/community/${communityId}`) },
+                { text: 'Join', onPress: () => joinCommunity(communityId, name) },
+            ]
         );
-        const [likeCount, setLikeCount] = useState((item.likes || []).length);
-        const [favorited, setFavorited] = useState(!!item.isFavorited);
+    };
+
+    const CommunityPostCard = ({ item }: { item: CommunityFeedPost }) => {
+        const isMember = item.isMember !== false;
+        const liked = (item.likes || []).some((l: any) => String(l?._id || l) === String(user?._id));
+        const likeCount = (item.likes || []).length;
+        const favorited = !!item.isFavorited;
+        const commentCount = item.comments?.length || 0;
+        const communityId = item.community._id;
+        const communityName = item.community.name;
+
+        const patchCommunityPost = (postId: string, patch: Partial<CommunityFeedPost>) => {
+            setCommunityPosts(prev => prev.map(p => (p._id === postId ? { ...p, ...patch } : p)));
+        };
 
         const handleCommunityLike = async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            if (!isMember) {
+                promptToJoin(communityId, communityName);
+                return;
+            }
+            const previousLikes = item.likes || [];
             const optimisticLiked = !liked;
-            setLiked(optimisticLiked);
-            setLikeCount((c) => c + (optimisticLiked ? 1 : -1));
+            patchCommunityPost(item._id, {
+                likes: optimisticLiked
+                    ? [...previousLikes, { _id: String(user?._id || 'me') }]
+                    : previousLikes.filter((l: any) => String(l?._id || l) !== String(user?._id)),
+            });
             try {
-                await communityAPI.likeFeed(item.community._id, item._id);
-            } catch (error) {
-                setLiked(!optimisticLiked);
-                setLikeCount((c) => c + (optimisticLiked ? -1 : 1));
+                await communityAPI.likeFeed(communityId, item._id);
+            } catch (err: any) {
+                patchCommunityPost(item._id, { likes: previousLikes });
+                if (err?.response?.status === 403) {
+                    patchCommunityPost(item._id, { isMember: false });
+                    promptToJoin(communityId, communityName);
+                } else {
+                    Alert.alert('Error', err?.response?.data?.msg || 'Failed to like this post. Please try again.');
+                }
             }
         };
 
         const handleCommunityFavorite = async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            if (!isMember) {
+                promptToJoin(communityId, communityName);
+                return;
+            }
             const optimisticFav = !favorited;
-            setFavorited(optimisticFav);
+            patchCommunityPost(item._id, { isFavorited: optimisticFav });
             try {
                 if (optimisticFav) {
-                    await communityAPI.favoriteFeed(item.community._id, item._id);
+                    await communityAPI.favoriteFeed(communityId, item._id);
                 } else {
-                    await communityAPI.unfavoriteFeed(item.community._id, item._id);
+                    await communityAPI.unfavoriteFeed(communityId, item._id);
                 }
-            } catch (error) {
-                setFavorited(!optimisticFav);
+            } catch (err: any) {
+                patchCommunityPost(item._id, { isFavorited: !optimisticFav });
+                if (err?.response?.status === 403) {
+                    patchCommunityPost(item._id, { isMember: false });
+                    promptToJoin(communityId, communityName);
+                } else {
+                    Alert.alert('Error', err?.response?.data?.msg || 'Failed to save this post. Please try again.');
+                }
             }
         };
 
@@ -690,36 +758,40 @@ export default function FeedScreen() {
             <View style={[styles.communityPostCard, { backgroundColor: surfaceColor, borderColor }]}>
                 <TouchableOpacity
                     activeOpacity={0.9}
+                    style={styles.communityPostHeader}
                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
                 >
-                    <View style={styles.communityPostBadge}>
-                        {item.community.image ? (
-                            <Image source={{ uri: getImageUrl(item.community.image) }} style={styles.communityPostBadgeImage} />
-                        ) : (
-                            <View style={[styles.communityPostBadgeImage, styles.communityImagePlaceholder, { backgroundColor: primaryColor + '20' }]}>
-                                <IconSymbol name="person.3.fill" size={14} color={primaryColor} />
-                            </View>
-                        )}
-                        <ThemedText style={[styles.communityPostBadgeText, { color: primaryColor }]} numberOfLines={1}>
-                            {item.community.name}
+                    {item.community.image ? (
+                        <Image source={{ uri: getImageUrl(item.community.image) }} style={styles.communityPostAvatar} />
+                    ) : (
+                        <View style={[styles.communityPostAvatar, styles.communityImagePlaceholder, { backgroundColor: primaryColor + '20' }]}>
+                            <IconSymbol name="person.3.fill" size={16} color={primaryColor} />
+                        </View>
+                    )}
+                    <View style={styles.communityPostHeaderText}>
+                        <ThemedText style={[styles.communityPostName, { color: textColor }]} numberOfLines={1}>
+                            {item.community.name || 'Community'}
                         </ThemedText>
-                        <IconSymbol name="chevron.right" size={14} color={primaryColor} style={{ marginLeft: 'auto' }} />
-                    </View>
-
-                    <View style={styles.communityPostHeader}>
-                        {item.author.profilePhoto || item.author.avatar ? (
-                            <Image source={{ uri: getImageUrl(item.author.profilePhoto || item.author.avatar) }} style={styles.communityPostAvatar} />
-                        ) : (
-                            <View style={[styles.communityPostAvatar, styles.communityImagePlaceholder, { backgroundColor: surfaceColor }]}>
-                                <IconSymbol name="person.fill" size={14} color={lightTextColor} />
-                            </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                            <ThemedText style={styles.communityPostAuthor} numberOfLines={1}>{item.author.username}</ThemedText>
-                            <ThemedText style={[styles.communityPostTime, { color: lightTextColor }]}>{getRelativeTime(item.createdAt)}</ThemedText>
+                        <View style={styles.communityPostAuthorRow}>
+                            {item.author.profilePhoto || item.author.avatar ? (
+                                <Image source={{ uri: getImageUrl(item.author.profilePhoto || item.author.avatar) }} style={styles.communityPostAuthorAvatar} />
+                            ) : (
+                                <View style={[styles.communityPostAuthorAvatar, styles.communityImagePlaceholder, { backgroundColor: surfaceColor }]}>
+                                    <IconSymbol name="person.fill" size={9} color={lightTextColor} />
+                                </View>
+                            )}
+                            <ThemedText style={[styles.communityPostAuthor, { color: lightTextColor }]} numberOfLines={1}>
+                                Posted by {item.author.username} · {getRelativeTime(item.createdAt)}
+                            </ThemedText>
                         </View>
                     </View>
+                    <IconSymbol name="chevron.right" size={16} color={lightTextColor} />
+                </TouchableOpacity>
 
+                <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
+                >
                     {item.content ? (
                         <ThemedText style={[styles.communityPostContent, { color: textColor }]}>
                             {item.content}
@@ -742,13 +814,24 @@ export default function FeedScreen() {
                         <TouchableOpacity style={styles.communityPostAction} onPress={openComments}>
                             <IconSymbol name="message.fill" size={22} color={lightTextColor} />
                             <ThemedText style={[styles.communityPostActionText, { color: lightTextColor }]}>
-                                {item.comments?.length || 0}
+                                {commentCount}
                             </ThemedText>
                         </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={styles.communityPostAction} onPress={handleCommunityFavorite}>
-                        <IconSymbol name={favorited ? "bookmark.fill" : "bookmark"} size={22} color={favorited ? primaryColor : lightTextColor} />
-                    </TouchableOpacity>
+                    <View style={styles.communityPostRightActions}>
+                        {!isMember && (
+                            <TouchableOpacity
+                                style={[styles.communityJoinPill, { backgroundColor: primaryColor }]}
+                                onPress={() => joinCommunity(communityId, communityName)}
+                            >
+                                <IconSymbol name="person.badge.plus" size={14} color={white} />
+                                <ThemedText style={styles.communityJoinPillText}>Join</ThemedText>
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity style={styles.communityPostAction} onPress={handleCommunityFavorite}>
+                            <IconSymbol name={favorited ? "bookmark.fill" : "bookmark"} size={22} color={favorited ? primaryColor : lightTextColor} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         );
@@ -791,7 +874,7 @@ export default function FeedScreen() {
         return merged;
     }, [posts, communityPosts, recommendedPosts]);
 
-    const renderFeedItem = useCallback(({ item }: { item: any }) => {
+    const renderFeedItem = ({ item }: { item: any }) => {
         if (item.kind === 'recommended-header') {
             return (
                 <View style={[styles.recommendedCard, { backgroundColor: surfaceColor, borderColor, shadowColor: backgroundColor }, shadows.sm]}>
@@ -846,7 +929,7 @@ export default function FeedScreen() {
                 shouldPlay={item.data._id === playingPostId}
             />
         );
-    }, [user?._id, handleDeletePost, handleReportPost, handleUpdatePost, handleLikePost, playingPostId]);
+    };
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor }}>
@@ -956,6 +1039,28 @@ export default function FeedScreen() {
                     post={selectedCommunityPostForComments as any}
                     communityContext={selectedCommunityPostForComments ? { communityId: selectedCommunityPostForComments.community._id } : undefined}
                     initialAnonymous={isIncognito}
+                    canInteract={selectedCommunityPostForComments?.isMember !== false}
+                    onJoinPress={() => {
+                        const target = selectedCommunityPostForComments;
+                        if (target) joinCommunity(target.community._id, target.community.name);
+                    }}
+                    onMembershipLost={() => {
+                        const target = selectedCommunityPostForComments;
+                        if (target) {
+                            setCommunityPosts(prev => prev.map(p => (
+                                p.community?._id === target.community._id ? { ...p, isMember: false } : p
+                            )));
+                        }
+                    }}
+                    onCommentsChange={(updatedComments) => {
+                        if (!selectedCommunityPostForComments) return;
+                        const targetId = selectedCommunityPostForComments._id;
+                        setCommunityPosts(prev => prev.map(p => (
+                            p._id === targetId
+                                ? { ...p, comments: updatedComments as any }
+                                : p
+                        )));
+                    }}
                 />
             </ThemedView>
         </SafeAreaView>
@@ -1078,36 +1183,38 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
         ...shadows.sm,
     },
-    communityPostBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: spacing.sm,
-        gap: spacing.xs,
-    },
-    communityPostBadgeImage: {
-        width: sizes.iconSmall,
-        height: sizes.iconSmall,
-        borderRadius: sizes.borderRadiusSm,
-    },
-    communityPostBadgeText: {
-        flex: 1,
-        fontSize: typography.sizes.caption,
-        fontFamily: typography.families.bold,
-    },
     communityPostHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: spacing.sm,
         gap: spacing.sm,
     },
+    communityPostHeaderText: {
+        flex: 1,
+    },
+    communityPostName: {
+        fontSize: typography.sizes.body2,
+        fontFamily: typography.families.bold,
+    },
+    communityPostAuthorRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xxs,
+        marginTop: 2,
+    },
     communityPostAvatar: {
         width: sizes.iconSmall + 4,
         height: sizes.iconSmall + 4,
         borderRadius: (sizes.iconSmall + 4) / 2,
     },
+    communityPostAuthorAvatar: {
+        width: sizes.iconSmall - 4,
+        height: sizes.iconSmall - 4,
+        borderRadius: (sizes.iconSmall - 4) / 2,
+    },
     communityPostAuthor: {
-        fontSize: typography.sizes.body2,
-        fontFamily: typography.families.bold,
+        flexShrink: 1,
+        fontSize: typography.sizes.caption,
     },
     communityPostTime: {
         fontSize: typography.sizes.caption,
@@ -1135,6 +1242,24 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.xl,
+    },
+    communityPostRightActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+    },
+    communityJoinPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xxs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xxs,
+        borderRadius: borderRadius.full,
+    },
+    communityJoinPillText: {
+        fontSize: typography.sizes.caption,
+        fontFamily: typography.families.bold,
+        color: '#FFFFFF',
     },
     communityPostAction: {
         flexDirection: 'row',

@@ -113,9 +113,12 @@ export function usePushNotifications() {
   const isRegisteredRef = useRef(false);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 3;
+  const RATE_LIMIT_BASE_DELAY = 5000; // 5 seconds base delay for 429
+
+  type RegisterTokenResult = boolean | 'rate-limited';
 
   // Register push token with backend
-  const registerTokenWithBackend = useCallback(async (pushToken: string): Promise<boolean> => {
+  const registerTokenWithBackend = useCallback(async (pushToken: string): Promise<RegisterTokenResult> => {
     try {
       const deviceInfo = Device?.modelName || Platform.OS === 'ios' ? 'iOS Device' : 'Android Device';
       // Register as 'expo' platform: the backend stores Expo push tokens and
@@ -143,6 +146,10 @@ export function usePushNotifications() {
         const data: RegisterPushTokenResponse = await response.json();
         console.log('✅ Push token registered with backend:', data?.data?.message || 'Success');
         return true;
+      } else if (response.status === 429) {
+        // Rate limited - return special status to trigger exponential backoff
+        console.warn('⚠️ Rate limited (429) registering push token');
+        return 'rate-limited';
       } else {
         console.warn('⚠️ Failed to register push token with backend:', response.status);
         return false;
@@ -169,39 +176,46 @@ export function usePushNotifications() {
         return false;
       }
 
-      const { granted: existingStatus } = await Notifications.getPermissionsAsync() as any;
-      
+      const { granted: existingStatus, status, canAskAgain } = await Notifications.getPermissionsAsync() as any;
+
       if (existingStatus) {
-        setState(prev => ({ ...prev, hasPermission: true }));
+        setState(prev => ({ ...prev, hasPermission: true, error: null }));
         return true;
       }
 
-      if (!existingStatus) {
-        setState(prev => ({ 
-          ...prev, 
+      // Not granted yet. On Android 13+ POST_NOTIFICATIONS starts undetermined,
+      // so a fresh install is never pre-granted — the app has to ask. This
+      // block used to bail out with a "denied, enable in Settings" error for
+      // every ungranted state, which left the actual request below as
+      // unreachable code: new users were never prompted and never registered a
+      // push token, so they silently received no notifications at all.
+      // Only a permanently denied permission (Android "don't ask again", or a
+      // hard iOS deny) genuinely requires the Settings route.
+      const permanentlyDenied = status === 'denied' && canAskAgain === false;
+      if (permanentlyDenied) {
+        setState(prev => ({
+          ...prev,
           hasPermission: false,
           error: 'Notification permissions were denied. Please enable in Settings.',
-          isLoading: false 
+          isLoading: false
         }));
         return false;
       }
 
       // Request permissions
       const { granted } = await Notifications.requestPermissionsAsync() as any;
-      
+
       if (granted) {
-        setState(prev => ({ ...prev, hasPermission: true }));
+        setState(prev => ({ ...prev, hasPermission: true, error: null }));
         return true;
-      } else if (!granted) {
-        setState(prev => ({ 
-          ...prev, 
-          hasPermission: false,
-          error: 'Notification permissions were denied. Please enable in Settings.',
-          isLoading: false 
-        }));
-        return false;
       }
 
+      setState(prev => ({
+        ...prev,
+        hasPermission: false,
+        error: 'Notification permissions were denied. Please enable in Settings.',
+        isLoading: false
+      }));
       return false;
     } catch (error) {
       console.error('❌ Error requesting notification permissions:', error);
@@ -255,9 +269,22 @@ export function usePushNotifications() {
 
       // Register with backend (with retry logic)
       let success = false;
+      let lastResult: boolean | 'rate-limited' = false;
       while (retryCountRef.current < MAX_RETRIES && !success) {
-        success = await registerTokenWithBackend(token);
-        if (!success) {
+        const result = await registerTokenWithBackend(token);
+        lastResult = result;
+        if (result === true) {
+          success = true;
+        } else if (result === 'rate-limited') {
+          // Rate limited - use exponential backoff
+          retryCountRef.current++;
+          if (retryCountRef.current < MAX_RETRIES) {
+            const delay = RATE_LIMIT_BASE_DELAY * Math.pow(2, retryCountRef.current - 1);
+            console.log(`🔄 Rate limited, retrying push token registration (${retryCountRef.current}/${MAX_RETRIES}) after ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        } else {
+          // Other error - use linear backoff
           retryCountRef.current++;
           if (retryCountRef.current < MAX_RETRIES) {
             console.log(`🔄 Retrying push token registration (${retryCountRef.current}/${MAX_RETRIES})...`);

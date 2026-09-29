@@ -71,6 +71,8 @@ export function FeedPostOptions({
     );
 }
 
+export default FeedPostOptions;
+
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, ActivityIndicator, Animated } from 'react-native';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -39,7 +39,7 @@ const PollOptionRow = ({
     const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
     const isSelected = index === userVoteIndex;
     
-    const widthAnim = useRef(new Animated.Value(0)).current;
+    const [widthAnim] = useState(() => new Animated.Value(0));
 
     useEffect(() => {
         if (hasVoted) {
@@ -49,7 +49,7 @@ const PollOptionRow = ({
                 useNativeDriver: false,
             }).start();
         }
-    }, [hasVoted, percentage]);
+    }, [hasVoted, percentage, widthAnim]);
 
     return (
         <TouchableOpacity

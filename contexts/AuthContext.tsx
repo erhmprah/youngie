@@ -5,6 +5,7 @@ import { useNetwork } from '@/contexts/NetworkContext';
 import api, { BASE_URL, isNetworkErrorResponse } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
+import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
 
 interface User {
    _id: string;
@@ -92,29 +93,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                     setUser(userData);
                 } catch (error: any) {
-                   console.warn('Failed to restore auth:', error);
+                   console.warn('Failed to restore auth with MongoDB token:', error);
+                   // MongoDB token is invalid/expired — attempt to recover using
+                   // the persisted Supabase session so the user stays signed in.
                    await AsyncStorage.removeItem('authToken');
                    await AsyncStorage.removeItem('sessionId');
-                   await AsyncStorage.removeItem('profileCompleted');
-                   await AsyncStorage.removeItem('pendingProfileCompletion');
-                   await AsyncStorage.removeItem('supabaseUserId');
-                   await AsyncStorage.removeItem('userEmail');
-                   setUser(null);
+                   await trySupabaseRestore();
                    return;
                 }
                 
                 const storedSessionId = await AsyncStorage.getItem('sessionId');
                 if (storedSessionId) setSessionId(storedSessionId);
+             } else {
+                // No MongoDB token — attempt to restore from Supabase session
+                await trySupabaseRestore();
              }
           } catch (error: any) {
              console.warn('Failed to restore auth:', error);
              await AsyncStorage.removeItem('authToken');
              await AsyncStorage.removeItem('sessionId');
-             await AsyncStorage.removeItem('profileCompleted');
-             await AsyncStorage.removeItem('pendingProfileCompletion');
-             await AsyncStorage.removeItem('supabaseUserId');
-             await AsyncStorage.removeItem('userEmail');
-             setUser(null);
+             await trySupabaseRestore();
           } finally {
              setIsLoading(false);
           }
@@ -274,11 +272,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
        if (message) {
           Alert.alert('Not Authorized', message);
        }
-    }, []);
+     }, []);
 
-   const updateUser = useCallback((updatedUser: Partial<User>) => {
-      setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : (updatedUser as User));
-   }, []);
+     const trySupabaseRestore = useCallback(async (): Promise<boolean> => {
+        try {
+           const sessionPromise = supabase.auth.getSession();
+           const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Session check timeout')), 5000)
+           );
+
+           const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+
+           if (!session) {
+              return false;
+           }
+
+           const supabaseToken = session.access_token;
+           const [deviceName, clientLocation] = await Promise.all([
+              getDeviceName(),
+              getClientLocation(),
+           ]);
+
+           const controller = new AbortController();
+           const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+           const response = await fetch(`${BASE_URL}/api/auth/supabase-login`, {
+              method: 'POST',
+              headers: {
+                 'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ accessToken: supabaseToken, deviceName, clientLocation }),
+              signal: controller.signal,
+           });
+
+           clearTimeout(timeoutId);
+
+           if (!response.ok) {
+              if (response.status === 403) {
+                 await handleSuspension();
+                 return false;
+              }
+              console.warn('Supabase restore: supabase-login failed with status', response.status);
+              return false;
+           }
+
+           const data = await response.json();
+
+           if (data?.needsProfileCompletion === false && data?.token) {
+              await AsyncStorage.setItem('authToken', data.token);
+              if (data.sessionId) {
+                 await AsyncStorage.setItem('sessionId', data.sessionId);
+                 setSessionId(data.sessionId);
+              }
+              await AsyncStorage.setItem('profileCompleted', 'true');
+              setUser(data.user);
+              return true;
+           } else if (data?.needsProfileCompletion === true) {
+              await AsyncStorage.setItem('supabaseUserId', data.supabaseUserId);
+              await AsyncStorage.setItem('userEmail', data.email);
+              await AsyncStorage.setItem('pendingProfileCompletion', 'true');
+              return false;
+           }
+
+           return false;
+        } catch (error: any) {
+           console.warn('Supabase restore error:', error);
+           return false;
+        }
+     }, [handleSuspension]);
+
+     const updateUser = useCallback((updatedUser: Partial<User>) => {
+       setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : (updatedUser as User));
+    }, []);
 
    const value: AuthContextType = {
       user,

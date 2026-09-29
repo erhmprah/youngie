@@ -2,6 +2,7 @@
 
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SOCKET_URL } from './api';
 
 let socket: Socket | null = null;
@@ -20,7 +21,7 @@ let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 const handleAppStateChange = (nextAppState: AppStateStatus) => {
   if (nextAppState === 'active' && socket && currentUserId && socket.connected) {
     // Re-emit user-online when app comes to foreground
-    socket.emit('user-online', { userId: currentUserId });
+    socket.emit('user-online');
     console.log('✓ Refreshed online status on app foreground');
   }
 };
@@ -33,6 +34,9 @@ export const initSocket = (userId: string): Socket => {
   }
 
   socket = io(SOCKET_URL, {
+    auth: async (cb) => {
+      cb({ token: await AsyncStorage.getItem('authToken') });
+    },
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 1000,
@@ -42,7 +46,7 @@ export const initSocket = (userId: string): Socket => {
 
   socket.on('connect', () => {
     console.log('✓ Socket connected:', socket?.id);
-    socket?.emit('user-online', { userId });
+    socket?.emit('user-online');
   });
 
   // Start the keep-alive heartbeat so the user stays "online" while idle.
@@ -51,7 +55,7 @@ export const initSocket = (userId: string): Socket => {
   }
   heartbeatInterval = setInterval(() => {
     if (socket && socket.connected && currentUserId) {
-      socket.emit('heartbeat', { userId: currentUserId });
+      socket.emit('heartbeat');
     }
   }, HEARTBEAT_INTERVAL);
 

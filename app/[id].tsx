@@ -74,7 +74,7 @@ export default function CommunityScreen() {
       if (notification.relatedCommunity === community?._id) {
         fetchCommunity();
 
-        if (notification.type === 'community_join_request') {
+        if (notification.type === 'community_join_request' || notification.type === 'community_join_request_approved' || notification.type === 'community_join_request_rejected') {
           if (notification.message.includes('approved')) {
             Alert.alert('Request Approved', notification.message);
           } else if (notification.message.includes('rejected')) {

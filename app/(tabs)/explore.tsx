@@ -1,7 +1,7 @@
 // app/(tabs)/explore.tsx
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, FlatList, TextInput, Dimensions, ActivityIndicator, Alert, Image } from 'react-native';
+import { StyleSheet, View, ScrollView, TouchableOpacity, TextInput, Dimensions, ActivityIndicator, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -111,7 +111,7 @@ export default function ExploreScreen() {
         if (savedFilters) {
           setFilters(JSON.parse(savedFilters));
         }
-      } catch (error) {
+      } catch {
       }
     };
     loadFilters();
@@ -125,7 +125,7 @@ export default function ExploreScreen() {
       const trendingResponse = await postAPI.getTrendingPosts();
       const trendingPosts = trendingResponse.data?.data || [];
       setTrendingPosts(trendingPosts.length > 0 ? trendingPosts : []);
-    } catch (err) {
+    } catch {
       try {
         const suggestedResponse = await postAPI.getSuggestedRandomPosts();
         const suggestedPosts = suggestedResponse.data?.data || [];
@@ -190,11 +190,11 @@ export default function ExploreScreen() {
         setSentRequestIds(profileResponse.data.friendRequests.map((r: any) => typeof r === 'string' ? r : r._id));
       }
     } catch (error) {
-      showErrorAlert(error, () => fetchExploreData());
+      showErrorAlert(error);
     } finally {
       setIsLoading(false);
     }
-  }, [user?._id, filters]);
+  }, [user, filters]);
 
   useFocusEffect(
     useCallback(() => {
@@ -219,7 +219,7 @@ export default function ExploreScreen() {
           users: userResponse.data.data || [],
           posts: postResponse.data.data || []
         });
-    } catch (error) {
+    } catch {
       showErrorAlert(error);
     } finally {
       setIsSearching(false);
@@ -227,6 +227,8 @@ export default function ExploreScreen() {
   }, []);
 
   useEffect(() => {
+    // Search intentionally runs when the debounced query changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     performSearch(debouncedSearchQuery);
   }, [debouncedSearchQuery, performSearch]);
 
@@ -235,7 +237,7 @@ export default function ExploreScreen() {
     fetchExploreData(newFilters);
     try {
       await AsyncStorage.setItem('discovery_filters', JSON.stringify(newFilters));
-    } catch (error) {
+    } catch {
     }
   };
 
@@ -245,7 +247,7 @@ export default function ExploreScreen() {
        await userAPI.sendFriendRequest(user._id, targetUserId);
        setSentRequestIds(prev => [...prev, targetUserId]);
        CustomAlert.success('Success', `Friend request sent to ${userName}`);
-     } catch (error: any) {
+    } catch {
        CustomAlert.error('Error', 'Something went wrong. Please try again.');
      }
    };

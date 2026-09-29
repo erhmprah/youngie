@@ -176,6 +176,7 @@ function RootLayoutNav() {
               break;
             case 'like':
             case 'post-like':
+            case 'share':
               if (data.postId) {
                 router.push({
                   pathname: '/post/[id]',
@@ -206,10 +207,12 @@ function RootLayoutNav() {
               }
               break;
             case 'match':
-              if (data.userId) {
+              // The match helper sends the other user as `senderId`;
+              // older payloads used `userId`.
+              if (data.senderId || data.userId) {
                 router.push({
                   pathname: '/user/[id]',
-                  params: { id: data.userId as string }
+                  params: { id: (data.senderId || data.userId) as string }
                 });
               }
               break;

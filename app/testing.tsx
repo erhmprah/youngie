@@ -15,6 +15,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { postAPI, userAPI, chatAPI, notificationAPI, storyAPI } from '@/utils/api';
+import { cachedNotificationAPI } from '@/utils/cachedApi';
 import { colors, spacing, borderRadius } from '@/constants/design-tokens';
 import { Ionicons } from '@expo/vector-icons';
 import { ICONS, ICON_SIZES } from '@/constants/icons';
@@ -234,7 +235,7 @@ export default function TestingScreen() {
     const response = await notificationAPI.getNotifications();
     if (!response.data?.data?.length) throw new Error('No notifications to mark');
     const notifId = response.data.data[0]._id;
-    await notificationAPI.markAsRead(notifId);
+    await cachedNotificationAPI.markAsRead(notifId);
     return `Marked notification as read: ${notifId}`;
   }
 

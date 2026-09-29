@@ -90,13 +90,13 @@ export default function AboutScreen() {
                     <ThemedText style={[styles.sectionTitle, { color: textColor }]}>Legal</ThemedText>
                     <TouchableOpacity
                         style={styles.legalItem}
-                        onPress={() => handleOpenLink('https://youngie.com/privacy')}
+                        onPress={() => handleOpenLink('https://youngback.onrender.com/static-pages/policy')}
                     >
                         <ThemedText style={[styles.legalText, { color: textColor }]}>Privacy Policy</ThemedText>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.legalItem}
-                        onPress={() => handleOpenLink('https://youngie.com/terms')}
+                        onPress={() => handleOpenLink('https://youngback.onrender.com/static-pages/terms')}
                     >
                         <ThemedText style={[styles.legalText, { color: textColor }]}>Terms of Service</ThemedText>
                     </TouchableOpacity>

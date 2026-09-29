@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Local configuration and environment variables
+.env
+.env.local
+.env.*.local
+
+# Expo and local build outputs
+.expo/
+dist/
+web-build/
+
+# Native build directories (EAS generates these fresh on the cloud)
+ios/
+android/
+
+# System files
+.DS_Store
+thumbs.db
