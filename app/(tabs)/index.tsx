@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -27,8 +27,6 @@ import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated } from '@/utils/socket';
 import { getRelativeTime } from '@/utils/helpers';
-import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { ViewToken } from 'react-native';
 
 // Feed ad cadence. The first ad appears after AD_FIRST_INDEX posts, then every
 // AD_INTERVAL items. AdMob counts every banner impression against your
