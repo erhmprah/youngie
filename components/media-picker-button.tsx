@@ -17,6 +17,8 @@ export interface MediaPickerResult {
     type: MediaType;
     fileName?: string;
     duration?: number; // For audio/video
+    width?: number;
+    height?: number;
 }
 
 interface MediaPickerButtonProps {
@@ -121,6 +123,8 @@ export function MediaPickerButton({
                 type: 'video',
                 fileName: asset.fileName || `video-${Date.now()}.mp4`,
                 duration: asset.duration ?? undefined,
+                width: asset.width || undefined,
+                height: asset.height || undefined,
             });
         }
     };

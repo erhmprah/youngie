@@ -1,6 +1,7 @@
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { Alert, Platform } from 'react-native';
 import { supabase } from './supabase';
+import { toUserError } from './error-messages';
 
 GoogleSignin.configure({
   webClientId: '274460413616-cqu0cvkqhajj72hleui5l2raovj59ssd.apps.googleusercontent.com',
@@ -44,7 +45,11 @@ export const signInWithGoogle = async () => {
     } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
       Alert.alert('Play Services not available', 'Please install Google Play Services.');
     } else {
-      Alert.alert('Sign-in failed', error.message || 'An error occurred while signing in.');
+      const friendly = toUserError(error, {
+        title: 'Sign-in failed',
+        fallback: 'We could not sign you in with Google. Please try again.',
+      });
+      Alert.alert(friendly.title, friendly.message);
     }
     
     return { data: null, error };

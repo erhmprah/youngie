@@ -1,10 +1,11 @@
-import React, { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { VideoView, useVideoPlayer, type VideoTrack } from 'expo-video';
 
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -19,13 +20,13 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIncognito } from '@/contexts/IncognitoContext';
 import { postAPI, communityAPI, getImageUrl } from '@/utils/api';
-import { verticalScale } from '@/utils/scale';
+import { serverText } from '@/utils/error-messages';
 import { cachedPostAPI, cachedStoryAPI } from '@/utils/cachedApi';
 import { cacheService } from '@/utils/cache';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
-import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated } from '@/utils/socket';
+import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated, onPostDeleted, offPostDeleted } from '@/utils/socket';
 import { getRelativeTime } from '@/utils/helpers';
 
 // Feed ad cadence. The first ad appears after AD_FIRST_INDEX posts, then every
@@ -55,6 +56,8 @@ interface Post {
     content?: string;
     images?: string[];
     video?: string;
+    videoWidth?: number;
+    videoHeight?: number;
     likes: { _id: string; username: string }[];
     comments: Comment[];
     createdAt: string;
@@ -91,6 +94,9 @@ interface CommunityFeedPost {
     author: { _id: string; username: string; avatar?: string; profilePhoto?: string };
     content?: string;
     images?: string[];
+    video?: string;
+    videoWidth?: number;
+    videoHeight?: number;
     likes: { _id: string }[];
     comments?: { _id: string; author?: { _id: string; username: string }; content?: string; createdAt?: string }[];
     isFavorited?: boolean;
@@ -99,156 +105,87 @@ interface CommunityFeedPost {
     createdAt: string;
 }
 
-// Memoized CommunityPostCard component to prevent re-renders
-const CommunityPostCard = memo(({ 
-    item, 
-    user, 
-    primaryColor, 
-    lightTextColor, 
-    white, 
-    backgroundColor, 
-    surfaceColor, 
-    borderColor, 
-    textColor, 
-    spacing, 
-    typography, 
-    shadows,
-    getImageUrl,
-    router,
-    communityAPI,
-    Haptics,
-    IconSymbol,
-    ThemedText,
-    Image,
-    TouchableOpacity,
-    View,
-    joinCommunity,
-    promptToJoin,
-    communityId,
-    handleCommunityLike,
-    handleCommunityFavorite,
-    openComments,
-}: {
-    item: CommunityFeedPost;
-    user: User | null;
-    primaryColor: string;
-    lightTextColor: string;
-    white: string;
-    backgroundColor: string;
-    surfaceColor: string;
-    borderColor: string;
-    textColor: string;
-    spacing: typeof spacing;
-    typography: typeof typography;
-    shadows: typeof shadows;
-    getImageUrl: typeof getImageUrl;
-    router: any;
-    communityAPI: typeof communityAPI;
-    Haptics: typeof Haptics;
-    IconSymbol: typeof IconSymbol;
-    ThemedText: typeof ThemedText;
-    Image: typeof Image;
-    TouchableOpacity: typeof TouchableOpacity;
-    View: typeof View;
-    joinCommunity: (communityId: string, communityName: string) => void;
-    promptToJoin: (communityId: string, communityName: string) => void;
-    communityId: string;
-    handleCommunityLike: () => void;
-    handleCommunityFavorite: () => void;
-    openComments: () => void;
-}) => {
-    const isMember = item.isMember !== false;
-    const liked = (item.likes || []).some((l: any) => String(l?._id || l) === String(user?._id));
-    const likeCount = (item.likes || []).length;
-    const favorited = !!item.isFavorited;
-    const commentCount = item.comments?.length || 0;
-    const commId = item.community._id;
-    const communityName = item.community.name;
+function getCommunityMediaAspectRatio(width: number, height: number) {
+    if (!width || !height) return 1;
+    return width / height;
+}
+
+function CommunityFeedImage({ uri }: { uri: string | undefined }) {
+    const [aspectRatio, setAspectRatio] = useState(1);
+
+    const handleImageLoad = useCallback((event: { nativeEvent: { source: { width: number; height: number } } }) => {
+        const { width: imageWidth, height: imageHeight } = event.nativeEvent.source;
+        if (!imageWidth || !imageHeight) return;
+
+        setAspectRatio(getCommunityMediaAspectRatio(imageWidth, imageHeight));
+    }, []);
 
     return (
-        <View style={[styles.communityPostCard, { backgroundColor: surfaceColor, borderColor }]}>
-            <TouchableOpacity
-                activeOpacity={0.9}
-                style={styles.communityPostHeader}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
-            >
-                {item.community.image ? (
-                    <Image source={{ uri: getImageUrl(item.community.image) }} style={styles.communityPostAvatar} />
-                ) : (
-                    <View style={[styles.communityPostAvatar, styles.communityImagePlaceholder, { backgroundColor: primaryColor + '20' }]}>
-                        <IconSymbol name="person.3.fill" size={16} color={primaryColor} />
-                    </View>
-                )}
-                <View style={styles.communityPostHeaderText}>
-                    <ThemedText style={[styles.communityPostName, { color: textColor }]} numberOfLines={1}>
-                        {item.community.name || 'Community'}
-                    </ThemedText>
-                    <View style={styles.communityPostAuthorRow}>
-                        {item.author.profilePhoto || item.author.avatar ? (
-                            <Image source={{ uri: getImageUrl(item.author.profilePhoto || item.author.avatar) }} style={styles.communityPostAuthorAvatar} />
-                        ) : (
-                            <View style={[styles.communityPostAuthorAvatar, styles.communityImagePlaceholder, { backgroundColor: surfaceColor }]}>
-                                <IconSymbol name="person.fill" size={9} color={lightTextColor} />
-                            </View>
-                        )}
-                        <ThemedText style={[styles.communityPostAuthor, { color: lightTextColor }]} numberOfLines={1}>
-                            Posted by {item.author.username} · {getRelativeTime(item.createdAt)}
-                        </ThemedText>
-                    </View>
-                </View>
-                <IconSymbol name="chevron.right" size={16} color={lightTextColor} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
-            >
-                {item.content ? (
-                    <ThemedText style={[styles.communityPostContent, { color: textColor }]}>
-                        {item.content}
-                    </ThemedText>
-                ) : null}
-
-                {item.images && item.images.length > 0 && (
-                    <Image source={{ uri: getImageUrl(item.images[0]) }} style={styles.communityPostImage} />
-                )}
-            </TouchableOpacity>
-
-            <View style={styles.communityPostActionBar}>
-                <View style={styles.communityPostLeftActions}>
-                    <TouchableOpacity style={styles.communityPostAction} onPress={handleCommunityLike}>
-                        <IconSymbol name="heart.fill" size={22} color={liked ? '#FF3B30' : lightTextColor} />
-                        <ThemedText style={[styles.communityPostActionText, { color: liked ? '#FF3B30' : lightTextColor }]}>
-                            {likeCount}
-                        </ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.communityPostAction} onPress={openComments}>
-                        <IconSymbol name="message.fill" size={22} color={lightTextColor} />
-                        <ThemedText style={[styles.communityPostActionText, { color: lightTextColor }]}>
-                            {commentCount}
-                        </ThemedText>
-                    </TouchableOpacity>
-                </View>
-                <View style={styles.communityPostRightActions}>
-                    {!isMember && (
-                        <TouchableOpacity
-                            style={[styles.communityJoinPill, { backgroundColor: primaryColor }]}
-                            onPress={() => joinCommunity(commId, communityName)}
-                        >
-                            <IconSymbol name="person.badge.plus" size={14} color={white} />
-                            <ThemedText style={styles.communityJoinPillText}>Join</ThemedText>
-                        </TouchableOpacity>
-                    )}
-                    <TouchableOpacity style={styles.communityPostAction} onPress={handleCommunityFavorite}>
-                        <IconSymbol name={favorited ? "bookmark.fill" : "bookmark"} size={22} color={favorited ? primaryColor : lightTextColor} />
-                    </TouchableOpacity>
-                </View>
-            </View>
+        <View style={[styles.communityPostImageFrame, { aspectRatio }]}>
+            <Image
+                source={{ uri: uri || '' }}
+                style={styles.communityPostImage}
+                resizeMode="cover"
+                onLoad={handleImageLoad}
+            />
         </View>
     );
-});
+}
 
-CommunityPostCard.displayName = 'CommunityPostCard';
+function CommunityFeedVideo({ uri, shouldPlay, videoWidth, videoHeight }: { uri: string | undefined; shouldPlay: boolean; videoWidth?: number; videoHeight?: number }) {
+    const player = useVideoPlayer(uri ? { uri } : null, (videoPlayer) => {
+        videoPlayer.loop = true;
+        videoPlayer.muted = true;
+    });
+    const [aspectRatio, setAspectRatio] = useState(() => videoWidth && videoHeight
+        ? getCommunityMediaAspectRatio(videoWidth, videoHeight)
+        : getCommunityMediaAspectRatio(player.videoTrack?.size.width || 0, player.videoTrack?.size.height || 0));
+
+    const reportTrackSize = useCallback((track: VideoTrack | null) => {
+        if (!track?.size.width || !track.size.height) return;
+        setAspectRatio(getCommunityMediaAspectRatio(track.size.width, track.size.height));
+    }, [videoWidth, videoHeight]);
+
+    useEffect(() => {
+        const subscription = player.addListener('videoTrackChange', ({ videoTrack }) => {
+            reportTrackSize(videoTrack);
+        });
+        const sourceSubscription = player.addListener('sourceLoad', ({ availableVideoTracks }) => {
+            reportTrackSize(player.videoTrack ?? availableVideoTracks[0] ?? null);
+        });
+        const initialTrackFrame = requestAnimationFrame(() => {
+            reportTrackSize(player.videoTrack ?? player.availableVideoTracks[0] ?? null);
+        });
+        return () => {
+            cancelAnimationFrame(initialTrackFrame);
+            subscription.remove();
+            sourceSubscription.remove();
+        };
+    }, [player, reportTrackSize]);
+
+    useEffect(() => {
+        if (shouldPlay) {
+            player.replay();
+            player.play();
+        } else {
+            player.pause();
+        }
+    }, [player, shouldPlay]);
+
+    if (!uri) return null;
+
+    return (
+        <View style={[styles.communityPostImageFrame, { aspectRatio }]}>
+            <VideoView
+                player={player}
+                style={styles.communityPostImage}
+                contentFit="contain"
+                nativeControls={false}
+                pointerEvents="none"
+            />
+        </View>
+    );
+}
 
 export default function FeedScreen() {
     const { user, isSignedIn, logout, isLoading: authLoading } = useAuth();
@@ -271,6 +208,9 @@ export default function FeedScreen() {
     const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
     const [showStoryViewer, setShowStoryViewer] = useState(false);
     const [selectedStoryGroupIndex, setSelectedStoryGroupIndex] = useState(0);
+    // The user whose stories were tapped. Preferred over the index because the
+    // tray re-sorts seen users to the back, which would invalidate an index.
+    const [selectedStoryUserId, setSelectedStoryUserId] = useState<string | null>(null);
     const [showCommentModal, setShowCommentModal] = useState(false);
     const [selectedPostForComments, setSelectedPostForComments] = useState<Post | null>(null);
     const [showCommunityCommentModal, setShowCommunityCommentModal] = useState(false);
@@ -279,6 +219,13 @@ export default function FeedScreen() {
     const [playingPostId, setPlayingPostId] = useState<string | null>(null);
     
     const flatListRef = useRef<FlatList>(null);
+    const feedRequestVersionRef = useRef(0);
+    const feedRequestIdRef = useRef(0);
+    const activeLoadMoreRequestRef = useRef(0);
+    const loadingMoreRef = useRef(false);
+    const firstPageLoadingRef = useRef(false);
+    const refreshingRef = useRef(false);
+    const postsPageRef = useRef(1);
 
     // Theme colors
     const backgroundColor = useThemeColor('background');
@@ -290,18 +237,39 @@ export default function FeedScreen() {
     const surfaceColor = useThemeColor('surface');
 
     const fetchData = useCallback(async (page: number = 1, forceRefresh: boolean = false) => {
-        setError(null);
         const isLoadingMore = page > 1;
-        if (isLoadingMore) {
-            setLoadingMore(true);
+        if (isLoadingMore && (loadingMoreRef.current || firstPageLoadingRef.current || refreshingRef.current)) {
+            return;
         }
+
+        if (isLoadingMore) {
+            loadingMoreRef.current = true;
+            setLoadingMore(true);
+        } else {
+            // A fresh page-one request supersedes any outstanding pagination
+            // response so old data cannot append into the refreshed feed.
+            feedRequestVersionRef.current += 1;
+            loadingMoreRef.current = false;
+            activeLoadMoreRequestRef.current = 0;
+            firstPageLoadingRef.current = true;
+            refreshingRef.current = forceRefresh;
+            postsPageRef.current = 1;
+            setLoadingMore(false);
+        }
+        const requestVersion = feedRequestVersionRef.current;
+        const requestId = ++feedRequestIdRef.current;
+        if (isLoadingMore) activeLoadMoreRequestRef.current = requestId;
+
+        setError(null);
         try {
             const [feedResponse, storiesResponse] = await Promise.all([
                 page > 1
-                    ? cachedPostAPI.getCandidateFeed(page, false, isIncognito)
-                    : cachedPostAPI.getCandidateFeed(1, forceRefresh, isIncognito),
+                    ? cachedPostAPI.getCandidateFeed(page, false, isIncognito, user?._id)
+                    : cachedPostAPI.getCandidateFeed(1, forceRefresh, isIncognito, user?._id),
                 page === 1 ? cachedStoryAPI.getStories(user?._id, forceRefresh) : Promise.resolve({ data: [] }),
             ]);
+
+            if (requestVersion !== feedRequestVersionRef.current) return;
 
             const candidateItems = (feedResponse.data || []).filter((p: any) => p && p._id);
 
@@ -309,7 +277,10 @@ export default function FeedScreen() {
             const newCommunityPosts: CommunityFeedPost[] = [];
 
             for (const item of candidateItems) {
-                if (item._candidateSource === 'community' || item._isCommunityFeed) {
+                // Personal posts have no `community` field, so its presence is a
+                // reliable fallback when the server-side source marker is absent
+                // (e.g. an older cached candidate-feed payload).
+                if (item._candidateSource === 'community' || item._isCommunityFeed || item.community) {
                     const communityPost: CommunityFeedPost = {
                         _id: item._id,
                         community: item.community || { _id: '', name: '', image: undefined, isAnonymous: false },
@@ -321,6 +292,9 @@ export default function FeedScreen() {
                         },
                         content: item.content,
                         images: item.images,
+                        video: item.video,
+                        videoWidth: item.videoWidth,
+                        videoHeight: item.videoHeight,
                         likes: item.likes || [],
                         comments: item.comments || [],
                         isFavorited: item.isFavorited,
@@ -402,9 +376,11 @@ export default function FeedScreen() {
                 setPosts(prev => [...prev, ...newPosts]);
                 setCommunityPosts(prev => [...prev, ...newCommunityPosts]);
             }
-            setHasMorePosts(newPosts.length + newCommunityPosts.length === 20);
+            setHasMorePosts(feedResponse.pagination?.hasNextPage ?? candidateItems.length === 20);
             setPostsPage(page);
+            postsPageRef.current = page;
         } catch (err: any) {
+            if (requestVersion !== feedRequestVersionRef.current) return;
             if (err.response?.status === 401) {
                 try {
                     await logout();
@@ -415,19 +391,26 @@ export default function FeedScreen() {
                 setError('Failed to load feed');
             }
         } finally {
-            setIsLoading(false);
-            setIsRefreshing(false);
-            if (isLoadingMore) {
+            if (requestVersion === feedRequestVersionRef.current) {
+                setIsLoading(false);
+                setIsRefreshing(false);
+                firstPageLoadingRef.current = false;
+                refreshingRef.current = false;
+                if (!isLoadingMore) loadingMoreRef.current = false;
+            }
+            if (isLoadingMore && activeLoadMoreRequestRef.current === requestId) {
+                activeLoadMoreRequestRef.current = 0;
+                loadingMoreRef.current = false;
                 setLoadingMore(false);
             }
         }
     }, [isIncognito, user, logout]);
 
     const loadMorePosts = useCallback(() => {
-        if (!loadingMore && hasMorePosts && isSignedIn) {
-            fetchData(postsPage + 1);
+        if (!loadingMore && !loadingMoreRef.current && !firstPageLoadingRef.current && !refreshingRef.current && hasMorePosts && isSignedIn) {
+            fetchData(postsPageRef.current + 1);
         }
-    }, [loadingMore, hasMorePosts, isSignedIn, fetchData, postsPage]);
+    }, [loadingMore, hasMorePosts, isSignedIn, fetchData]);
 
     const fetchFeedIfLoggedIn = useCallback(async (forceRefresh: boolean = false) => {
         console.log('fetchFeedIfLoggedIn called:', { authLoading, isSignedIn, userId: user?._id });
@@ -441,11 +424,20 @@ export default function FeedScreen() {
             await fetchData(1, forceRefresh);
         } else {
             console.log('User not signed in, clearing data');
+            feedRequestVersionRef.current += 1;
+            loadingMoreRef.current = false;
+            firstPageLoadingRef.current = false;
+            refreshingRef.current = false;
+            activeLoadMoreRequestRef.current = 0;
+            postsPageRef.current = 1;
             // Clear data when not logged in
             setPosts([]);
             setStories([]);
             setCommunityPosts([]);
             setRecommendedPosts([]);
+            setHasMorePosts(false);
+            setPostsPage(1);
+            setLoadingMore(false);
             setIsLoading(false);
             setIsRefreshing(false);
         }
@@ -465,6 +457,7 @@ export default function FeedScreen() {
 
         const handlePostUpdated = (updatedPost: any) => {
             if (!updatedPost || !updatedPost._id) return;
+            cacheService.invalidateByPrefix('candidate_feed_');
             setPosts(prevPosts => {
                 const exists = prevPosts.some(p => p._id === updatedPost._id);
                 if (!exists) return prevPosts;
@@ -479,22 +472,32 @@ export default function FeedScreen() {
         const handlePostCreated = (newPost: any) => {
             if (!newPost || !newPost._id || !user) return;
             if (isIncognito && !newPost.isAnonymous) return;
+            const isSelf = newPost.author?._id === user._id;
+            // Other users' real-time posts are eligible for injection only if
+            // public. Private feed membership is resolved by the API, not by
+            // whether the author happens to have another visible post.
+            if (!isSelf && newPost.isPublic !== true) return;
+            cacheService.invalidateByPrefix('candidate_feed_');
             setPosts(prevPosts => {
                 if (prevPosts.some(p => p._id === newPost._id)) return prevPosts;
-                const isSelf = newPost.author?._id === user._id;
-                const isKnownAuthor = prevPosts.some(p => p.author?._id === newPost.author?._id);
-                // Only inject posts that belong in this user's feed (self or an author they already follow)
-                if (!isSelf && !isKnownAuthor) return prevPosts;
                 return [newPost, ...prevPosts];
             });
         };
 
+        const handlePostDeleted = (postId: string) => {
+            if (!postId) return;
+            cacheService.invalidateByPrefix('candidate_feed_');
+            setPosts(prevPosts => prevPosts.filter(p => p._id !== postId));
+        };
+
         onPostUpdated(handlePostUpdated);
         onPostCreated(handlePostCreated);
+        onPostDeleted(handlePostDeleted);
 
         return () => {
             offPostUpdated();
             offPostCreated();
+            offPostDeleted();
         };
     }, [user?._id, user, isIncognito]);
 
@@ -596,7 +599,10 @@ export default function FeedScreen() {
     const handleDeletePost = async (postId: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         try {
-            await postAPI.deletePost(postId);
+            const target = posts.find(p => p._id === postId);
+            // Route through the cached API so feed, profile grid and post count
+            // caches are dropped together with the delete.
+            await cachedPostAPI.deletePost(postId, target?.author?._id || target?.author?.id);
             setPosts(posts.filter(p => p._id !== postId));
         } catch {
             Alert.alert('Error', 'Failed to delete post');
@@ -616,63 +622,75 @@ export default function FeedScreen() {
         setPosts(posts.map(p => (p._id === updatedPost._id ? updatedPost : p)));
     };
 
-    const handleStoryPress = (userId: string) => {
+const handleStoryPress = (userId: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         const actualIndex = stories.findIndex(s => s.user?._id === userId);
         setSelectedStoryGroupIndex(actualIndex >= 0 ? actualIndex : 0);
+        setSelectedStoryUserId(userId);
         setShowStoryViewer(true);
     };
 
     const handleStoryViewed = (storyId: string) => {
-        setStories(prevStories =>
-            prevStories.map(group => {
-                const storyIndex = group.stories.findIndex(s => s._id === storyId);
-                if (storyIndex !== -1) {
-                    const updatedStories = [...group.stories];
-                    const story = updatedStories[storyIndex];
-                    
-                    // Check if current user is the author - don't count author's view
-                    const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
-                    
-                    // Only update the story to mark it as viewed if not the author
-                    if (user && !isAuthor) {
-                        const isAlreadyViewed = story.viewers?.some(v => v.user?._id === user?._id);
-                        if (!isAlreadyViewed) {
-                            updatedStories[storyIndex] = {
-                                ...story,
-                                viewers: [
-                                    ...(story.viewers || []),
-                                    { 
-                                        user: { 
-                                            _id: user._id, 
-                                            id: user.id || user._id,
-                                            username: user.username, 
-                                            profilePhoto: user.profilePhoto,
-                                            avatar: user.avatar 
-                                        }, 
-                                        viewedAt: new Date().toISOString() 
-                                    }
-                                ]
-                            };
-                        }
-                    }
+        setStories(prevStories => {
+            const groupIndex = prevStories.findIndex(group =>
+                group.stories.some(s => s._id === storyId)
+            );
+            if (groupIndex === -1) return prevStories;
 
-                    // Recalculate allViewed for the entire group
-                    const allViewed = updatedStories.every(s => {
-                        const storyAuthorId = s.author?._id || s.author?._id;
-                        if (storyAuthorId === user?._id || storyAuthorId === user?.id) return true;
-                        return s.viewers?.some(v => v.user?._id === user?._id);
-                    });
+            const group = prevStories[groupIndex];
+            const updatedStories = [...group.stories];
+            const story = updatedStories[group.stories.findIndex(s => s._id === storyId)];
 
-                    return {
-                        ...group,
-                        stories: updatedStories,
-                        allViewed
+            // Check if current user is the author - don't count author's view
+            const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
+
+            // Only update the story to mark it as viewed if not the author
+            if (user && !isAuthor) {
+                const isAlreadyViewed = story.viewers?.some(v => v.user?._id === user?._id);
+                if (!isAlreadyViewed) {
+                    updatedStories[group.stories.findIndex(s => s._id === storyId)] = {
+                        ...story,
+                        viewers: [
+                            ...(story.viewers || []),
+                            {
+                                user: {
+                                    _id: user._id,
+                                    id: user.id || user._id,
+                                    username: user.username,
+                                    profilePhoto: user.profilePhoto,
+                                    avatar: user.avatar
+                                },
+                                viewedAt: new Date().toISOString()
+                            }
+                        ]
                     };
                 }
-                return group;
-            })
-        );
+            }
+
+            // Recalculate allViewed for the entire group
+            const allViewed = updatedStories.every(s => {
+                const storyAuthorId = s.author?._id;
+                if (storyAuthorId === user?._id || storyAuthorId === user?.id) return true;
+                return s.viewers?.some(v => v.user?._id === user?._id);
+            });
+
+            const updatedGroup = { ...group, stories: updatedStories, allViewed };
+
+            const next = [...prevStories];
+            next[groupIndex] = updatedGroup;
+
+            // Once every story from a user has been seen, that user's ring moves
+            // to the end of the tray. The current user's own group is exempt:
+            // its stories always count as viewed, so it would otherwise be
+            // shuffled to the back on every single view.
+            const isOwnGroup = group.user?._id === user?._id || group.user?._id === user?.id;
+            if (allViewed && !isOwnGroup && !group.allViewed && groupIndex < next.length - 1) {
+                next.splice(groupIndex, 1);
+                next.push(updatedGroup);
+            }
+
+            return next;
+        });
     };
 
     const viewabilityConfig = {
@@ -680,20 +698,36 @@ export default function FeedScreen() {
     };
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-        if (viewableItems.length > 0) {
-            const visibleItem = viewableItems[0].item;
-            if (visibleItem.kind === 'post') {
-                setPlayingPostId(visibleItem.data._id);
-            }
+        const visibleVideoItem = viewableItems.find(({ item }) =>
+            item.kind === 'community'
+                ? !!item.data.video
+                : item.kind === 'post' && !!item.data.video
+        )?.item;
+
+        if (!visibleVideoItem) {
+            setPlayingPostId(null);
+            return;
         }
+
+        const prefix = visibleVideoItem.kind === 'community' ? 'community' : 'post';
+        setPlayingPostId(`${prefix}:${visibleVideoItem.data._id}`);
     }, []);
 
     const renderHeader = () => {
-        let allStories = [...stories];
+        // Copy each group before relabelling it: mutating the state objects here
+        // would also rewrite the username the viewer renders for that user.
+        let allStories = stories.map(group => ({
+            ...group,
+            user: { ...group.user },
+        }));
         const userGroupIndex = allStories.findIndex(group => group.user?._id === user?._id);
         if (userGroupIndex !== -1) {
-            allStories[userGroupIndex].isYourStory = true;
-            allStories[userGroupIndex].user.username = 'Your Story';
+            const [yourGroup] = allStories.splice(userGroupIndex, 1);
+            yourGroup.isYourStory = true;
+            yourGroup.user.username = 'Your Story';
+            // Your own story always leads the tray, whatever order the API
+            // returned it in and wherever the seen-story re-sort moved it.
+            allStories.unshift(yourGroup);
         } else {
             const yourStoryItem: StoryGroup = {
                 user: user ? { _id: user._id, id: user.id || user._id, username: 'Your Story', profilePhoto: user.profilePhoto } : { _id: '', id: '', username: 'Your Story' },
@@ -825,7 +859,7 @@ export default function FeedScreen() {
             cacheService.invalidateByPrefix('candidate_feed');
             Alert.alert('Joined', `You joined ${name}. You can now like, comment and save its posts.`);
         } catch (err: any) {
-            Alert.alert('Could not join', err?.response?.data?.msg || `Failed to join ${name}.`);
+            Alert.alert('Could not join', serverText(err?.response?.data, `Failed to join ${name}.`));
         }
     };
 
@@ -876,7 +910,7 @@ export default function FeedScreen() {
                     patchCommunityPost(item._id, { isMember: false });
                     promptToJoin(communityId, communityName);
                 } else {
-                    Alert.alert('Error', err?.response?.data?.msg || 'Failed to like this post. Please try again.');
+                    Alert.alert('Error', serverText(err?.response?.data, 'Failed to like this post. Please try again.'));
                 }
             }
         };
@@ -901,7 +935,7 @@ export default function FeedScreen() {
                     patchCommunityPost(item._id, { isMember: false });
                     promptToJoin(communityId, communityName);
                 } else {
-                    Alert.alert('Error', err?.response?.data?.msg || 'Failed to save this post. Please try again.');
+                    Alert.alert('Error', serverText(err?.response?.data, 'Failed to save this post. Please try again.'));
                 }
             }
         };
@@ -913,7 +947,7 @@ export default function FeedScreen() {
         };
 
         return (
-            <View style={[styles.communityPostCard, { backgroundColor: surfaceColor, borderColor }]}>
+            <View style={[styles.communityPostFeed, { borderBottomColor: borderColor }]}>
                 <TouchableOpacity
                     activeOpacity={0.9}
                     style={styles.communityPostHeader}
@@ -948,6 +982,7 @@ export default function FeedScreen() {
 
                 <TouchableOpacity
                     activeOpacity={0.9}
+                    style={styles.communityPostBody}
                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
                 >
                     {item.content ? (
@@ -957,7 +992,15 @@ export default function FeedScreen() {
                     ) : null}
 
                     {item.images && item.images.length > 0 && (
-                        <Image source={{ uri: getImageUrl(item.images[0]) }} style={styles.communityPostImage} />
+                        <CommunityFeedImage uri={getImageUrl(item.images[0])} />
+                    )}
+                    {item.video && (
+                        <CommunityFeedVideo
+                            uri={getImageUrl(item.video)}
+                            shouldPlay={playingPostId === `community:${item._id}`}
+                            videoWidth={item.videoWidth}
+                            videoHeight={item.videoHeight}
+                        />
                     )}
                 </TouchableOpacity>
 
@@ -1098,13 +1141,14 @@ export default function FeedScreen() {
         return (
             <FeedCard
                 post={postWithAvatar}
+                presentation="feed"
                 currentUserId={user?._id || ''}
                 onDelete={handleDeletePost}
                 onReport={handleReportPost}
                 onUpdate={handleUpdatePost}
                 onLike={handleLikePost}
                 onComment={(post) => { setSelectedPostForComments(post); setShowCommentModal(true); }}
-                shouldPlay={item.data._id === playingPostId}
+                shouldPlay={playingPostId === `post:${item.data._id}`}
             />
         );
     };
@@ -1196,7 +1240,8 @@ export default function FeedScreen() {
                     visible={showStoryViewer} 
                     onClose={() => setShowStoryViewer(false)} 
                     storyGroups={stories} 
-                    initialGroupIndex={selectedStoryGroupIndex} 
+                    initialGroupIndex={selectedStoryGroupIndex}
+                    initialUserId={selectedStoryUserId} 
                     onStoryDeleted={() => {
                         // Remove the deleted story from local state immediately
                         setStories(prevStories => {
@@ -1361,11 +1406,19 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
         ...shadows.sm,
     },
+    communityPostFeed: {
+        width: '100%',
+        paddingVertical: spacing.md,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+    },
     communityPostHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: spacing.sm,
         gap: spacing.sm,
+    },
+    communityPostBody: {
+        width: '100%',
     },
     communityPostHeaderText: {
         flex: 1,
@@ -1401,11 +1454,14 @@ const styles = StyleSheet.create({
         fontSize: typography.sizes.body2,
         marginBottom: spacing.sm,
     },
+    communityPostImageFrame: {
+        width: '100%',
+        marginBottom: spacing.sm,
+        overflow: 'hidden',
+    },
     communityPostImage: {
         width: '100%',
-        height: verticalScale(120),
-        borderRadius: borderRadius.md,
-        marginBottom: spacing.sm,
+        height: '100%',
     },
     communityPostActionBar: {
         flexDirection: 'row',

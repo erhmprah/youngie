@@ -4,6 +4,7 @@ import { borderRadius, shadows, spacing, typography, sizes } from '@/constants/d
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
+import { showFriendlySocketError } from '@/utils/socket-error';
 import { SOCKET_URL, userAPI } from '@/utils/api';
 import { getICEServers } from '@/utils/externalServices';
 import { verticalScale } from '@/utils/scale';
@@ -47,6 +48,29 @@ const VideoChatScreen: React.FC = () => {
   const peerConnection = useRef<any>(null);
   const peerIdRef = useRef<string | null>(null);
   const socket = useRef<Socket | null>(null);
+  // Read inside long-lived socket handlers, which capture the values from the
+  // render that created the socket and would otherwise always see false.
+  const isChattingRef = useRef(isChatting);
+  const isConnectingRef = useRef(isConnecting);
+  // Delayed connect_error notice, cleared whenever the connection resolves.
+  const connectErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Drops the current socket completely: listeners first, so a late event from
+  // the old connection cannot reach a handler, then the transport. Without
+  // this, every retry left another live socket (and its handlers) behind, and
+  // their `disconnect` callbacks kept calling resetChat() on a healthy session.
+  const disposeSocket = useCallback(() => {
+    if (connectErrorTimer.current) {
+      clearTimeout(connectErrorTimer.current);
+      connectErrorTimer.current = null;
+    }
+    const existing = socket.current;
+    socket.current = null;
+    if (existing) {
+      existing.removeAllListeners();
+      existing.disconnect();
+    }
+  }, []);
   const localStreamRef = useRef<any>(null);
   const remoteStreamRef = useRef<any>(null);
   const inCallManagerStarted = useRef(false);
@@ -151,13 +175,15 @@ const VideoChatScreen: React.FC = () => {
       return () => {
         // Cleanup when switching tabs
         resetChatRef.current();
-        if (socket.current) {
-          socket.current.disconnect();
-        }
+        disposeSocket();
         KeepAwake.deactivateKeepAwake().catch(() => {});
       };
-    }, [])
+    }, [disposeSocket])
   );
+
+  // useFocusEffect cleanup covers tab blur, but the screen can also leave the
+  // stack without a blur, so drop the transport on unmount too.
+  useEffect(() => disposeSocket, [disposeSocket]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -237,9 +263,6 @@ const VideoChatScreen: React.FC = () => {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
-            { urls: 'turn:global.relay.metered.ca:443', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
-            { urls: 'turn:global.relay.metered.ca:3478', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
           ],
         });
       } catch (fallbackError) {
@@ -294,9 +317,9 @@ const VideoChatScreen: React.FC = () => {
     // @ts-ignore
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        if (isChatting) {
-           CustomAlert.info('Chat Ended', 'Connection lost.');
-          resetChat();
+        if (isChattingRef.current) {
+          CustomAlert.info('Chat Ended', 'Connection lost.');
+          resetChatRef.current();
         }
       }
     };
@@ -306,7 +329,7 @@ const VideoChatScreen: React.FC = () => {
     };
 
     return pc;
-  }, [attachRemoteStream, isChatting, RTCPeerConnection, MediaStream]);
+  }, [attachRemoteStream, RTCPeerConnection, MediaStream]);
 
   const initLocalStream = useCallback(async () => {
     if (!hasPermissions) {
@@ -355,10 +378,17 @@ const VideoChatScreen: React.FC = () => {
   }, [hasPermissions, mediaDevices, router]);
 
   const resetChat = useCallback((keepLocalStream = false) => {
-    // Notify peer before cleaning up
-    if (peerIdRef.current && socket.current?.connected) {
-      socket.current.emit('peer_disconnected', peerIdRef.current);
+    // Cancel a queued match or notify the current peer before cleaning up.
+    // The server also unmatches on leave_queue to cover a match_found event
+    // that races this reset before peerIdRef has been populated.
+    if (socket.current?.connected) {
+      if (peerIdRef.current) {
+        socket.current.emit('peer_disconnected', peerIdRef.current);
+      } else {
+        socket.current.emit('leave_queue');
+      }
     }
+    peerIdRef.current = null;
     
     if (peerConnection.current) {
       try {
@@ -396,6 +426,8 @@ const VideoChatScreen: React.FC = () => {
     setInputText('');
     setUnreadCount(0);
     setPeerId(null);
+    isChattingRef.current = false;
+    isConnectingRef.current = false;
     stopInCallManager();
     KeepAwake.deactivateKeepAwake().catch(() => {});
   }, [stopInCallManager]);
@@ -410,25 +442,39 @@ resetChatRef.current = resetChat;
   startChatRef.current = async () => {
       resetChat();
       setIsConnecting(true);
+      isConnectingRef.current = true;
 
       const stream = await initLocalStream();
       if (!stream) {
         setIsConnecting(false);
+        isConnectingRef.current = false;
         return;
       }
 
+      disposeSocket();
+
       try {
-        socket.current = io(SOCKET_URL, {
+        const s = io(SOCKET_URL, {
         auth: async (cb) => {
           cb({ token: await AsyncStorage.getItem('authToken') });
         },
-        transports: ['websocket'],
-        timeout: 10000,
+        // Allow the polling fallback: a proxy or load balancer that drops the
+        // WebSocket Upgrade header turns a websocket-only client into a hard
+        // failure instead of a slower working connection.
+        transports: ['websocket', 'polling'],
+        timeout: 20000,
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 8,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
       });
+
+      socket.current = s;
+
+      // Handlers below were registered on `s`. If a newer socket has taken
+      // over by the time one of them fires, this socket is stale and must not
+      // touch screen state.
+      const isCurrent = () => socket.current === s;
 
       // Add an ICE candidate safely: buffer it until the remote description
       // has been applied (candidates often arrive before setRemoteDescription).
@@ -460,70 +506,85 @@ resetChatRef.current = resetChat;
         }
       };
 
-      socket.current.on('connect', () => {
-        console.log('Video chat socket connected:', socket.current?.id);
-        socket.current?.emit('join_room');
-      });
-
-      socket.current.on('error', (error) => {
-        console.error('Video chat socket error:', error.message || error);
-        CustomAlert.error('Connection Error', 'A socket error occurred. Please try again.');
-        setIsConnecting(false);
-        resetChat();
-      });
-
-      socket.current.on('connect_error', (error) => {
-        console.error('Video chat socket connection error:', error.message);
-        // Don't show alert immediately - let reconnection attempts happen first
-        if (socket.current && !socket.current.connected) {
-          setTimeout(() => {
-            if (!socket.current?.connected) {
-              CustomAlert.error('Connection Error', 'Failed to connect. Please check your internet connection and try again.');
-              setIsConnecting(false);
-            }
-          }, 15000); // Wait 15 seconds before showing error to allow reconnection attempts
+      s.on('connect', () => {
+        if (!isCurrent()) return;
+        if (connectErrorTimer.current) {
+          clearTimeout(connectErrorTimer.current);
+          connectErrorTimer.current = null;
         }
+        console.log('Video chat socket connected:', s.id);
+        s.emit('join_room');
       });
 
-      socket.current.on('timeout', () => {
+      s.on('connect_error', (error) => {
+        if (!isCurrent()) return;
+        console.error('Video chat socket connection error:', error.message);
+        // Hold the alert back so a slow first connect does not look like a
+        // failure. The timer is cleared on connect, on replacement, and on
+        // unmount, and it re-checks this exact socket, so it can no longer fire
+        // against a newer connection.
+        if (connectErrorTimer.current) clearTimeout(connectErrorTimer.current);
+        connectErrorTimer.current = setTimeout(() => {
+          connectErrorTimer.current = null;
+          if (isCurrent() && !s.connected) {
+            showFriendlySocketError(error, 'video');
+            setIsConnecting(false);
+            isConnectingRef.current = false;
+          }
+        }, 15000);
+      });
+
+      s.on('timeout', () => {
+        if (!isCurrent()) return;
         console.log('Video chat socket connection timed out');
-        CustomAlert.error('Connection Timeout', 'The connection timed out. Please try again.');
+        showFriendlySocketError('timeout', 'video');
         setIsConnecting(false);
+        isConnectingRef.current = false;
       });
 
-      socket.current.on('close', () => {
+      s.on('close', () => {
+        if (!isCurrent()) return;
         console.log('Video chat socket closed');
-        if (isChatting || isConnecting) {
-          CustomAlert.error('Connection Closed', 'The connection was closed unexpectedly.');
+        if (isChattingRef.current || isConnectingRef.current) {
+          showFriendlySocketError('closed', 'video');
           resetChat();
         }
       });
 
-      socket.current.on('disconnect', (reason) => {
+      s.on('disconnect', (reason) => {
+        if (!isCurrent()) return;
         console.log('Video chat socket disconnected:', reason);
-        if (isChatting || isConnecting) {
-          CustomAlert.error('Disconnected', 'Connection lost. Please try connecting again.');
+        if (connectErrorTimer.current) {
+          clearTimeout(connectErrorTimer.current);
+          connectErrorTimer.current = null;
+        }
+        if (isChattingRef.current || isConnectingRef.current) {
+          showFriendlySocketError(reason, 'video');
         }
         resetChat();
       });
 
-      socket.current.on('reconnect', (attemptNumber) => {
+      s.on('reconnect', (attemptNumber) => {
+        if (!isCurrent()) return;
         console.log('Video chat socket reconnected after', attemptNumber, 'attempts');
-        if (!isChatting) {
-          socket.current?.emit('join_room');
+        if (!isChattingRef.current) {
+          s.emit('join_room');
         }
       });
 
-      socket.current.on('reconnect_attempt', (attemptNumber) => {
+      s.on('reconnect_attempt', (attemptNumber) => {
+        if (!isCurrent()) return;
         console.log('Video chat socket reconnection attempt:', attemptNumber);
       });
 
-      socket.current.on('reconnect_failed', () => {
+      s.on('reconnect_failed', () => {
+        if (!isCurrent()) return;
         console.error('Video chat socket reconnection failed');
-        CustomAlert.error('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
+        showFriendlySocketError('reconnect_failed', 'video');
       });
 
-      socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+      s.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+        if (!isCurrent()) return;
         const { peerId, initiator } = data;
         if (peerConnection.current) {
           return;
@@ -539,17 +600,19 @@ resetChatRef.current = resetChat;
         }).start();
 
         setIsConnecting(false);
+        isConnectingRef.current = false;
         peerIdRef.current = peerId;
         setPeerId(peerId);
         setIsChatting(true);
+        isChattingRef.current = true;
         KeepAwake.activateKeepAwake().catch(() => {});
 
          if (initiator) {
            peerConnection.current = await createPeerConnection();
-           if (!peerConnection.current) {
-             CustomAlert.error('Error', 'Failed to create peer connection.');
-             return;
-           }
+            if (!peerConnection.current) {
+              showFriendlySocketError('peer_connection_failed', 'video');
+              return;
+            }
 
           stream.getTracks().forEach((track: any) => {
             try {
@@ -566,13 +629,14 @@ resetChatRef.current = resetChat;
               offerToReceiveVideo: true,
             });
             await peerConnection.current.setLocalDescription(offer);
-            socket.current?.emit('offer', offer, peerId);
+            s.emit('offer', offer, peerId);
           } catch (e) {
           }
         }
       });
 
-      socket.current.on('offer', async (offer: any, remotePeerId?: string) => {
+      s.on('offer', async (offer: any, remotePeerId?: string) => {
+        if (!isCurrent()) return;
         try {
           if (remotePeerId) {
             peerIdRef.current = remotePeerId;
@@ -581,7 +645,9 @@ resetChatRef.current = resetChat;
           
           // Update UI state when offer is received - peer is found but still connecting
           setIsConnecting(false);
+          isConnectingRef.current = false;
           setIsChatting(true);
+          isChattingRef.current = true;
           KeepAwake.activateKeepAwake().catch(() => {});
           
           if (!peerConnection.current || peerConnection.current.signalingState !== 'stable') {
@@ -606,7 +672,7 @@ resetChatRef.current = resetChat;
               offerToReceiveVideo: true,
             });
             await peerConnection.current.setLocalDescription(answer);
-            socket.current?.emit('answer', answer, remotePeerId || peerIdRef.current);
+            s.emit('answer', answer, remotePeerId || peerIdRef.current);
           } catch (e) {
             console.error('Error handling offer:', e);
           }
@@ -615,7 +681,8 @@ resetChatRef.current = resetChat;
         }
       });
 
-      socket.current.on('answer', async (answer: any) => {
+      s.on('answer', async (answer: any) => {
+        if (!isCurrent()) return;
         try {
           if (peerConnection.current && !peerConnection.current.remoteDescription) {
             try {
@@ -633,11 +700,13 @@ resetChatRef.current = resetChat;
         }
       });
 
-      socket.current.on('ice_candidate', async (candidate: any) => {
+      s.on('ice_candidate', async (candidate: any) => {
+        if (!isCurrent()) return;
         await addRemoteCandidate(candidate);
       });
 
-      socket.current.on('peer_disconnected', () => {
+      s.on('peer_disconnected', () => {
+        if (!isCurrent()) return;
         // Ignore if we're not actively in a chat (e.g. the peer is reacting
         // to our own disconnect or we already returned to idle)
         if (!isChattingRef.current && !isConnectingRef.current) return;
@@ -650,22 +719,26 @@ resetChatRef.current = resetChat;
         resetChat(true);
 
         // Continue searching for a new match
-        if (socket.current && socket.current.connected) {
-          socket.current.emit('next_peer');
+        if (s.connected) {
+          s.emit('next_peer');
           setIsConnecting(true);
+          isConnectingRef.current = true;
         }
       });
 
-      socket.current.on('socket_error', (error: { message: string }) => {
-        console.error('Video chat socket error:', error.message);
-        CustomAlert.error('Socket Error', error.message);
+      s.on('socket_error', (error: { message: string }) => {
+        if (!isCurrent()) return;
+        console.error('Video chat socket error:', error?.message || error);
+        showFriendlySocketError(error, 'video');
       });
 
-      socket.current.on('video_status_change', (data: { isPaused: boolean }) => {
+      s.on('video_status_change', (data: { isPaused: boolean }) => {
+        if (!isCurrent()) return;
         setIsRemoteVideoPaused(data.isPaused);
       });
 
-      socket.current.on('receive_message', (data: { message: string }) => {
+      s.on('receive_message', (data: { message: string }) => {
+        if (!isCurrent()) return;
         setMessages(prev => [...prev, {
           id: Date.now().toString() + Math.random(),
           text: data.message,
@@ -679,7 +752,7 @@ resetChatRef.current = resetChat;
       });
 
 } catch (error) {
-        CustomAlert.error('Error', 'Failed to start video chat.');
+        showFriendlySocketError(error, 'video');
         setIsConnecting(false);
       }
     };
@@ -816,6 +889,7 @@ resetChatRef.current = resetChat;
     if (socket.current && socket.current.connected) {
       socket.current.emit('next_peer');
       setIsConnecting(true);
+      isConnectingRef.current = true;
     } else {
       startVideoChat();
     }
@@ -825,16 +899,13 @@ resetChatRef.current = resetChat;
 
   const pan = useRef(new Animated.ValueXY()).current;
 
-  const isChattingRef = useRef(isChatting);
   useEffect(() => {
     isChattingRef.current = isChatting;
   }, [isChatting]);
 
-  const isConnectingRef = useRef(isConnecting);
   useEffect(() => {
     isConnectingRef.current = isConnecting;
   }, [isConnecting]);
-
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -879,12 +950,13 @@ resetChatRef.current = resetChat;
         timeout = setTimeout(() => {
           CustomAlert.warning('Timeout', 'No match found. Please try again.');
           resetChat();
+          disposeSocket();
         }, 30000);
       }
       return () => {
         if (timeout) clearTimeout(timeout);
       };
-    }, [isConnecting, resetChat]);
+    }, [disposeSocket, isConnecting, resetChat]);
 
   const localStreamUrl = localStream?.toURL?.() || null;
   const remoteStreamUrl = remoteStream?.toURL?.() || null;
@@ -1299,7 +1371,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.families.bold,
   },
   remotePausedOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#222',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1312,7 +1384,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.families.bold,
   },
   chatOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 100,
     justifyContent: 'flex-end',
   },
@@ -1362,25 +1434,32 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
     padding: spacing.lg,
     gap: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    borderTopColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    minHeight: 80,
   },
   input: {
     flex: 1,
-    backgroundColor: '#333',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: borderRadius.round,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     color: 'white',
     fontSize: typography.sizes.body1,
+    minHeight: 48,
+    maxHeight: 120,
   },
   sendButton: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.xs,
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.round,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   badge: {
     position: 'absolute',

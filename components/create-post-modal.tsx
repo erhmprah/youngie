@@ -43,7 +43,7 @@ function VideoPreviewItem({ videoUri, videoPlayerRef }: { videoUri: string; vide
             player={player}
             style={styles.previewImage}
             nativeControls
-            contentFit="cover"
+            contentFit="contain"
         />
     );
 }
@@ -51,7 +51,7 @@ function VideoPreviewItem({ videoUri, videoPlayerRef }: { videoUri: string; vide
 export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = false }: CreatePostModalProps) {
     const { user } = useAuth();
     const [content, setContent] = useState('');
-    const [media, setMedia] = useState<{ uri: string; type: 'image' | 'video' }[]>([]);
+    const [media, setMedia] = useState<{ uri: string; type: 'image' | 'video'; width?: number; height?: number }[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isPublic, setIsPublic] = useState(true);
     const [isAnonymous, setIsAnonymous] = useState(initialAnonymous);
@@ -192,7 +192,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                         quality: 1,
                     });
                     if (!result.canceled) {
-                        setMedia([{ uri: result.assets[0].uri, type: 'video' as const }]);
+                        const asset = result.assets[0];
+                        setMedia([{ uri: asset.uri, type: 'video' as const, width: asset.width || undefined, height: asset.height || undefined }]);
                     }
                 }
             );
@@ -205,7 +206,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
         });
 
         if (!result.canceled) {
-            setMedia([{ uri: result.assets[0].uri, type: 'video' as const }]);
+            const asset = result.assets[0];
+            setMedia([{ uri: asset.uri, type: 'video' as const, width: asset.width || undefined, height: asset.height || undefined }]);
         }
     };
 
@@ -231,11 +233,11 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                 CustomAlert.confirm(
                     'Clear Selection',
                     'Adding a video will remove any selected images. Continue?',
-                    () => setMedia([{ uri: result.uri, type: 'video' as const }])
+                    () => setMedia([{ uri: result.uri, type: 'video' as const, width: result.width, height: result.height }])
                 );
                 return;
             }
-            setMedia([{ uri: result.uri, type: 'video' as const }]);
+            setMedia([{ uri: result.uri, type: 'video' as const, width: result.width, height: result.height }]);
         }
         // Audio is not supported for posts, only for chat
     };
@@ -260,6 +262,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
         try {
             const imageUrls: string[] = [];
             let videoUrl: string | undefined = undefined;
+            let videoWidth: number | undefined;
+            let videoHeight: number | undefined;
 
             for (const medium of media) {
                 if (medium.type === 'image') {
@@ -271,6 +275,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                     });
                     imageUrls.push(uploadResponse.imageUrl);
                 } else if (medium.type === 'video') {
+                    videoWidth = medium.width;
+                    videoHeight = medium.height;
                     const base64 = await FileSystem.readAsStringAsync(medium.uri, { encoding: 'base64' });
                     const filename = `post-video-${Date.now()}.mp4`;
                     const uploadResponse = await postAPI.uploadPostVideoBase64({
@@ -286,6 +292,8 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                 content: content.trim() || undefined,
                 images: imageUrls.length > 0 ? imageUrls : undefined,
                 video: videoUrl,
+                videoWidth,
+                videoHeight,
                 isPublic,
                 isAnonymous,
                 commentsDisabled,
@@ -296,6 +304,7 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
 
             // Invalidate feed cache so the new post appears immediately on refresh
             await cacheService.invalidateByPrefix('cache_posts_');
+            await cacheService.invalidateByPrefix('candidate_feed_');
 
             onPost();
             onClose();
@@ -451,6 +460,15 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                     )}
                 </ScrollView>
 
+                <View style={styles.mediaActions}>
+                    <MediaPickerButton
+                        onMediaSelected={handleMediaSelected}
+                        icon="camera"
+                        size={22}
+                        showAudioOption={false}
+                    />
+                </View>
+
                 <View style={styles.optionsRow}>
                     <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsAnonymous(!isAnonymous); }} style={[styles.optionPill, { backgroundColor: isAnonymous ? primaryColor + '20' : surfaceColor }]}>
                         <Ionicons name={isAnonymous ? "glasses" : "eye-off"} size={16} color={primaryColor} />
@@ -468,15 +486,6 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                         <Ionicons name="stats-chart" size={16} color={primaryColor} />
                         <ThemedText style={{ color: primaryColor, fontSize: typography.sizes.caption }}>Poll</ThemedText>
                     </TouchableOpacity>
-                </View>
-
-                <View style={styles.mediaActions}>
-                    <MediaPickerButton
-                        onMediaSelected={handleMediaSelected}
-                        icon="camera"
-                        size={22}
-                        showAudioOption={false}
-                    />
                 </View>
 
                 {/* Category Selection */}

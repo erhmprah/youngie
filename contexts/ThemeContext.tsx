@@ -3,7 +3,7 @@ import { useColorScheme as useSystemColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ThemeMode = 'light' | 'dark' | 'system';
-type ColorScheme = string; // Allow hex colors like '#007AFF' or named schemes
+type ColorScheme = string;
 
 interface ThemeContextType {
   theme: 'light' | 'dark';
@@ -15,7 +15,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType>({
   theme: 'dark',
-  mode: 'system',
+  mode: 'dark',
   setMode: () => {},
   colorScheme: 'magenta',
   setColorScheme: () => {},
@@ -23,9 +23,9 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const systemColorScheme = useSystemColorScheme();
-  const [mode, setMode] = useState<ThemeMode>('system');
+  const [mode, setMode] = useState<ThemeMode>('dark');
   const [colorScheme, setColorScheme] = useState<ColorScheme>('magenta');
-  const [theme, setTheme] = useState<'light' | 'dark'>(systemColorScheme === 'dark' ? 'dark' : 'light');
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
     loadTheme();
@@ -45,9 +45,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const savedMode = await AsyncStorage.getItem('themeMode');
       if (savedMode && (savedMode === 'light' || savedMode === 'dark' || savedMode === 'system')) {
         setMode(savedMode as ThemeMode);
+      } else {
+        setMode('dark');
       }
     } catch (error) {
       console.error('Failed to load theme:', error);
+      setMode('dark');
     }
   };
 
@@ -56,9 +59,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const savedScheme = await AsyncStorage.getItem('colorScheme');
       if (savedScheme) {
         setColorScheme(savedScheme as ColorScheme);
+      } else {
+        setColorScheme('magenta');
       }
     } catch (error) {
       console.error('Failed to load color scheme:', error);
+      setColorScheme('magenta');
     }
   };
 
@@ -89,11 +95,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 export const useTheme = () => {
   const context = useContext(ThemeContext);
-  // Return default values if context is not available to avoid hook order violations
   if (!context) {
     return {
       theme: 'dark',
-      mode: 'system' as const,
+      mode: 'dark' as const,
       setMode: () => {},
       colorScheme: 'magenta',
       setColorScheme: () => {},

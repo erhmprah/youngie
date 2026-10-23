@@ -2,27 +2,18 @@
 // External Services Load Balancer - handles Supabase, TURN servers, external APIs
 
 import axios, { AxiosInstance } from 'axios';
+import { chatAPI } from '@/utils/api';
 
 // ============== CONFIGURATION ==============
 
-// TURN server configurations using Metered.ca. Credentials are read from env
-// (EXPO_PUBLIC_TURN_USERNAME / EXPO_PUBLIC_TURN_CREDENTIAL) so secrets stay in .env.
-const TURN_USERNAME = process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee';
-const TURN_CREDENTIAL = process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF';
-
-const TURN_SERVERS = process.env.EXPO_PUBLIC_TURN_SERVERS
-  ? JSON.parse(process.env.EXPO_PUBLIC_TURN_SERVERS)
-  : [
-      // Free STUN servers (always available)
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      // Metered.ca TURN relay servers
-      { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-      { urls: 'turn:global.relay.metered.ca:443', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-      { urls: 'turn:global.relay.metered.ca:443?transport=tcp', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-      { urls: 'turn:global.relay.metered.ca:3478', username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-    ];
+// TURN credentials are fetched from the authenticated backend so provider
+// secrets never need to be embedded in the client bundle. STUN remains as a
+// safe fallback if the credentials endpoint is temporarily unavailable.
+const STUN_SERVERS: ICEServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+];
 
 // Supabase configuration
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://srcpkwkdvslsdjegqjff.supabase.co';
@@ -39,7 +30,7 @@ const EXTERNAL_APIS = process.env.EXPO_PUBLIC_EXTERNAL_APIS
 // ============== SERVICE TYPES ==============
 
 export interface ICEServer {
-  urls: string;
+  urls: string | string[];
   username?: string;
   credential?: string;
 }
@@ -108,57 +99,44 @@ class CircuitBreaker {
 // ============== TURN SERVER LOAD BALANCER ==============
 
 class TurnServerLoadBalancer {
-  private currentIndex = 0;
-  private servers: ICEServer[] = [];
-  private circuitBreaker = new CircuitBreaker();
+  private servers: ICEServer[] = STUN_SERVERS;
   private initialized = false;
 
   /**
    * Initialize TURN servers with credentials
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    // Try to get credentials from backend
     try {
-      const response = await axios.get(`${process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'http://10.0.2.:5001'}/health`, {
-        timeout: 5000,
-      });
-      
-      // If backend is healthy, use dynamic TURN servers
-      this.servers = TURN_SERVERS;
-    } catch {
-      // Fallback to static servers
-      this.servers = TURN_SERVERS;
+      const response = await chatAPI.getTurnCredentials();
+      const configuredServers = response.data;
+      const validServers = Array.isArray(configuredServers)
+        ? configuredServers.filter((server): server is ICEServer =>
+            server && (typeof server.urls === 'string' || Array.isArray(server.urls))
+          )
+        : [];
+
+      if (validServers.length === 0) {
+        throw new Error('TURN credentials response contained no ICE servers');
+      }
+
+      this.servers = validServers;
+    } catch (error) {
+      console.warn('Unable to fetch TURN credentials; using STUN servers only:', error);
+      this.servers = STUN_SERVERS;
     }
 
     this.initialized = true;
-    console.log('🔄 TURN servers initialized:', this.servers.length);
-  }
-
-  /**
-   * Get next available TURN server
-   */
-  getServer(): ICEServer {
-    if (!this.initialized) {
-      this.initialize();
-    }
-
-    // Round-robin selection
-    const server = this.servers[this.currentIndex];
-    this.currentIndex = (this.currentIndex + 1) % Math.max(1, this.servers.length);
-
-    return server;
+    console.log('🔄 ICE servers initialized:', this.servers.length);
   }
 
   /**
    * Get all TURN servers for WebRTC configuration
    */
   async getAllServers(): Promise<ICEServer[]> {
-    return this.circuitBreaker.execute(async () => {
-      await this.initialize();
-      return this.servers;
-    });
+    // Refresh per peer connection because provider-issued TURN credentials may
+    // be short-lived. initialize() falls back to STUN if the API is offline.
+    await this.initialize();
+    return this.servers;
   }
 }
 

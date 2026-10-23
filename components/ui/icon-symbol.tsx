@@ -4,6 +4,8 @@ import React, { useMemo , ComponentProps } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
+type IconColor = ComponentProps<typeof Feather>['color'];
+
 // Define a mapping from a generic name to a Feather icon name
 type IconMapping = {
   [key: string]: ComponentProps<typeof Feather>['name'];
@@ -14,6 +16,7 @@ const MAPPING: IconMapping = {
   // Navigation & UI
   'house.fill': 'home',
   'magnifyingglass': 'search',
+  'compass': 'compass',
   'settings': 'settings',
   'x': 'x',
   'xmark': 'x',
@@ -180,7 +183,7 @@ export function IconSymbol({
 }: {
   name: IconName;
   size?: number;
-  color: string;
+  color: IconColor;
   style?: StyleProp<TextStyle>;
 }) {
   // Memoize the icon lookup to avoid recomputation on re-renders

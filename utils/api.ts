@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios, { AxiosInstance } from 'axios';
 import { router } from 'expo-router';
 import { CustomAlert } from './alert';
+import { classifyText, resolveCopy, serverText, toUserError } from './error-messages';
 import { Platform } from 'react-native';
 
 // Use machine IP for iOS simulator or physical devices.
@@ -233,60 +234,36 @@ const ALERT_COOLDOWN_MS = 3000;
  */
 function isSuspendedError(message?: string): boolean {
   if (!message) return false;
-  return /suspended|not authorized to use this app/i.test(message);
+  return (
+    /suspended|not authorized to use this app/i.test(message) ||
+    classifyText(message) === 'suspended'
+  );
 }
-
 function getApiErrorMessage(status: number, data?: any): { title: string; message: string; shouldRedirect?: boolean } {
-  const serverMessage = data?.msg || data?.message;
-  
-  switch (status) {
-    case 400:
-      return { title: 'Invalid Request', message: serverMessage || 'Please check your input and try again.' };
-    case 401:
-      return { title: 'Session Expired', message: 'Your session has expired. Please log in again.', shouldRedirect: true };
-    case 403:
-      if (isSuspendedError(serverMessage)) {
-        return { title: 'Account Suspended', message: serverMessage || 'Your account has been suspended.', shouldRedirect: true };
-      }
-      return { title: 'Access Denied', message: serverMessage || 'You do not have permission to perform this action.' };
-    case 404:
-      return { title: 'Not Found', message: serverMessage || 'The requested item was not found.' };
-    case 409:
-      return { title: 'Conflict', message: serverMessage || 'A conflict occurred. Please try again.' };
-    case 422:
-      return { title: 'Validation Error', message: serverMessage || 'Please check your input.' };
-    case 429:
-      return { title: 'Too Many Requests', message: 'Please wait a moment before trying again.' };
-    case 500:
-      return { title: 'Server Error', message: 'Something went wrong on our end. Please try again later.' };
-    case 502:
-    case 503:
-    case 504:
-      return { title: 'Service Unavailable', message: 'The service is temporarily unavailable. Please try again later.' };
-    default:
-      if (status >= 500) {
-        return { title: 'Server Error', message: 'Something went wrong on our end. Please try again later.' };
-      }
-      return { title: 'Error', message: serverMessage || 'An unexpected error occurred. Please try again.' };
-  }
+  const resolved = toUserError({ response: { status, data } });
+  const redirect = status === 401 || (status === 403 && isSuspendedError(serverText(data, '')));
+
+  return {
+    title: resolved.title,
+    message: resolved.message,
+    shouldRedirect: redirect,
+  };
 }
 
 /**
  * Get network error message
  */
 function getNetworkErrorMessage(error: any): { title: string; message: string } {
-  const message = error.message?.toLowerCase() || '';
+  const raw = [error?.message, error?.code, error?.name].filter(Boolean).join(' ');
+  const resolved = resolveCopy(raw, 'Something went wrong connecting. Please try again.');
 
-  if (message.includes('timeout') || message.includes('timed out')) {
-    return { title: 'Request Timeout', message: 'The request took too long. Please check your connection and try again.' };
+  if (resolved.kind === 'timeout') {
+    return { title: 'Taking a While', message: resolved.message };
   }
-
-  if (message.includes('network') || message.includes('fetch') || message.includes('connection') ||
-      message.includes('ECONNREFUSED') || message.includes('ENOTFOUND') || message.includes('unable to resolve')) {
-    return { title: 'Connection Error', message: 'Unable to connect. Please check your internet connection and try again.' };
+  if (resolved.kind === 'offline') {
+    return { title: 'No Connection', message: resolved.message };
   }
-
-  return { title: 'Network Error', message: 'A network error occurred. Please check your connection and try again.' };
+  return { title: 'Connection Problem', message: resolved.message };
 }
 
 /**
@@ -382,7 +359,7 @@ function showApiErrorAlert(error: any, isNetworkError: boolean = false, onRetry?
     if (error.response.status === 401) {
       AsyncStorage.removeItem('authToken');
       AsyncStorage.removeItem('sessionId');
-    } else if (error.response.status === 403 && isSuspendedError(error.response.data?.msg || error.response.data?.message)) {
+    } else if (error.response.status === 403 && isSuspendedError(error.response.data?.msg || error.response.data?.message || error.response.data?.error)) {
       // Clear tokens on suspension so a mid-session suspension fully logs the
       // user out instead of leaving them in a broken state.
       AsyncStorage.removeItem('authToken');
@@ -726,9 +703,9 @@ export const postAPI = {
   getPosts: (isAnonymous?: boolean, page?: number, limit?: number) => api.get('/posts', { params: { isAnonymous, page, limit } }),
   getUserPosts: (userId: string, page?: number, limit?: number) => api.get(`/posts/user/${userId}`, { params: { page, limit } }),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
-  createPost: (data: { content?: string; images?: string[]; video?: string; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
+  createPost: (data: { content?: string; images?: string[]; video?: string; videoWidth?: number; videoHeight?: number; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.post('/posts', data),
-  updatePost: (postId: string, data: { content?: string; images?: string[]; video?: string }) =>
+  updatePost: (postId: string, data: { content?: string; images?: string[]; video?: string; videoWidth?: number; videoHeight?: number }) =>
     api.put(`/posts/${postId}`, data),
   deletePost: (postId: string) =>
     api.delete(`/posts/${postId}`),
@@ -846,7 +823,7 @@ export const communityAPI = {
   },
   getFeed: (communityId: string, page?: number, limit?: number) =>
     api.get(`/communities/${communityId}/feed`, { params: { page, limit } }),
-  createFeed: (communityId: string, data: { content?: string; images?: string[]; video?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
+  createFeed: (communityId: string, data: { content?: string; images?: string[]; video?: string; videoWidth?: number; videoHeight?: number; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.post(`/communities/${communityId}/feed`, data),
   deleteFeed: (communityId: string, feedId: string) =>
     api.delete(`/communities/${communityId}/feed/${feedId}`),
@@ -860,7 +837,7 @@ export const communityAPI = {
     api.post(`/communities/${communityId}/feed/${feedId}/favorite`, {}),
   unfavoriteFeed: (communityId: string, feedId: string) =>
     api.delete(`/communities/${communityId}/feed/${feedId}/favorite`),
-  updateFeed: (communityId: string, feedId: string, data: { content?: string; images?: string[]; video?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
+  updateFeed: (communityId: string, feedId: string, data: { content?: string; images?: string[]; video?: string; videoWidth?: number; videoHeight?: number; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.put(`/communities/${communityId}/feed/${feedId}`, data),
   voteFeedPoll: (communityId: string, feedId: string, optionIndex: number) =>
     api.post(`/communities/${communityId}/feed/${feedId}/vote-poll`, { optionIndex }),

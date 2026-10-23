@@ -57,7 +57,7 @@ export default function PrivacyPolicyView() {
 
         <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
-            For questions about this Privacy Policy, please contact us at privacy@youngieapp.com
+            For questions about this Privacy Policy, please contact us at privacy@youngie.social
           </ThemedText>
         </View>
       </ScrollView>

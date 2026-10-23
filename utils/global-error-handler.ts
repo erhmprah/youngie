@@ -43,10 +43,17 @@ function getErrorType(message: string): { type: string; title: string; userMessa
       lowerMessage.includes('ETIMEDOUT') ||
       lowerMessage.includes('timeout') ||
       lowerMessage.includes('enotfound')) {
+    if (lowerMessage.includes('timeout') || lowerMessage.includes('timed out')) {
+      return {
+        type: 'network',
+        title: 'Taking a While',
+        userMessage: 'The request took too long. Please try again in a moment.'
+      };
+    }
     return {
       type: 'network',
-      title: 'Connection Error',
-      userMessage: 'Unable to connect. Please check your internet connection and try again.'
+      title: 'No Connection',
+      userMessage: 'We could not reach the server. Please check your internet connection and try again.'
     };
   }
   
@@ -59,7 +66,7 @@ function getErrorType(message: string): { type: string; title: string; userMessa
     return {
       type: 'auth',
       title: 'Session Expired',
-      userMessage: 'Your session has expired. Please log in again.'
+      userMessage: 'Please log in again to continue.'
     };
   }
   
@@ -69,8 +76,8 @@ function getErrorType(message: string): { type: string; title: string; userMessa
       lowerMessage.includes('access denied')) {
     return {
       type: 'permission',
-      title: 'Access Denied',
-      userMessage: 'You do not have permission to perform this action.'
+      title: "Can't Do That",
+      userMessage: 'You do not have permission to do that.'
     };
   }
   
@@ -81,7 +88,7 @@ function getErrorType(message: string): { type: string; title: string; userMessa
     return {
       type: 'notFound',
       title: 'Not Found',
-      userMessage: 'The requested item could not be found.'
+      userMessage: "We couldn't find what you were looking for."
     };
   }
   
@@ -89,7 +96,7 @@ function getErrorType(message: string): { type: string; title: string; userMessa
   return {
     type: 'unknown',
     title: 'Something Went Wrong',
-    userMessage: 'An unexpected error occurred. Please try again.'
+    userMessage: 'Something went wrong on our end. Please try again in a moment.'
   };
 }
 
@@ -167,7 +174,7 @@ export function setupGlobalErrorHandlers(): void {
 function showFatalErrorAlert(message: string): void {
   // Only show alert if we haven't shown one recently
   // to prevent multiple alerts
-  CustomAlert.error('App Error', 'A fatal error occurred. The app will try to continue.');
+  CustomAlert.error('Something Went Wrong', 'The app ran into a problem and restarted this part. Please try again.');
 }
 
 /**

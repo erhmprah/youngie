@@ -3,26 +3,167 @@
 // It parses the URL parameters and exchanges the auth code for a session
 
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, Alert, Linking } from 'react-native';
+import {
+  View,
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  Linking,
+} from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase, handleOAuthCallback } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '@/utils/api';
 import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
 import { ThemedText } from '@/components/themed-text';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Make sure WebBrowser completes the session on web
 WebBrowser.maybeCompleteAuthSession();
 
+const BRAND = '#FF009D';
+const SUCCESS = '#34C759';
+const DANGER = '#FF4D4D';
+
+const STEPS = [
+  { label: 'Verifying your secure link' },
+  { label: 'Signing you in' },
+  { label: 'Preparing your space' },
+];
+
 export default function AuthCallback() {
   const router = useRouter();
   const { updateUser } = useAuth();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
-  const backgroundColor = useThemeColor('background');
-  const textColor = useThemeColor('text');
+  const [stepIndex, setStepIndex] = useState(0);
+
+  const [spin] = useState(() => new Animated.Value(0));
+  const [pulse] = useState(() => new Animated.Value(0));
+  const [badge] = useState(() => new Animated.Value(0));
+  const [progress] = useState(() => new Animated.Value(0));
+
+  // Ambient rotation for the progress ring while we work.
+  useEffect(() => {
+    if (status !== 'processing') return;
+
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [spin, status]);
+
+  // Slow breathing glow behind the badge.
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 1400,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  // Badge entrance: scales up on mount, pops again on success.
+  useEffect(() => {
+    Animated.spring(badge, {
+      toValue: 1,
+      friction: 6,
+      tension: 70,
+      useNativeDriver: true,
+    }).start();
+  }, [badge]);
+
+  useEffect(() => {
+    if (status !== 'success') return;
+
+    Animated.sequence([
+      Animated.timing(badge, {
+        toValue: 1.14,
+        duration: 180,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.spring(badge, {
+        toValue: 1,
+        friction: 5,
+        tension: 90,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [badge, status]);
+
+  // Indeterminate progress bar while processing.
+  useEffect(() => {
+    if (status !== 'processing') {
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 320,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: false,
+      }).start();
+      return;
+    }
+
+    progress.setValue(0);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(progress, {
+          toValue: 1,
+          duration: 1600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [progress, status]);
+
+  // Walk the checklist forward while the callback resolves.
+  useEffect(() => {
+    if (status !== 'processing') return;
+
+    const timer = setInterval(() => {
+      setStepIndex((current) => (current < STEPS.length - 1 ? current + 1 : current));
+    }, 900);
+
+    return () => clearInterval(timer);
+  }, [status]);
 
   useEffect(() => {
     let isMounted = true;
@@ -322,28 +463,419 @@ export default function AuthCallback() {
     };
   }, [router]);
 
+  const accent = status === 'success' ? SUCCESS : status === 'error' ? DANGER : BRAND;
+
+  const ringSpin = spin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const glowScale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.85, 1.25],
+  });
+
+  const glowOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.18, 0.5],
+  });
+
+  const barWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['6%', '100%'],
+  });
+
+  const badgeScale = badge.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.6, 1],
+  });
+
+  const copy = {
+    processing: {
+      title: 'Signing you in',
+      subtitle: 'Hold tight while we securely finish setting up your account.',
+      badgeIcon: 'lock' as const,
+    },
+    success: {
+      title: 'You’re signed in!',
+      subtitle: 'Authentication successful. Taking you to your feed…',
+      badgeIcon: 'checkmark' as const,
+    },
+    error: {
+      title: 'Something went wrong',
+      subtitle: 'We couldn’t complete your sign-in. Please try again.',
+      badgeIcon: 'alert' as const,
+    },
+  }[status];
+
   return (
-    <View style={[styles.container, { backgroundColor }]}>
-      <ActivityIndicator size="large" color="#007AFF" />
-      <ThemedText style={[styles.text, { color: textColor }]}>
-        {status === 'processing' && 'Completing authentication...'}
-        {status === 'success' && 'Authentication successful! Redirecting...'}
-        {status === 'error' && 'Authentication failed. Please try again.'}
-      </ThemedText>
-    </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="light" />
+
+      <LinearGradient
+        colors={['#150221', '#120018', '#0A000E']}
+        locations={[0, 0.5, 1]}
+        style={styles.container}
+      >
+        <View style={styles.glowTop} pointerEvents="none">
+          <LinearGradient
+            colors={[`${accent}33`, '#00000000']}
+            style={styles.glowBlob}
+          />
+        </View>
+
+        <View style={styles.brandRow}>
+          <Image
+            source={require('@/assets/images/youngie_icon.png')}
+            style={styles.brandIcon}
+            resizeMode="contain"
+          />
+          <ThemedText style={styles.brandName}>youngie</ThemedText>
+        </View>
+
+        <View style={styles.progressTrack}>
+          <Animated.View
+            style={[styles.progressBar, { width: barWidth, backgroundColor: accent }]}
+          />
+        </View>
+
+        <View style={styles.content}>
+          <Animated.View style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+
+          <Animated.View style={[styles.badge, { transform: [{ scale: badgeScale }] }]}>
+            {status === 'processing' && (
+              <Animated.View
+                style={[styles.ring, { borderTopColor: accent, transform: [{ rotate: ringSpin }] }]}
+              />
+            )}
+
+            {status === 'success' && (
+              <LinearGradient
+                colors={[SUCCESS, '#1FBF63']}
+                style={styles.badgeFill}
+              />
+            )}
+
+            {status === 'error' && (
+              <LinearGradient
+                colors={[DANGER, '#C32B2B']}
+                style={styles.badgeFill}
+              />
+            )}
+
+            <IconSymbol
+              name={copy.badgeIcon}
+              size={46}
+              color={status === 'processing' ? accent : '#FFFFFF'}
+            />
+          </Animated.View>
+
+          <LinearGradient
+            colors={['#FF009D', '#FF009D00']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.accentBar}
+          />
+
+          <ThemedText style={styles.title}>{copy.title}</ThemedText>
+          <ThemedText style={styles.subtitle}>{copy.subtitle}</ThemedText>
+
+          <View style={styles.stepsCard}>
+            <View style={styles.stepsHeader}>
+              <ThemedText style={styles.stepsEyebrow}>
+                {status === 'success' ? 'All set' : 'SECURE SIGN-IN'}
+              </ThemedText>
+              <ThemedText style={[styles.stepsCounter, { color: accent }]}>
+                {status === 'success'
+                  ? `${STEPS.length}/${STEPS.length}`
+                  : `${Math.min(stepIndex + 1, STEPS.length)}/${STEPS.length}`}
+              </ThemedText>
+            </View>
+
+            {STEPS.map((step, index) => {
+              const done = status === 'success' || index < stepIndex;
+              const active = status === 'processing' && index === stepIndex;
+
+              return (
+                <View key={step.label} style={styles.stepRow}>
+                  <View
+                    style={[
+                      styles.stepDot,
+                      done && { backgroundColor: SUCCESS, borderColor: SUCCESS },
+                      active && { borderColor: accent },
+                    ]}
+                  >
+                    {done ? (
+                      <IconSymbol name="checkmark" size={12} color="#FFFFFF" />
+                    ) : active ? (
+                      <View style={[styles.stepDotInner, { backgroundColor: accent }]} />
+                    ) : null}
+                  </View>
+
+                  <ThemedText
+                    style={[
+                      styles.stepLabel,
+                      done && styles.stepLabelDone,
+                      active && { color: '#FFFFFF' },
+                    ]}
+                  >
+                    {step.label}
+                  </ThemedText>
+
+                  {active && <ActivityIndicator size="small" color={accent} />}
+                </View>
+              );
+            })}
+          </View>
+
+          {status === 'error' && (
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => router.replace('/login')}
+              activeOpacity={0.85}
+            >
+              <IconSymbol name="arrow.uturn.backward" size={18} color="#FFFFFF" />
+              <ThemedText style={styles.retryButtonText}>Back to sign in</ThemedText>
+            </TouchableOpacity>
+          )}
+
+          {status !== 'error' && (
+            <View style={styles.trustRow}>
+              <IconSymbol name="shield-check" size={15} color="#8E7E92" />
+              <ThemedText style={styles.trustText}>
+                Encrypted connection · Your data stays private
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      </LinearGradient>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0A000E',
+  },
+
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: '#0A000E',
   },
-  text: {
-    marginTop: 16,
-    fontSize: 16,
+
+  glowTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 380,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+
+  glowBlob: {
+    width: 420,
+    height: 420,
+    borderRadius: 210,
+  },
+
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 26,
+    paddingTop: 18,
+  },
+
+  brandIcon: {
+    width: 32,
+    height: 32,
+  },
+
+  brandName: {
+    color: BRAND,
+    fontFamily: typography.families.bold,
+    fontSize: 22,
+    letterSpacing: -0.2,
+  },
+
+  progressTrack: {
+    height: 3,
+    marginHorizontal: 26,
+    marginTop: 18,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF14',
+    overflow: 'hidden',
+  },
+
+  progressBar: {
+    height: '100%',
+    borderRadius: 2,
+  },
+
+  content: {
+    flex: 1,    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 26,
+    paddingBottom: 40,
+    gap: 12,
+  },
+
+  glow: {
+    position: 'absolute',
+    top: '18%',
+    width: 210,
+    height: 210,
+    borderRadius: 105,
+    backgroundColor: BRAND,
+    opacity: 0.2,
+  },
+
+  badge: {
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1B0722',
+    borderWidth: 1,
+    borderColor: '#FFFFFF1F',
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+
+  ring: {
+    position: 'absolute',
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    borderWidth: 3,
+    borderColor: '#FFFFFF14',
+    borderTopColor: BRAND,
+    borderRightColor: `${BRAND}66`,
+  },
+
+  badgeFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
+  accentBar: {
+    width: 78,
+    height: 3,
+    borderRadius: 2,
+    marginBottom: 6,
+  },
+
+  title: {
+    color: '#FFFFFF',
+    fontFamily: typography.families.bold,
+    fontSize: 28,
+    letterSpacing: -0.8,
     textAlign: 'center',
+  },
+
+  subtitle: {
+    color: '#B7A9BC',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+
+  stepsCard: {
+    alignSelf: 'stretch',
+    marginTop: 22,
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#FFFFFF14',
+    backgroundColor: '#1A0620CC',
+    gap: 14,
+  },
+
+  stepsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+
+  stepsEyebrow: {
+    color: '#8E7E92',
+    fontSize: 11,
+    letterSpacing: 1.4,
+    fontFamily: typography.families.bold,
+  },
+
+  stepsCounter: {
+    fontSize: 12,
+    fontFamily: typography.families.bold,
+  },
+
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  stepDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF26',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  stepDotInner: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+
+  stepLabel: {
+    flex: 1,
+    color: '#9C8FA2',
+    fontSize: 15,
+  },
+
+  stepLabelDone: {
+    color: '#D9CEDC',
+  },
+
+  retryButton: {
+    marginTop: 24,
+    height: 54,
+    alignSelf: 'stretch',
+    borderRadius: 27,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: BRAND,
+  },
+
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: typography.families.bold,
+  },
+
+  trustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 26,
+  },
+
+  trustText: {
+    color: '#8E7E92',
+    fontSize: 12,
   },
 });

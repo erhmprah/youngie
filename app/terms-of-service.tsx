@@ -1,5 +1,5 @@
 // Terms of Service for Youngie App
-// A social networking and dating app
+// A social networking and community app
 
 export interface PolicySection {
   title: string;
@@ -16,7 +16,7 @@ export const termsOfServiceData: { lastUpdated: string; sections: PolicySection[
     },
     {
       title: '2. What is Youngie',
-      content: 'Youngie is a social networking and dating app that allows you to:\n\n• Create a profile and meet new people\n• Browse and connect with other users\n• Send messages to your matches\n• Make voice and video calls\n• Share photos and videos\n• Join communities\n\nYoungie helps you find romantic connections and friendships.'
+      content: 'Youngie is a social networking and community app that allows you to:\n\n• Create a profile and meet new people\n• Browse and connect with other users\n• Send direct messages to your connections\n• Make voice and video calls\n• Share photos, videos, posts, and stories\n• Create and join communities\n\nYoungie helps you find people, share what you are into, and build communities around shared interests.'
     },
     {
       title: '3. Eligibility',
@@ -31,16 +31,16 @@ export const termsOfServiceData: { lastUpdated: string; sections: PolicySection[
       content: 'Your profile must be truthful:\n\n• Use real photos of yourself\n• Accurate age and personal information\n• No misleading or deceptive content\n• No photos of others without permission\n\nWe may remove profiles that violate these rules.'
     },
     {
-      title: '6. How Matching Works',
-      content: 'Youngie uses a mutual match system:\n\n• You see profiles based on your preferences\n• You can Like, Pass, or Super Like profiles\n• When both users Like each other, its a match\n• Only matches can message each other\n\nWe use algorithms to suggest matches based on your activity and preferences.'
+      title: '6. How Connections Work',
+      content: 'Youngie uses a connection system:\n\n• You see people and content based on your preferences and activity\n• You can follow people and send friend requests\n• When someone accepts your request, you are connected\n• You can message the people you connect with\n\nWe use algorithms to suggest people and communities based on your activity and preferences.'
     },
     {
       title: '7. Communication Rules',
-      content: 'When messaging on Youngie:\n\n• Only message your matches\n• Be respectful and appropriate\n• No harassment, spam, or unsolicited content\n• No sharing of personal contact information\n\nWe monitor messages for safety. Violations may result in account suspension.'
+      content: 'When messaging on Youngie:\n\n• Only message people you connect with\n• Be respectful and appropriate\n• No harassment, spam, or unsolicited content\n• No sharing of personal contact information\n\nWe monitor messages for safety. Violations may result in account suspension.'
     },
     {
       title: '8. Voice and Video Calls',
-      content: 'Youngie offers voice and video calls:\n\n• Only with your matches\n• May be recorded for safety purposes\n• Subject to our community guidelines\n\nDo not use calls for illegal or inappropriate purposes.'
+      content: 'Youngie offers voice and video calls:\n\n• Only with people you connect with\n• May be recorded for safety purposes\n• Subject to our community guidelines\n\nDo not use calls for illegal or inappropriate purposes.'
     },
     {
       title: '9. Content You Share',
@@ -68,7 +68,7 @@ export const termsOfServiceData: { lastUpdated: string; sections: PolicySection[
     },
     {
       title: '15. Disclaimer of Warranties',
-      content: 'Youngie is provided AS IS:\n\n• We do not guarantee matches or connections\n• Users are responsible for their interactions\n• We do not verify user identities\n• No warranty of service availability\n\nUse the app at your own risk.'
+      content: 'Youngie is provided AS IS:\n\n• We do not guarantee connections or engagement\n• Users are responsible for their interactions\n• We do not verify user identities\n• No warranty of service availability\n\nUse the app at your own risk.'
     },
     {
       title: '16. Limitation of Liability',
@@ -88,7 +88,7 @@ export const termsOfServiceData: { lastUpdated: string; sections: PolicySection[
     },
     {
       title: '20. Contact Information',
-      content: 'Questions about these Terms?\n\nEmail: legal@youngieapp.com\nIn-App: Settings > Help Center'
+      content: 'Questions about these Terms?\n\nEmail: legal@youngie.social\nIn-App: Settings > Help Center'
     }
   ]
 };

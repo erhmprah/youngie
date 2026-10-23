@@ -1,6 +1,7 @@
 import { 
   cacheService, 
-  CACHE_TTL, 
+  CACHE_TTL,
+  CACHE_KEYS, 
   getUserCacheKey, 
   getPostsCacheKey, 
   getNotificationsCacheKey,
@@ -161,21 +162,36 @@ export const cachedPostAPI = {
   /**
     * Get candidate ranked feed with caching
     */
-  getCandidateFeed: async (page: number = 1, forceRefresh: boolean = false, isAnonymous?: boolean) => {
-    const cacheKey = page === 1 ? `candidate_feed_${isAnonymous ? 'anonymous' : 'public'}` : null;
+  getCandidateFeed: async (page: number = 1, forceRefresh: boolean = false, isAnonymous?: boolean, userId?: string) => {
+    // Feed results contain user-specific ranking, relationship visibility, and
+    // favorite state; never reuse one account's cache for another account.
+    const cacheKey = page === 1 && userId
+      ? `candidate_feed_${userId}_${isAnonymous ? 'anonymous' : 'public'}`
+      : null;
     if (cacheKey && !forceRefresh) {
-      const { data: cachedData, isExpired } = await cacheService.get(cacheKey);
+      const { data: cachedData, isExpired } = await cacheService.get<any>(cacheKey);
       if (cachedData && !isExpired) {
-        return { data: cachedData, fromCache: true };
+        // Support the older array-only cache entry while preserving the
+        // server pagination metadata for new entries.
+        const cachedFeedData = Array.isArray(cachedData) ? cachedData : cachedData?.data || [];
+        const cachedPagination = Array.isArray(cachedData) ? undefined : cachedData?.pagination;
+        return {
+          data: cachedFeedData,
+          pagination: cachedPagination || { hasNextPage: cachedFeedData.length === 20 },
+          fromCache: true,
+        };
       }
     }
     
     const response = await postAPI.getCandidateFeed(page, 20, isAnonymous);
-    const candidateData = response.data.data || [];
+    const candidateFeed = {
+      data: response.data.data || [],
+      pagination: response.data.pagination,
+    };
     if (cacheKey) {
-      await cacheService.set(cacheKey, candidateData, CACHE_TTL.FEED);
+      await cacheService.set(cacheKey, candidateFeed, CACHE_TTL.FEED);
     }
-    return { data: candidateData, fromCache: false };
+    return { ...candidateFeed, fromCache: false };
   },
   
   /**
@@ -219,16 +235,25 @@ export const cachedPostAPI = {
     const response = await postAPI.createPost(data);
     // Invalidate feed cache
     await cacheService.remove(getPostsCacheKey(1, data.isAnonymous));
+    await cacheService.invalidateByPrefix('candidate_feed_');
     return response;
   },
   
   /**
    * Delete post and invalidate caches
    */
-  deletePost: async (postId: string) => {
+  deletePost: async (postId: string, authorId?: string) => {
     const response = await postAPI.deletePost(postId);
     // Invalidate all feed caches
-    await cacheService.invalidateByPrefix('cache_posts_');
+    await cacheService.invalidateByPrefix(CACHE_KEYS.POSTS);
+    await cacheService.invalidateByPrefix('candidate_feed_');
+    // The author's profile grid, post count and favorites must not keep the
+    // deleted post for a full TTL.
+    if (authorId) {
+      await cacheService.invalidateByPrefix(`user_posts_${authorId}_`);
+      await cacheService.remove(getUserCacheKey(authorId));
+    }
+    await cacheService.remove('favorite_posts');
     return response;
   },
 };

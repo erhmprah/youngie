@@ -50,7 +50,7 @@ export default function TabLayout() {
           name="swipe"
           options={{
             title: 'Swipe',
-            tabBarIcon: ({ color }) => <IconSymbol size={24} name="heart.fill" color={color} />,
+            tabBarIcon: ({ color }) => <IconSymbol size={24} name="compass" color={color} />,
           }}
         />
         <Tabs.Screen

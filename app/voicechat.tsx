@@ -1,7 +1,9 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomAlert } from '@/utils/alert';
+import { showFriendlySocketError } from '@/utils/socket-error';
 import { SOCKET_URL } from '@/utils/api';
+import { getICEServers } from '@/utils/externalServices';
 import { useNavigation } from "expo-router/react-navigation";
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, StyleSheet, View, Text, TouchableOpacity, Platform, PermissionsAndroid } from 'react-native';
@@ -28,6 +30,7 @@ const VoiceChatScreen: React.FC = () => {
 
   const [webRTC, setWebRTC] = useState<any>(null);
   const matchedPeerIdRef = useRef<string | null>(null);
+  const isChattingRef = useRef(isChatting);
 
   useEffect(() => {
     try {
@@ -107,17 +110,14 @@ const VoiceChatScreen: React.FC = () => {
     remoteStreamRef.current = null;
     setIsConnecting(false);
     setIsChatting(false);
+    isChattingRef.current = false;
     stopInCallManager();
   }, [stopInCallManager]);
 
-  const createPeerConnection = useCallback(() => {
+  const createPeerConnection = useCallback(async () => {
+    const iceServers = await getICEServers();
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
-        { urls: 'turn:global.relay.metered.ca:443', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
-        { urls: 'turn:global.relay.metered.ca:3478', username: process.env.EXPO_PUBLIC_TURN_USERNAME || 'c8fc480759e47fc7056658ee', credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL || 'MV+OjmMOYoqgZ8YF' },
-      ],
+      iceServers,
     });
 
     pc.onicecandidate = (event: any) => {
@@ -136,6 +136,7 @@ const VoiceChatScreen: React.FC = () => {
         remoteStreamRef.current = stream;
         setRemoteStream(stream);
         setIsChatting(true);
+        isChattingRef.current = true;
         startInCallManager();
       }
     };
@@ -145,7 +146,7 @@ const VoiceChatScreen: React.FC = () => {
 
       const state = peerConnection.current.iceConnectionState;
       if (state === 'disconnected' || state === 'failed') {
-        if (isChatting) {
+        if (isChattingRef.current) {
           CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
           resetChat();
         }
@@ -153,7 +154,7 @@ const VoiceChatScreen: React.FC = () => {
     };
 
     return pc;
-  }, [isChatting, resetChat, startInCallManager]);
+  }, [resetChat, startInCallManager]);
 
   const initLocalStream = useCallback(async () => {
     try {
@@ -199,50 +200,71 @@ const VoiceChatScreen: React.FC = () => {
       return;
     }
 
-    socket.current = io(SOCKET_SERVER_URL, {
+    // Tear down any previous socket before creating another one, otherwise
+    // each retry leaves a live connection and its handlers behind.
+    if (socket.current) {
+      socket.current.removeAllListeners();
+      socket.current.disconnect();
+      socket.current = null;
+    }
+
+    const s = io(SOCKET_SERVER_URL, {
       auth: async (cb) => {
         cb({ token: await AsyncStorage.getItem('authToken') });
       },
-      transports: ['websocket'],
+      // Allow the polling fallback so a proxy that drops the WebSocket Upgrade
+      // header degrades instead of failing the connection outright.
+      transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 8,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 10000,
+      timeout: 20000,
     });
 
-    socket.current.on('connect', () => {
-      socket.current?.emit('join_room');
+    socket.current = s;
+
+    // A socket replaced by a newer one must not touch screen state.
+    const isCurrent = () => socket.current === s;
+
+    s.on('connect', () => {
+      if (!isCurrent()) return;
+      s.emit('join_room');
     });
 
-    socket.current.on('connect_error', (error: any) => {
-      CustomAlert.error('Connection Error', 'Failed to connect to the chat server. Please try again.');
+    s.on('connect_error', (error: any) => {
+      if (!isCurrent()) return;
+      showFriendlySocketError(error, 'voice');
       setIsConnecting(false);
       console.error('Socket connection error:', error?.message || error);
     });
 
-    socket.current.on('disconnect', (reason: any) => {
-      if (isChatting) {
-        CustomAlert.error('Disconnected', 'Connection lost. Please try connecting again.');
+    s.on('disconnect', (reason: any) => {
+      if (!isCurrent()) return;
+      if (isChattingRef.current) {
+        showFriendlySocketError(reason, 'voice');
       }
       console.log('Socket disconnected:', reason);
       resetChat();
     });
 
-    socket.current.on('socket_error', (error: { message: string }) => {
-      console.error('Socket error:', error.message);
-      CustomAlert.error('Socket Error', error.message);
+    s.on('socket_error', (error: { message: string }) => {
+      if (!isCurrent()) return;
+      console.error('Socket error:', error?.message || error);
+      showFriendlySocketError(error, 'voice');
     });
 
-    socket.current.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+    s.on('match_found', async (data: { peerId: string; initiator: boolean }) => {
+      if (!isCurrent()) return;
       try {
         const { peerId, initiator } = data;
         matchedPeerIdRef.current = peerId;
 
         setIsConnecting(false);
         setIsChatting(true);
+        isChattingRef.current = true;
 
-        peerConnection.current = createPeerConnection();
+        peerConnection.current = await createPeerConnection();
 
         // Add local tracks (audio + video)
         stream.getTracks().forEach((track: any) => {
@@ -252,7 +274,7 @@ const VoiceChatScreen: React.FC = () => {
         if (initiator) {
           const offer = await peerConnection.current.createOffer();
           await peerConnection.current.setLocalDescription(offer);
-          socket.current?.emit('offer', offer, peerId);
+          s.emit('offer', offer, peerId);
         }
       } catch (error) {
         console.error('Error in match_found:', error);
@@ -261,7 +283,8 @@ const VoiceChatScreen: React.FC = () => {
       }
     });
 
-    socket.current.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
+    s.on('offer', async (offer: RTCSessionDescription, peerId: string) => {
+      if (!isCurrent()) return;
       try {
         matchedPeerIdRef.current = peerId;
 
@@ -270,13 +293,14 @@ const VoiceChatScreen: React.FC = () => {
         await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await peerConnection.current.createAnswer();
         await peerConnection.current.setLocalDescription(answer);
-        socket.current?.emit('answer', answer, peerId);
+        s.emit('answer', answer, peerId);
       } catch (error) {
         console.error('Error handling offer:', error);
       }
     });
 
-    socket.current.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
+    s.on('answer', async (answer: RTCSessionDescription, peerId: string) => {
+      if (!isCurrent()) return;
       try {
         matchedPeerIdRef.current = peerId;
 
@@ -290,7 +314,8 @@ const VoiceChatScreen: React.FC = () => {
       }
     });
 
-    socket.current.on('ice_candidate', async (candidate: RTCIceCandidate, peerId: string) => {
+    s.on('ice_candidate', async (candidate: RTCIceCandidate, peerId: string) => {
+      if (!isCurrent()) return;
       try {
         matchedPeerIdRef.current = peerId;
         await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
@@ -299,23 +324,26 @@ const VoiceChatScreen: React.FC = () => {
       }
     });
 
-    socket.current.on('peer_disconnected', () => {
+    s.on('peer_disconnected', () => {
+      if (!isCurrent()) return;
       CustomAlert.info('Chat Ended', 'Your peer has disconnected.');
       resetChat();
     });
 
-    socket.current.on('reconnect', (attemptNumber: number) => {
-      if (!isChatting) {
-        socket.current?.emit('join_room');
+    s.on('reconnect', (attemptNumber: number) => {
+      if (!isCurrent()) return;
+      if (!isChattingRef.current) {
+        s.emit('join_room');
       }
       console.log('Socket reconnected after', attemptNumber, 'attempts');
     });
 
-    socket.current.on('reconnect_failed', () => {
+    s.on('reconnect_failed', () => {
+      if (!isCurrent()) return;
       console.error('Socket reconnection failed');
-      CustomAlert.error('Connection Failed', 'Unable to reconnect to the server. Please restart the app.');
-    });
-  }, [createPeerConnection, initLocalStream, isChatting, resetChat]);
+      showFriendlySocketError('reconnect_failed', 'voice');
+      });
+  }, [createPeerConnection, initLocalStream, resetChat]);
 
   const findNextPeer = useCallback(() => {
     resetChat();
@@ -332,7 +360,9 @@ const VoiceChatScreen: React.FC = () => {
 
     return () => {
       if (socket.current) {
+        socket.current.removeAllListeners();
         socket.current.disconnect();
+        socket.current = null;
       }
       resetChat();
     };

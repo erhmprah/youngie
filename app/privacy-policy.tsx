@@ -1,5 +1,5 @@
 // Privacy Policy for Youngie App
-// A social networking and dating app
+// A social networking and community app
 
 export interface PolicySection {
   title: string;
@@ -8,39 +8,39 @@ export interface PolicySection {
 
 export const privacyPolicyData: { lastUpdated: string; sections: PolicySection[] } = {
   lastUpdated: 'February 22, 2026',
-  
+
   sections: [
     {
       title: '1. Introduction',
-      content: 'Youngie is a social networking and dating app that helps people connect, chat, and build relationships. This Privacy Policy explains how we collect, use, and protect your personal information when you use our app.'
+      content: 'Youngie is a social networking and community app that helps people connect, share, and find their community. This Privacy Policy explains how we collect, use, and protect your personal information when you use our app.'
     },
     {
       title: '2. Information You Provide',
-      content: 'When you create a Youngie account, we collect:\n\n• Profile Information: Name, age, gender, bio, photos, and interests\n• Account Credentials: Email address and password\n• Location: Your city/region for matching purposes\n• Messages: Chat messages, voice messages, and video call data\n• Content: Photos, videos, and posts you share on the app'
+      content: 'When you create a Youngie account, we collect:\n\n• Profile Information: Name, username, age, gender, bio, profile photo, cover photo, and interests\n• Account Credentials: Email address\n• Location: Your city/region for nearby discovery\n• Messages: Chat messages, voice messages, and video call data\n• Content: Photos, videos, posts, and stories you share on the app'
     },
     {
       title: '3. Information We Collect Automatically',
-      content: 'When you use Youngie, we automatically collect:\n\n• Device Information: Device type, operating system, version, unique device identifiers (like IMEI or advertising ID)\n• Usage Data: Features used, time spent on the app, tap patterns, swipe behavior\n• Location Data: General location (city/region level) for matching; precise location with your consent\n• Log Data: App crashes, performance diagnostics, access times, referring URLs\n• Network Information: IP address, connection type, signal strength\n• Analytics Data: Pages viewed, time spent, features interacted with'
+      content: 'When you use Youngie, we automatically collect:\n\n• Device Information: Device type, operating system, version, unique device identifiers\n• Usage Data: Features used, time spent on the app, and how you interact with posts and stories\n• Location Data: General location (city/region level) for nearby discovery and local content; precise location with your consent\n• Log Data: App crashes, performance diagnostics, access times, referring URLs\n• Network Information: IP address, connection type, signal strength\n• Analytics Data: Pages viewed, time spent, features interacted with'
     },
     {
       title: '4. How We Use Your Information',
-      content: 'We use your information to:\n\n• Create and manage your account\n• Show you potential matches based on preferences and location\n• Enable messaging, voice calls, and video chat\n• Personalize your experience and recommendations\n• Send you notifications (matches, messages, likes)\n• Moderate content and enforce community guidelines\n• Protect against fake accounts and abuse\n• Improve our services through analytics'
+      content: 'We use your information to:\n\n• Create and manage your account\n• Personalize your feed, stories, and recommendations\n• Enable messaging, voice calls, and video chat\n• Recommend posts, communities, and people to discover\n• Send you notifications (new posts, messages, likes, comments, and follow activity)\n• Moderate content and enforce community guidelines\n• Protect against fake accounts and abuse\n• Improve our services through analytics'
     },
     {
-      title: '5. Matchmaking and Discovery',
-      content: 'Youngie helps you find connections:\n\n• Your profile is shown to other users based on preferences, location, and activity\n• We use algorithms to suggest potential matches\n• You can Like, Pass, or Super Like other users\n• Mutual likes result in a match, enabling messaging\n• Location is used to show users nearby (city/region level only)'
+      title: '5. Discovery and Connections',
+      content: 'Youngie helps you find and connect with people and communities:\n\n• Your activity determines what appears in your feed and who is recommended to you\n• Discover people nearby (city/region level only) and search for users and communities\n• Follow people and send friend requests; once accepted, you are connected\n• Some communities are anonymous, hiding your identity from other members\n• You control what is shown to others through privacy settings'
     },
     {
       title: '6. Communication Features',
-      content: 'Our app offers various ways to communicate:\n\n• Text messaging with matched users\n• Voice messages and voice calls\n• Video chat for face-to-face conversations\n• In-app calls and video calls\n\nAll communications are encrypted and stored securely.'
+      content: 'Our app offers various ways to communicate:\n\n• Direct messages with people you connect with\n• Community posts and comments\n• Voice messages, voice calls, and video chat\n• Story replies and reactions\n\nAll communications are encrypted in transit and stored securely.'
     },
     {
       title: '7. Who Can See Your Information',
-      content: 'Your profile visibility depends on settings:\n\n• Public Profile: Visible to all users within your preferences\n• Matched Only: Only users you have matched with can message you\n• Private Mode: Hide your profile from certain sections\n\nYou control who can see your profile through privacy settings.'
+      content: 'Your profile visibility depends on settings:\n\n• Public Profile: Visible to users who discover you or search for you\n• Private Account: Only people you approve can see your photos and videos\n• Community Visibility: Control what you share in each community\n• Anonymous Mode: Browse the anonymous feed without your activity appearing on your profile\n\nYou control who can see your profile through privacy settings.'
     },
     {
       title: '8. Information Sharing',
-      content: 'We share your information only with:\n\n• Other Users: Profile is visible per your privacy settings; messages shared only with recipients\n• Service Providers: Companies hosting our servers, providing analytics\n• Legal: When required by law or to protect safety\n\nWe do NOT sell your personal data to advertisers or third parties.'
+      content: 'We share your information only with:\n\n• Other Users: Profile is visible per your privacy settings; messages shared only with recipients\n• Service Providers: Companies hosting our servers, providing analytics, and supporting authentication, notifications, and advertising\n• Legal: When required by law or to protect safety\n\nWe do NOT sell your personal data to advertisers or third parties.'
     },
     {
       title: '9. Blocking and Muting',
@@ -52,7 +52,7 @@ export const privacyPolicyData: { lastUpdated: string; sections: PolicySection[]
     },
     {
       title: '11. Security',
-      content: 'We protect your data with:\n\n• Encryption of messages and calls\n• Secure storage of passwords\n• Regular security audits\n• Moderation of content and behavior\n\nWhile we take security seriously, no app is 100% secure. Use caution when sharing sensitive information.'
+      content: 'We protect your data with:\n\n• Encryption of messages and calls in transit\n• Secure storage of passwords\n• Regular security audits\n• Moderation of content and behavior\n\nWhile we take security seriously, no app is 100% secure. Use caution when sharing sensitive information.'
     },
     {
       title: '12. Your Rights',
@@ -68,7 +68,7 @@ export const privacyPolicyData: { lastUpdated: string; sections: PolicySection[]
     },
     {
       title: '15. Contact Us',
-      content: 'Questions about privacy? Contact us:\n\nEmail: privacy@youngieapp.com\nIn-App: Settings > Help Center'
+      content: 'Questions about privacy? Contact us:\n\nEmail: privacy@youngie.social\nIn-App: Settings > Help Center'
     }
   ]
 };

@@ -1,5 +1,5 @@
 // Community Guidelines for Youngie App
-// A social networking and dating app
+// A social networking and community app
 
 export interface PolicySection {
   title: string;
@@ -12,11 +12,11 @@ export const communityGuidelinesData: { lastUpdated: string; sections: PolicySec
   sections: [
     {
       title: '1. Our Community',
-      content: 'Youngie is a community where people come to find connections, friendships, and relationships. We expect all members to treat each other with kindness and respect. These guidelines help keep Youngie a safe and welcoming place for everyone.'
+      content: 'Youngie is a community where people come to connect, share, and find their community. We expect all members to treat each other with kindness and respect. These guidelines help keep Youngie a safe and welcoming place for everyone.'
     },
     {
       title: '2. Be Respectful',
-      content: 'Treat all members with respect:\n\n• Be polite and courteous in messages\n• Accept that not everyone will be a match\n• Respect different backgrounds and perspectives\n• No discrimination or hate speech\n• No harassment or bullying\n\nRemember: Behind every profile is a real person.'
+      content: 'Treat all members with respect:\n\n• Be polite and courteous in messages\n• Accept that not everyone will connect\n• Respect different backgrounds and perspectives\n• No discrimination or hate speech\n• No harassment or bullying\n\nRemember: Behind every profile is a real person.'
     },
     {
       title: '3. Be Authentic',
@@ -28,7 +28,7 @@ export const communityGuidelinesData: { lastUpdated: string; sections: PolicySec
     },
     {
       title: '5. Messaging Guidelines',
-      content: 'When messaging on Youngie:\n\n• Only message your matches\n• Do not send unsolicited messages\n• No harassment or threats\n• No spam or repetitive messages\n• Respect when someone does not respond\n\nIf someone asks you to stop messaging, respect their wishes.'
+      content: 'When messaging on Youngie:\n\n• Only message people you connect with\n• Do not send unsolicited messages\n• No harassment or threats\n• No spam or repetitive messages\n• Respect when someone does not respond\n\nIf someone asks you to stop messaging, respect their wishes.'
     },
     {
       title: '6. Safety First',

@@ -12,6 +12,19 @@ import { IconSymbol } from './ui/icon-symbol';
 import { MediaPickerButton, MediaPickerResult } from './media-picker-button';
 import { storyAPI, getImageUrl } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { VideoView, useVideoPlayer } from 'expo-video';
+
+function VideoPreview({ videoUri }: { videoUri: string }) {
+    const player = useVideoPlayer({ uri: videoUri });
+    return (
+        <VideoView
+            player={player}
+            style={styles.previewImage}
+            nativeControls={false}
+            contentFit="contain"
+        />
+    );
+}
 
 interface CreateStoryModalProps {
     visible: boolean;
@@ -52,7 +65,6 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['videos'],
             allowsEditing: true,
-            aspect: [9, 16],
             quality: 1,
             videoMaxDuration: 60, // 60 seconds max for stories
         });
@@ -196,6 +208,7 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
                     )}
 
                     {image && <Image source={{ uri: image }} style={styles.previewImage} />}
+                    {video && <VideoPreview videoUri={video} />}
                 </ScrollView>
 
                 <View style={styles.actions}>

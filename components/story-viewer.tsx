@@ -1,8 +1,9 @@
 // components/story-viewer.tsx
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Modal, StyleSheet, View, Image, Dimensions, Animated, Easing, Alert, Pressable } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { useEventListener } from 'expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
@@ -49,17 +50,49 @@ interface StoryViewerProps {
     onClose: () => void;
     storyGroups: StoryGroup[];
     initialGroupIndex: number;
+    // Preferred over initialGroupIndex: the feed tray re-sorts seen users to the
+    // back, so an index captured at tap time can point at a different user.
+    initialUserId?: string | null;
     onStoryDeleted?: () => void;
     onStoryViewed?: (storyId: string) => void;
 }
 
 const { width, height } = Dimensions.get('window');
 
-export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, onStoryDeleted, onStoryViewed }: StoryViewerProps) {
+const STORY_DURATION_MS = 5000;
+
+// Walk `order` from the entry after (or before) `currentUserId` and return the
+// first user that still has at least one story. Skipping empty/expired groups
+// keeps auto-advance from stalling on a user with nothing left to show.
+function findNextSessionUserId(
+    order: string[],
+    currentUserId: string | null,
+    groups: StoryGroup[],
+    direction: 1 | -1
+): string | null {
+    const start = currentUserId ? order.indexOf(currentUserId) : (direction === 1 ? -1 : 0);
+    for (let i = start + direction; i >= 0 && i < order.length; i += direction) {
+        const g = groups.find(group => group.user?._id === order[i]);
+        if (g && g.stories.length > 0) return order[i];
+    }
+    return null;
+}
+
+export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, initialUserId, onStoryDeleted, onStoryViewed }: StoryViewerProps) {
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
     const router = useRouter();
     const [currentGroupIndex, setCurrentGroupIndex] = useState(initialGroupIndex);
+    // The feed tray re-sorts itself as stories get watched (a fully seen user
+    // moves to the back), so the viewer identifies the current user by id and
+    // walks a snapshot of the opening order instead of raw array indices. That
+    // keeps the cursor on the right user while the array is rearranged.
+    const [currentGroupUserId, setCurrentGroupUserId] = useState<string | null>(
+        storyGroups[initialGroupIndex]?.user?._id ?? null
+    );
+    const [sessionGroupIds, setSessionGroupIds] = useState<string[]>(() =>
+        storyGroups.map(g => g.user?._id).filter((id): id is string => !!id)
+    );
     const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
     const [showReactions, setShowReactions] = useState(false);
     const [showViewersModal, setShowViewersModal] = useState(false);
@@ -68,12 +101,44 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const [storiesViewedSinceAd, setStoriesViewedSinceAd] = useState(0);
     const [adShownForStory, setAdShownForStory] = useState(false);
     const currentValueRef = useRef(0);
-    const group = storyGroups[currentGroupIndex];
+    const group = useMemo(
+        () => storyGroups.find(g => g.user?._id === currentGroupUserId) ?? storyGroups[currentGroupIndex],
+        [storyGroups, currentGroupUserId, currentGroupIndex]
+    );
     const story = group?.stories[currentStoryIndex];
     const storyVideoUri = story?.video ? getImageUrl(story.video) : undefined;
-    const storyPlayer = useVideoPlayer(storyVideoUri ? { uri: storyVideoUri } : undefined);
+    const storyPlayer = useVideoPlayer(storyVideoUri ? { uri: storyVideoUri } : null, (player) => {
+        player.muted = false;
+        player.volume = 1;
+        // Duck whatever else is playing (music, another app) rather than
+        // talking over it at full volume.
+        player.audioMixingMode = 'duckOthers';
+        player.loop = false;
+        player.timeUpdateEventInterval = 0.1;
+    });
     const storyGroupsLengthRef = useRef(storyGroups.length);
-    const { showIfNeeded } = useInterstitialAdHelper();
+    const storyGroupsRef = useRef(storyGroups);
+    const handleNextStoryRef = useRef<(() => void) | null>(null);
+    const onStoryViewedRef = useRef(onStoryViewed);
+    const { showIfNeeded, isShowing: isAdShowing } = useInterstitialAdHelper();
+    // Guards against a single advance being triggered twice (e.g. the progress
+    // animation finishing while a video `playToEnd` event is still in flight),
+    // which would skip a story or skip a whole user.
+    const advanceLockRef = useRef(false);
+    // The story a press-and-hold pause started on, so releasing the hold after the
+    // story has moved on does not resume the old progress on the new story.
+    const pausedStoryIdRef = useRef<string | null>(null);
+    // True from the moment an interstitial is requested until it is actually
+    // presented, so a slow ad load does not re-trigger on the next story.
+    const adIsPendingRef = useRef(false);
+
+    // Keep refs in sync so callbacks always read the latest values without
+    // forcing effects to re-run on every parent render.
+    useEffect(() => {
+        storyGroupsRef.current = storyGroups;
+        onStoryViewedRef.current = onStoryViewed;
+        handleNextStoryRef.current = handleNextStory;
+    });
 
     // Show a full-screen ad after the user has viewed about N stories.
     // The counter resets each time the viewer closes, so it only fires
@@ -89,19 +154,38 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
             if (storyGroups.length === 0) {
                 // No stories left - close the viewer
                 onClose();
-            } else if (currentGroupIndex >= storyGroups.length) {
-                // Current group index is now invalid - reset
+                return;
+            }
+            // The current user may have been removed (deleted or expired).
+            if (!group) {
+                const fallbackId = storyGroups[0]?.user?._id ?? null;
+                setCurrentGroupUserId(fallbackId);
                 setCurrentGroupIndex(0);
                 setCurrentStoryIndex(0);
+                return;
             }
         }
-    }, [storyGroups.length, onClose, currentGroupIndex]);
+        // Keep the cursor inside the current group when its story count shrinks
+        // (a story expired or was deleted mid-session).
+        const maxStoryIndex = (group?.stories.length ?? 0) - 1;
+        if (maxStoryIndex >= 0 && currentStoryIndex > maxStoryIndex) {
+            setCurrentStoryIndex(maxStoryIndex);
+        }
+    }, [storyGroups, group, currentStoryIndex, onClose]);
 
-    // Reset to initial index when opened with a new initialGroupIndex
+    // Start a fresh session when the viewer opens on a different user: snapshot the
+    // current tray order so later re-sorts cannot disturb the running session.
     useEffect(() => {
-        setCurrentGroupIndex(initialGroupIndex);
+        if (!visible) return;
+        const startId =
+            initialUserId ?? storyGroups[initialGroupIndex]?.user?._id ?? null;
+        setSessionGroupIds(storyGroups.map(g => g.user?._id).filter((id): id is string => !!id));
+        setCurrentGroupUserId(startId);
+        setCurrentGroupIndex(
+            startId ? Math.max(0, storyGroups.findIndex(g => g.user?._id === startId)) : initialGroupIndex
+        );
         setCurrentStoryIndex(0);
-    }, [initialGroupIndex]);
+    }, [initialUserId, initialGroupIndex, visible]);
 
     useEffect(() => {
         setCurrentPollOptions(story?.pollOptions || []);
@@ -123,18 +207,47 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const isOwnStory = story && user && story.author._id === user._id;
 
     const handlePressIn = () => {
+        pausedStoryIdRef.current = story?._id ?? null;
         progressAnim.stopAnimation();
+        storyPlayer.pause();
     };
 
     const handlePressOut = () => {
-        startProgressAnimation(currentValueRef.current);
+        // If the hold also advanced the story (e.g. a tap on the right half),
+        // the new story already got a fresh timer from the driver effect —
+        // resuming here would replay the previous story's progress on it.
+        if (pausedStoryIdRef.current !== (story?._id ?? null)) {
+            pausedStoryIdRef.current = null;
+            return;
+        }
+        pausedStoryIdRef.current = null;
+        if (showReactions || showViewersModal || isAdShowing) return;
+        if (story?.video) {
+            storyPlayer.play();
+        } else {
+            startProgressAnimation(currentValueRef.current);
+        }
     };
 
     function handleNextStory() {
+        // One advance per story: a duplicated trigger would silently skip the
+        // next user's first story.
+        if (advanceLockRef.current) return;
+        const currentUserId = currentGroupUserId;
         if (group && currentStoryIndex < group.stories.length - 1) {
+            advanceLockRef.current = true;
             setCurrentStoryIndex(prev => prev + 1);
-        } else if (currentGroupIndex < storyGroups.length - 1) {
-            setCurrentGroupIndex(prev => prev + 1);
+            return;
+        }
+        // This user's stories are done: hand off to the next user in the
+        // session order that still has an unexpired story. Walking the snapshot
+        // (not the live array) keeps the sequence stable even as the tray
+        // moves seen users to the back.
+        const nextUserId = findNextSessionUserId(sessionGroupIds, currentUserId, storyGroupsRef.current, 1);
+        if (nextUserId) {
+            advanceLockRef.current = true;
+            setCurrentGroupUserId(nextUserId);
+            setCurrentGroupIndex(storyGroupsRef.current.findIndex(g => g.user?._id === nextUserId));
             setCurrentStoryIndex(0);
         } else {
             onClose();
@@ -142,37 +255,87 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     }
 
     const startProgressAnimation = useCallback((fromValue?: number) => {
-        if (showReactions || showViewersModal) return; // Pause when reacting or viewing viewers
+        if (showReactions || showViewersModal || isAdShowing) return; // Pause when reacting or viewing viewers
         const startValue = fromValue !== undefined ? fromValue : 0;
         progressAnim.setValue(startValue);
         Animated.timing(progressAnim, {
             toValue: 1,
-            duration: (1 - startValue) * 5000, // remaining time
+            duration: (1 - startValue) * STORY_DURATION_MS, // remaining time
             easing: Easing.linear,
             useNativeDriver: false,
-        }).start(({ finished }) => {
-            if (finished) {
-                handleNextStory();
-            }
-        });
-    }, [progressAnim, currentGroupIndex, currentStoryIndex, showReactions, showViewersModal]);
+    }).start(({ finished }) => {
+        if (finished) {
+            handleNextStoryRef.current?.();
+        }
+    });
+    }, [progressAnim, isAdShowing, showReactions, showViewersModal]);
 
-useEffect(() => {
-        if (visible && story) {
+    useEffect(() => {
+        // A new story gets a new timer; drop the previous one so its completion
+        // callback can never advance past the story now on screen.
+        advanceLockRef.current = false;
+
+        if (!visible || !story) return;
+        const currentStory = group?.stories[currentStoryIndex];
+        if (currentStory) {
             // Mark as viewed if not already viewed AND not the author
-            const isAuthor = story.author?._id === user?._id || story.author?._id === user?.id;
-            if (user && !isAuthor && !story.viewers?.some((v: any) => v && v.user && v.user._id === user?._id)) {
-                 storyAPI.viewStory(story._id).then(() => {
-                     onStoryViewed?.(story._id);
+            const isAuthor = currentStory.author?._id === user?._id || currentStory.author?._id === user?.id;
+            if (user && !isAuthor && !currentStory.viewers?.some((v: any) => v && v.user && v.user._id === user?._id)) {
+                 storyAPI.viewStory(currentStory._id).then(() => {
+                     onStoryViewedRef.current?.(currentStory._id);
                  }).catch(() => {});
             }
-            if (showReactions || showViewersModal) {
-                progressAnim.stopAnimation();
-            } else {
-                startProgressAnimation();
+        }
+        if (showReactions || showViewersModal || isAdShowing) {
+            progressAnim.stopAnimation();
+        } else if (currentStory?.video) {
+            // Video story: progress is synced via timeUpdate listener and
+            // advancement via playToEnd event
+            progressAnim.setValue(0);
+        } else {
+            startProgressAnimation();
+        }
+    }, [visible, currentGroupUserId, currentStoryIndex, story?._id, startProgressAnimation, showReactions, showViewersModal, isAdShowing, user]);
+
+    // Stop the timer when the viewer unmounts or is hidden, otherwise a pending
+    // animation would advance (and re-render) a closed viewer.
+    useEffect(() => {
+        if (!visible) {
+            progressAnim.stopAnimation();
+        }
+    }, [visible]);
+
+    // Play / pause the video player and reset progress when the story's video changes
+    useEffect(() => {
+        if (!storyPlayer) return;
+        if (visible && storyVideoUri && !showReactions && !showViewersModal && !isAdShowing) {
+            progressAnim.setValue(0);
+            storyPlayer.replay();
+            storyPlayer.play();
+        } else {
+            // Also covers moving from a video story to an image story: the
+            // player must be stopped, otherwise the old clip's audio and its
+            // `playToEnd` event would carry over into the next story.
+            storyPlayer.pause();
+        }
+    }, [visible, storyVideoUri, storyPlayer, showReactions, showViewersModal, isAdShowing]);
+
+    // Advance to the next story when a video finishes playing
+    useEventListener(storyPlayer, 'playToEnd', () => {
+        if (visible && !showReactions && !showViewersModal && !isAdShowing) {
+            handleNextStoryRef.current?.();
+        }
+    });
+
+    // Sync the progress bar with the actual video playback position
+    useEventListener(storyPlayer, 'timeUpdate', ({ currentTime }) => {
+        if (visible && story?.video && !showReactions && !showViewersModal && !isAdShowing) {
+            const duration = storyPlayer.duration;
+            if (duration > 0) {
+                progressAnim.setValue(currentTime / duration);
             }
         }
-    }, [visible, story, startProgressAnimation, showReactions, showViewersModal, user, progressAnim, onStoryViewed]);
+    });
 
     // Reset the per-session story counter whenever the viewer closes, so the
     // ad cadence only accumulates during a single continuous viewing session.
@@ -187,19 +350,39 @@ useEffect(() => {
     // stories. The ad pauses the auto-advance; once it closes, viewing
     // resumes naturally on the next tick.
     useEffect(() => {
-        if (!visible || !story) return;
+        if (!visible || !story || isAdShowing) return;
         if (adShownForStory) return;
         if (storiesViewedSinceAd >= INTERSTITIAL_STORY_INTERVAL) {
-            setAdShownForStory(true);
             progressAnim.stopAnimation();
             const shown = showIfNeeded();
-            if (!shown) {
-                // Ad not ready — reset the counter so it tries again on the
-                // next story instead of permanently blocking the flow.
+            if (shown) {
+                // Keep the flag until the ad has actually been presented and
+                // closed, otherwise a still-loading ad would retrigger here.
+                adIsPendingRef.current = true;
+                setAdShownForStory(true);
+                // Reset the cadence now so the next ad is another N stories
+                // away rather than firing again the moment this one closes.
+                setStoriesViewedSinceAd(0);
+            } else {
+                // Not ready — reset the counter so it tries again on the next
+                // story instead of blocking the flow.
                 setStoriesViewedSinceAd(0);
             }
         }
-    }, [visible, story, storiesViewedSinceAd, adShownForStory, showIfNeeded]);
+    }, [visible, story, storiesViewedSinceAd, adShownForStory, isAdShowing, showIfNeeded]);
+
+    // Re-arm the ad cadence once a presented interstitial finishes, so a long
+    // viewing session gets another ad instead of firing at most one.
+    useEffect(() => {
+        if (!adShownForStory || !isAdShowing) return;
+        adIsPendingRef.current = false;
+    }, [adShownForStory, isAdShowing]);
+
+    useEffect(() => {
+        if (adShownForStory && !isAdShowing && !adIsPendingRef.current) {
+            setAdShownForStory(false);
+        }
+    }, [adShownForStory, isAdShowing]);
 
     // Count stories actually consumed by the user. A story counts once its
     // id changes while the viewer is open — the progress-bar timer reaching
@@ -216,17 +399,21 @@ useEffect(() => {
     // Reset viewers modal when story changes or viewer is closed
     useEffect(() => {
         setShowViewersModal(false);
-    }, [currentStoryIndex, currentGroupIndex, visible]);
+    }, [currentStoryIndex, currentGroupUserId, visible]);
 
     const handlePrevStory = () => {
+        advanceLockRef.current = false;
         if (currentStoryIndex > 0) {
             setCurrentStoryIndex(prev => prev - 1);
-        } else if (currentGroupIndex > 0) {
-            const prevGroup = storyGroups[currentGroupIndex - 1];
-            if (prevGroup && prevGroup.stories.length > 0) {
-                setCurrentGroupIndex(prev => prev - 1);
-                setCurrentStoryIndex(prevGroup.stories.length - 1);
-            }
+            return;
+        }
+        // Jump to the last story of the nearest previous user that has one.
+        const prevUserId = findNextSessionUserId(sessionGroupIds, currentGroupUserId, storyGroupsRef.current, -1);
+        if (prevUserId) {
+            const prevGroup = storyGroupsRef.current.find(g => g.user?._id === prevUserId);
+            setCurrentGroupUserId(prevUserId);
+            setCurrentGroupIndex(storyGroupsRef.current.findIndex(g => g.user?._id === prevUserId));
+            setCurrentStoryIndex(Math.max(0, (prevGroup?.stories.length ?? 1) - 1));
         } else {
             onClose();
         }
@@ -316,8 +503,12 @@ useEffect(() => {
                     key={storyVideoUri}
                     player={storyPlayer}
                     style={styles.media}
-                    nativeControls
-                    contentFit="cover"
+                    nativeControls={false}
+                    contentFit="contain"
+                    // A SurfaceView composites in its own window above the whole
+                    // React Native view tree on Android, which would keep the
+                    // caption overlay hidden behind the video.
+                    surfaceType="textureView"
                 />
             ) : story.image && getImageUrl(story.image) ? (
                 <Image source={{ uri: getImageUrl(story.image) }} style={styles.media} />
@@ -408,7 +599,7 @@ useEffect(() => {
     return (
         <Modal visible={visible} animationType="fade" transparent={true} onRequestClose={onClose}>
             {showViewersModal || showReactions ? storyContent : (
-                <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
+                <Pressable style={styles.modalFill} onPressIn={handlePressIn} onPressOut={handlePressOut}>
                     {storyContent}
                 </Pressable>
             )}
@@ -451,6 +642,13 @@ useEffect(() => {
 }
 
 const styles = StyleSheet.create({
+    // The Modal renders this wrapper, so it must carry the full-screen height:
+    // without it the inner `container` (flex: 1) collapses to zero height and
+    // every absolutely-positioned child of that height — the caption overlay,
+    // the poll — has no box to draw in.
+    modalFill: {
+        flex: 1,
+    },
     container: {
         flex: 1,
         backgroundColor: 'black',
@@ -461,11 +659,13 @@ const styles = StyleSheet.create({
         position: 'absolute',
     },
     contentOverlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         justifyContent: 'center',
         alignItems: 'center',
         padding: spacing.xl,
         backgroundColor: 'rgba(0,0,0,0.3)',
+        zIndex: 2,
+        elevation: 2,
     },
     storyContentText: {
         color: 'white',
@@ -480,7 +680,7 @@ const styles = StyleSheet.create({
         marginHorizontal: spacing.sm,
         justifyContent: 'space-between',
         alignItems: 'center',
-        zIndex: 1,
+        zIndex: 3,
     },
     progressBarBackground: {
         height: 3,
@@ -500,7 +700,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         width: '100%',
         paddingHorizontal: spacing.md,
-        zIndex: 1,
+        zIndex: 3,
     },
     avatar: {
         width: 36,
@@ -538,7 +738,7 @@ const styles = StyleSheet.create({
     },
     navigationOverlay: {
         flexDirection: 'row',
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
     },
     navButton: {
         flex: 1,

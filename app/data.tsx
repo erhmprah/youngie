@@ -57,7 +57,7 @@ export default function DataPolicyView() {
 
         <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
-            For data-related questions or requests, please contact us at privacy@youngieapp.com
+            For data-related questions or requests, please contact us at privacy@youngie.social
           </ThemedText>
         </View>
       </ScrollView>

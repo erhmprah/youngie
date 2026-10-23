@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { toUserError } from '@/utils/error-messages';
 
 interface Props {
   children: ReactNode;
@@ -47,13 +48,17 @@ class GlobalErrorBoundaryClass extends Component<Props, State> {
   handleReportError = () => {
     const { error } = this.state;
     if (error) {
+      const friendly = toUserError(error, {
+        title: 'Report Issue',
+        fallback: 'The app ran into a problem. Please try again.',
+      });
       Alert.alert(
-        'Report Issue',
-        `Error: ${error.message}\n\nWould you like to copy error details?`,
+        friendly.title,
+        `${friendly.message}\n\nWould you like to copy error details?`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Copy', 
+          {
+            text: 'Copy',
             onPress: () => {
               // In a real app, you could copy to clipboard or send to support
               console.log('Error reported:', error);
@@ -98,53 +103,22 @@ const GlobalErrorFallback: React.FC<FallbackProps> = ({ error, errorInfo, onRetr
   const errorColor = useThemeColor('error');
   const borderColor = useThemeColor('border');
 
-  // Determine error type for better user messaging
-  const errorMessage = error?.message || '';
-  const isOfflineError = errorMessage.includes('offline') ||
-                        errorMessage.includes('network') ||
-                        errorMessage.includes('fetch') ||
-                        errorMessage.includes('Network request failed') ||
-                        errorMessage.includes('unable to resolve host');
-  
-  const isAuthError = errorMessage.includes('auth') ||
-                     errorMessage.includes('permission') ||
-                     errorMessage.includes('unauthorized');
-  
-  const isMemoryError = errorMessage.includes('memory') ||
-                        errorMessage.includes('out of memory');
-
-  const getErrorTitle = () => {
-    if (isOfflineError) return 'Connection Issue';
-    if (isAuthError) return 'Authentication Error';
-    if (isMemoryError) return 'Memory Issue';
-    return 'Something went wrong';
-  };
-
-  const getErrorMessage = () => {
-    if (isOfflineError) {
-      return 'You appear to be offline. Please check your internet connection and try again.';
-    }
-    if (isAuthError) {
-      return 'There was an issue with your session. Please try logging in again.';
-    }
-    if (isMemoryError) {
-      return 'The app ran out of memory. Please try closing other apps and restart.';
-    }
-    return 'We encountered an unexpected issue. The app will try to recover when you tap retry.';
-  };
+  const friendly = toUserError(error, {
+    fallback: 'We ran into an unexpected issue. Tap Try Again to continue.',
+  });
 
   return (
     <ThemedView style={[styles.container, { backgroundColor }]}>
       <View style={[styles.iconContainer, { borderColor: errorColor }]}>
         <Text style={[styles.errorIcon, { color: errorColor }]}>⚠️</Text>
       </View>
-      
+
       <ThemedText style={[styles.title, { color: errorColor }]}>
-        {getErrorTitle()}
+        {friendly.title}
       </ThemedText>
-      
+
       <ThemedText style={[styles.message, { color: textColor }]}>
-        {getErrorMessage()}
+        {friendly.message}
       </ThemedText>
       
       {error && __DEV__ && (

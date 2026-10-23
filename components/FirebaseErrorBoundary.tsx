@@ -1,8 +1,9 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { TouchableOpacity, StyleSheet } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { toUserError } from '@/utils/error-messages';
 
 interface Props {
   children: ReactNode;
@@ -66,26 +67,19 @@ const FirebaseErrorFallback: React.FC<{ error?: Error; onRetry: () => void }> = 
   const textColor = useThemeColor('text');
   const errorColor = useThemeColor('error');
 
-  const isOfflineError = error?.message?.includes('offline') ||
-                        error?.message?.includes('network') ||
-                        (error as any)?.code === 'unavailable';
+  const friendly = toUserError(error, {
+    title: 'Something went wrong',
+    fallback: 'We encountered an issue with our services. Please try again.',
+  });
 
   return (
     <ThemedView style={[styles.container, { backgroundColor }]}>
       <ThemedText style={[styles.title, { color: errorColor }]}>
-        {isOfflineError ? 'Connection Issue' : 'Something went wrong'}
+        {friendly.title}
       </ThemedText>
       <ThemedText style={[styles.message, { color: textColor }]}>
-        {isOfflineError
-          ? 'You appear to be offline. Please check your connection and try again.'
-          : 'We encountered an issue with our services. Please try again.'
-        }
+        {friendly.message}
       </ThemedText>
-      {error && !isOfflineError && (
-        <ThemedText style={[styles.errorDetails, { color: textColor }]}>
-          Error: {error.message}
-        </ThemedText>
-      )}
       <TouchableOpacity
         style={[styles.retryButton, { backgroundColor: primaryColor }]}
         onPress={onRetry}
@@ -115,12 +109,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 20,
-  },
-  errorDetails: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 20,
-    opacity: 0.7,
   },
   retryButton: {
     paddingHorizontal: 20,

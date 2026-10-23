@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
 import { chatAPI, userAPI, communityAPI } from '@/utils/api';
+import { serverText } from '@/utils/error-messages';
 
 interface ChatSettingsModalProps {
     visible: boolean;
@@ -134,7 +135,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
             Alert.alert('Success', `Invitation sent to ${username}`);
         } catch (error: any) {
             console.error('Invite member error:', error);
-            Alert.alert('Error', error.response?.data?.msg || 'Failed to send invitation');
+            Alert.alert('Error', serverText(error.response?.data, 'Failed to send invitation'));
         } finally {
             setIsLoading(false);
         }
@@ -159,7 +160,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                             Alert.alert('Success', `Invitation cancelled for ${username}`);
                         } catch (error: any) {
                             console.error('Cancel invitation error:', error);
-                            Alert.alert('Error', error.response?.data?.msg || 'Failed to cancel invitation');
+                            Alert.alert('Error', serverText(error.response?.data, 'Failed to cancel invitation'));
                         } finally {
                             setIsLoading(false);
                         }
@@ -188,7 +189,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                             Alert.alert('Success', `${username} has been removed from the chat`);
                         } catch (error: any) {
                             console.error('Remove member error:', error);
-                            Alert.alert('Error', error.response?.data?.msg || 'Failed to remove member');
+                            Alert.alert('Error', serverText(error.response?.data, 'Failed to remove member'));
                         } finally {
                             setIsLoading(false);
                         }
@@ -231,7 +232,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                             // The parent component should handle updating the chat list
                         } catch (error: any) {
                             console.error('Leave chat error:', error);
-                            Alert.alert('Error', error.response?.data?.msg || 'Failed to leave chat');
+                            Alert.alert('Error', serverText(error.response?.data, 'Failed to leave chat'));
                         } finally {
                             setIsLoading(false);
                         }
@@ -275,7 +276,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                             onClose();
                         } catch (error: any) {
                             console.error('Delete chat error:', error);
-                            Alert.alert('Error', error.response?.data?.msg || 'Failed to delete');
+                            Alert.alert('Error', serverText(error.response?.data, 'Failed to delete'));
                         } finally {
                             setIsLoading(false);
                         }

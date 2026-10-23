@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { notificationAPI, userAPI, communityAPI, chatAPI, getImageUrl, postAPI, storyAPI } from '@/utils/api';
 import { cachedNotificationAPI } from '@/utils/cachedApi';
+import { serverText } from '@/utils/error-messages';
 import { getColors, spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
 import { verticalScale } from '@/utils/scale';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -184,7 +185,7 @@ export default function NotificationsScreen() {
         ));
         CustomAlert.info('Rejected', 'Join request rejected');
       } catch (error: any) {
-        CustomAlert.error('Friend Limit Reached', error?.response?.data?.msg || 'Something went wrong. Please try again.');
+        CustomAlert.error('Friend Limit Reached', serverText(error?.response?.data, 'Something went wrong. Please try again.'));
       }
   };
 

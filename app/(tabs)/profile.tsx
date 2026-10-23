@@ -12,6 +12,7 @@ import { EditProfileModal } from '@/components/edit-profile-modal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from "expo-router/react-navigation";
+import { serverText } from '@/utils/error-messages';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { userAPI, postAPI, chatAPI, getImageUrl } from '@/utils/api';
@@ -25,6 +26,7 @@ import * as Haptics from 'expo-haptics';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
 const { width } = Dimensions.get('window');
+const POSTS_PAGE_SIZE = 20;
 
 export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState('posts');
@@ -37,6 +39,9 @@ export default function ProfileScreen() {
         { label: 'Matches', value: '0' },
     ]);
     const [userPosts, setUserPosts] = useState<any[]>([]);
+    const [postsPage, setPostsPage] = useState(1);
+    const [postsHasMore, setPostsHasMore] = useState(false);
+    const [loadingMorePosts, setLoadingMorePosts] = useState(false);
     const [friends, setFriends] = useState<any[]>([]);
     const [sentRequests, setSentRequests] = useState<any[]>([]);
     const [receivedRequests, setReceivedRequests] = useState<any[]>([]);
@@ -57,12 +62,14 @@ export default function ProfileScreen() {
     const userId = user?._id;
     const errorColor = useThemeColor('error');
 
-    const fetchProfileData = useCallback(async () => {
+    const fetchProfileData = useCallback(async (showLoading = true) => {
         if (!userId) {
             setLoading(false);
             return;
         }
-        setLoading(true);
+        if (showLoading) {
+            setLoading(true);
+        }
         
         // Create a timeout to prevent infinite loading
         const timeoutId = setTimeout(() => {
@@ -77,7 +84,7 @@ export default function ProfileScreen() {
                     console.error('getProfile error:', err);
                     return { data: { posts: [], friends: [] } };
                 }),
-                cachedPostAPI.getUserPosts(userId, 1, 20, true).catch((err) => {
+                cachedPostAPI.getUserPosts(userId, 1, POSTS_PAGE_SIZE, true).catch((err) => {
                     console.error('getUserPosts error:', err);
                     return { data: [] };
                 }),
@@ -94,13 +101,20 @@ export default function ProfileScreen() {
             const postsResponseData = postsResponse.data?.posts || postsResponse.data || [];
             const postsData = Array.isArray(postsResponseData) ? postsResponseData : [];
             const totalLikes = postsData.reduce((sum: number, post: any) => sum + (post.likes?.length || 0), 0);
+            // The Posts stat must come from the posts collection (soft-delete aware),
+            // not user.posts, so the number always matches the grid below it.
+            const postsTotal = typeof postsResponse.data?.total === 'number'
+                ? postsResponse.data.total
+                : postsData.length;
             setStats([
-                { label: 'Posts', value: String(userData.posts?.length || 0) },
+                { label: 'Posts', value: String(postsTotal) },
                 { label: 'Friends', value: String(userData.friends?.length || 0) },
                 { label: 'Likes', value: String(totalLikes) },
             ]);
             setFriends(userData.friends || []);
             setUserPosts(postsData);
+            setPostsPage(1);
+            setPostsHasMore(postsResponse.data?.hasMore === true);
             setAlbum(albumResponse.data?.data || []);
             setSentRequests(sentRequestsResponse.data || []);
             setReceivedRequests(receivedRequestsResponse.data || []);
@@ -124,6 +138,24 @@ export default function ProfileScreen() {
         }
     }, [userId, logout]);
 
+    const loadMorePosts = useCallback(async () => {
+        if (!userId || !postsHasMore || loadingMorePosts) return;
+        setLoadingMorePosts(true);
+        try {
+            const nextPage = postsPage + 1;
+            const response = await cachedPostAPI.getUserPosts(userId, nextPage, POSTS_PAGE_SIZE, true);
+            const data = response.data;
+            const nextPosts = Array.isArray(data?.posts) ? data.posts : Array.isArray(data) ? data : [];
+            setUserPosts(prev => [...prev, ...nextPosts]);
+            setPostsPage(nextPage);
+            setPostsHasMore(data?.hasMore === true && nextPosts.length > 0);
+        } catch (error) {
+            console.error('loadMorePosts error:', error);
+        } finally {
+            setLoadingMorePosts(false);
+        }
+    }, [userId, postsPage, postsHasMore, loadingMorePosts]);
+
     const isMountedRef = React.useRef(true);
     const hasFetchedRef = React.useRef(false);
     
@@ -140,8 +172,8 @@ export default function ProfileScreen() {
                 hasFetchedRef.current = false;
                 setLoading(false);
             } else {
-                // UserId is available but already fetched, refresh data
-                fetchProfileData();
+                // Keep the existing profile visible while refreshing on return.
+                fetchProfileData(false);
             }
             
             return () => {
@@ -160,7 +192,7 @@ export default function ProfileScreen() {
             CustomAlert.success('Success', 'Profile updated successfully');
             fetchProfileData();
         } catch (error: any) {
-            CustomAlert.error('Error', error.response?.data?.msg || 'Failed to update profile');
+            CustomAlert.error('Error', serverText(error.response?.data, 'Failed to update profile'));
         }
     };
 
@@ -410,7 +442,7 @@ export default function ProfileScreen() {
             setStats(prev => prev.map(s => s.label === 'Friends' ? { ...s, value: String(parseInt(s.value) + 1) } : s));
             CustomAlert.success('Success', `You are now friends with ${username}`);
         } catch (error: any) {
-            CustomAlert.error('Friend Limit Reached', error?.response?.data?.msg || 'Failed to accept friend request');
+            CustomAlert.error('Friend Limit Reached', serverText(error?.response?.data, 'Failed to accept friend request'));
         }
     };
 
@@ -829,6 +861,13 @@ export default function ProfileScreen() {
                     numColumns={activeTab === 'friends' ? 1 : 3}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={activeTab === 'posts' ? styles.postsGrid : styles.friendsList}
+                    onEndReached={activeTab === 'posts' ? loadMorePosts : undefined}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={activeTab === 'posts' && loadingMorePosts ? (
+                        <View style={{ paddingVertical: spacing.lg }}>
+                            <ActivityIndicator color={primaryColor} />
+                        </View>
+                    ) : null}
                 />
             )}
             <EditProfileModal visible={isEditModalVisible} onClose={() => setIsEditModalVisible(false)} onSave={handleEditProfile} initialData={user} />

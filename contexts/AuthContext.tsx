@@ -6,6 +6,7 @@ import api, { BASE_URL, isNetworkErrorResponse } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
 import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
+import { toUserCopy, toUserError } from '@/utils/error-messages';
 
 interface User {
    _id: string;
@@ -23,6 +24,7 @@ interface User {
    avatar?: string;
    profilePhoto?: string;
    coverPhoto?: string;
+   isPrivate?: boolean;
    friends?: any[];
    followers?: any[];
    following?: any[];
@@ -161,9 +163,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(userData);
 
             alert('Registration successful! You are now logged in.');
-         } catch (error: any) {
-            throw error.response?.data?.msg || error.message || 'Registration failed';
-         } finally {
+      } catch (error: any) {
+         throw new Error(toUserError(error, { fallback: 'Registration failed' }).message);
+      } finally {
             setIsLoading(false);
          }
       },
@@ -210,7 +212,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
          // Set user data
          setUser(userData);
       } catch (error: any) {
-         throw error.response?.data?.msg || error.message || 'Login failed';
+         throw new Error(toUserError(error, { fallback: 'Login failed' }).message);
       } finally {
          setIsLoading(false);
       }
@@ -251,7 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              { headers: { 'x-auth-token': token } }
           );
        } catch (error: any) {
-          throw error.response?.data?.msg || error.message || 'Failed to logout other devices';
+          throw new Error(toUserError(error, { fallback: 'Failed to log out other devices' }).message);
        }
     }, [sessionId]);
 
@@ -269,9 +271,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
        await AsyncStorage.removeItem('userEmail');
        setUser(null);
        setSessionId(null);
-       if (message) {
-          Alert.alert('Not Authorized', message);
-       }
+        if (message) {
+          Alert.alert('Not Authorized', toUserCopy(message, 'This account is not available right now.'));
+        }
      }, []);
 
      const trySupabaseRestore = useCallback(async (): Promise<boolean> => {

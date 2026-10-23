@@ -125,7 +125,7 @@ export default function PoliciesScreen() {
           
           <TouchableOpacity 
             style={[styles.helpButton, { borderColor }]}
-            onPress={() => Linking.openURL('mailto:support@youngieapp.com')}
+            onPress={() => Linking.openURL('mailto:support@youngie.social')}
           >
             <IconSymbol name="envelope" size={20} color={primaryColor} />
             <ThemedText style={[styles.helpButtonText, { color: primaryColor }]}>

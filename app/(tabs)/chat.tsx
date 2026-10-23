@@ -57,6 +57,7 @@ export default function ChatScreen() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
+    const loadedUserIdRef = useRef<string | null>(null);
 
     const EmptyComponent = () => (
         <View style={{ padding: spacing.lg }}>
@@ -75,11 +76,11 @@ export default function ChatScreen() {
     const white = useThemeColor('white');
     const errorColor = useThemeColor('error');
 
-    const fetchChats = useCallback(async (isRefresh = false) => {
+    const fetchChats = useCallback(async (isRefresh = false, showLoading = true) => {
         try {
             if (isRefresh) {
                 setRefreshing(true);
-            } else {
+            } else if (showLoading) {
                 setIsLoading(true);
             }
             if (user?._id) {
@@ -121,8 +122,11 @@ export default function ChatScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            fetchChats();
-        }, [fetchChats])
+            const currentUserId = user?._id ?? null;
+            const showLoading = loadedUserIdRef.current !== currentUserId;
+            loadedUserIdRef.current = currentUserId;
+            fetchChats(false, showLoading);
+        }, [fetchChats, user?._id])
     );
 
     const onRefresh = useCallback(() => {

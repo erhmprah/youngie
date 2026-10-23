@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
 import { postAPI, userAPI, communityAPI, getImageUrl } from '@/utils/api';
+import { serverText } from '@/utils/error-messages';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
@@ -68,6 +69,8 @@ interface Community {
   requiresApproval?: boolean;
   pendingMembers?: User[];
   chat?: { _id: string };
+  creator?: { _id: string };
+  members?: any[];
 }
 
 export default function ExploreScreen() {
@@ -80,7 +83,7 @@ export default function ExploreScreen() {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [myCommunities, setMyCommunities] = useState<Community[]>([]);
   const [showAllMyCommunities, setShowAllMyCommunities] = useState(false);
-  const [searchResults, setSearchResults] = useState<{ users: User[]; posts: Post[] }>({ users: [], posts: [] });
+  const [searchResults, setSearchResults] = useState<{ users: User[]; posts: Post[]; communities: Community[] }>({ users: [], posts: [], communities: [] });
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [friendIds, setFriendIds] = useState<string[]>([]);
@@ -203,24 +206,31 @@ export default function ExploreScreen() {
     }, [fetchExploreData])
   );
 
+  const isCommunityPending = useCallback((communityId: string, pendingMembers?: User[]) =>
+    pendingCommunityIds.includes(communityId) ||
+    !!pendingMembers?.some((m: any) => (typeof m === 'string' ? m : m._id) === user?._id),
+    [pendingCommunityIds, user?._id]);
+
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
-      setSearchResults({ users: [], posts: [] });
+      setSearchResults({ users: [], posts: [], communities: [] });
       return;
     }
 
     setIsSearching(true);
     try {
-      const [userResponse, postResponse] = await Promise.all([
+      const [userResponse, postResponse, communityResponse] = await Promise.all([
         userAPI.searchUsers(query),
-        postAPI.searchPosts(query)
+        postAPI.searchPosts(query),
+        communityAPI.search(query)
       ]);
 
-        setSearchResults({
-          users: userResponse.data.data || [],
-          posts: postResponse.data.data || []
-        });
-    } catch {
+      setSearchResults({
+        users: Array.isArray(userResponse.data) ? userResponse.data : userResponse.data?.data || [],
+        posts: postResponse.data?.data || [],
+        communities: communityResponse.data?.data || []
+      });
+    } catch (error) {
       showErrorAlert(error);
     } finally {
       setIsSearching(false);
@@ -264,7 +274,7 @@ export default function ExploreScreen() {
         }
         fetchExploreData();
       } catch (error: any) {
-        CustomAlert.error('Friend Limit Reached', error?.response?.data?.msg || 'Something went wrong. Please try again.');
+        CustomAlert.error('Friend Limit Reached', serverText(error?.response?.data, 'Something went wrong. Please try again.'));
       }
     };
 
@@ -323,7 +333,7 @@ export default function ExploreScreen() {
           <IconSymbol name="magnifyingglass" size={20} color={lightTextColor} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, { color: textColor }]}
-            placeholder="Search users and posts..."
+            placeholder="Search users, posts and communities..."
             placeholderTextColor={lightTextColor}
             value={searchQuery}
             onChangeText={(text) => {
@@ -389,7 +399,58 @@ export default function ExploreScreen() {
                   </View>
                 )}
 
-                {searchResults.users.length === 0 && searchResults.posts.length === 0 && (
+                {searchResults.communities.length > 0 && (
+                  <View style={styles.section}>
+                    <ThemedText type="title" style={styles.sectionTitle}>Communities</ThemedText>
+                    {searchResults.communities.map((community) => {
+                      const isMember = community.members?.some((m: any) => m._id === user?._id) ||
+                        community.creator?._id === user?._id;
+                      const isPending = isCommunityPending(community._id, community.pendingMembers);
+                      return (
+                        <TouchableOpacity key={community._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}>
+                          <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
+                            {community.image ? (
+                              <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                            ) : (
+                              <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
+                            )}
+                          </View>
+                          <View style={styles.userInfo}>
+                            <ThemedText type="body1" style={{ fontFamily: typography.families.bold }} numberOfLines={1}>{community.name}</ThemedText>
+                            <ThemedText type="caption" style={{ color: lightTextColor }} numberOfLines={1}>{community.description}</ThemedText>
+                          </View>
+                          {isMember ? (
+                            <View style={[styles.followButton, { backgroundColor: surfaceColor, borderWidth: sizes.dividerWidth, borderColor }]}>
+                              <ThemedText style={[styles.followText, { color: textColor }]}>Open</ThemedText>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              style={[
+                                styles.followButton,
+                                {
+                                  backgroundColor: isPending ? surfaceColor : primaryColor,
+                                  borderWidth: isPending ? sizes.dividerWidth : 0,
+                                  borderColor
+                                }
+                              ]}
+                              disabled={isPending}
+                              onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                handleJoinCommunity(community._id, community.name, community.requiresApproval);
+                              }}
+                            >
+                              <ThemedText style={[styles.followText, { color: isPending ? textColor : white }]}>
+                                {isPending ? 'Requested' : 'Join'}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {searchResults.users.length === 0 && searchResults.posts.length === 0 && searchResults.communities.length === 0 && (
                   <View style={styles.emptyContainer}>
                     <ThemedText type="body1" style={{ color: lightTextColor }}>No results found</ThemedText>
                   </View>

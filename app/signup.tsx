@@ -27,11 +27,8 @@ export default function SignupScreen() {
 
   const router = useRouter();
   const { updateUser } = useAuth();
-
   const { height: windowHeight } = useWindowDimensions();
-
   const heroHeight = Math.min(470, Math.max(420, windowHeight * 0.5));
-
   const heroCopyBottom = 112;
 
   useEffect(() => {
@@ -60,13 +57,13 @@ export default function SignupScreen() {
                 getDeviceName(),
                 getClientLocation(),
               ]);
-               const response = await authAPI.supabaseLogin(supabaseToken, deviceName, clientLocation);
+              const response = await authAPI.supabaseLogin(supabaseToken, deviceName, clientLocation);
 
-               if (response.status === 403) {
-                 return;
-               }
+              if (response.status === 403) {
+                return;
+              }
 
-               if (response.data?.needsProfileCompletion === false && response.data?.token) {
+              if (response.data?.needsProfileCompletion === false && response.data?.token) {
                 await AsyncStorage.setItem('authToken', response.data.token);
                 await AsyncStorage.setItem('sessionId', response.data.sessionId);
                 await AsyncStorage.setItem('profileCompleted', 'true');
@@ -111,8 +108,15 @@ export default function SignupScreen() {
     return () => clearTimeout(timer);
   }, [router]);
 
-  const primaryColor = useThemeColor('primary');
-  const white = useThemeColor('white');
+  const primaryColor = '#FF009D';
+  const white = '#FFFFFF';
+  const backgroundColor = '#120018';
+  const surfaceColor = '#1D0624';
+  const borderColor = '#49334F';
+  const textMutedColor = '#AFA3B8';
+  const textSecondaryColor = '#CFC3D2';
+  const glassBorderColor = '#FFFFFF26';
+  const gradientStartColor = '#FF009D';
 
   const handleSignup = async () => {
     if (!email) {
@@ -152,7 +156,6 @@ export default function SignupScreen() {
 
       setIsLoading(false);
       setMagicLinkSent(true);
-
     } catch (error: any) {
       setIsLoading(false);
 
@@ -187,9 +190,8 @@ export default function SignupScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#120018" />
-
+    <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
+      <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
@@ -200,7 +202,7 @@ export default function SignupScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <LinearGradient
-            colors={['#130019', '#150221', '#0C0011']}
+            colors={[backgroundColor, backgroundColor, '#050507']}
             locations={[0, 0.5, 1]}
             style={styles.screen}
           >
@@ -210,7 +212,7 @@ export default function SignupScreen() {
               imageStyle={styles.heroImage}
             >
               <LinearGradient
-                colors={['#0B000F99', '#14002000']}
+                colors={[`${backgroundColor}99`, `${backgroundColor}00`]}
                 locations={[0, 0.55]}
                 style={styles.heroTopShade}
                 pointerEvents="none"
@@ -219,7 +221,7 @@ export default function SignupScreen() {
               <View style={styles.heroOverlay} />
 
               <LinearGradient
-                colors={['#12001800', '#12001800', '#12001833', '#1200188C', '#120018D9', '#120018FF', '#120018FF']}
+                colors={[`${backgroundColor}00`, `${backgroundColor}00`, `${backgroundColor}33`, `${backgroundColor}8C`, `${backgroundColor}D9`, `${backgroundColor}FF`, `${backgroundColor}FF`]}
                 locations={[0, 0.34, 0.56, 0.74, 0.88, 0.96, 1]}
                 style={[styles.heroFade, { height: heroCopyBottom + 16 }]}
                 pointerEvents="none"
@@ -235,54 +237,54 @@ export default function SignupScreen() {
               </View>
 
               <View style={[styles.heroCopy, { paddingBottom: heroCopyBottom }]}>
-                <View style={styles.heroBadge}>
-                  <View style={styles.heroBadgeDot} />
-                  <ThemedText style={styles.heroBadgeText}>Join the community</ThemedText>
+                <View style={[styles.heroBadge, { backgroundColor: glassBorderColor + '22', borderColor: glassBorderColor }]}>
+                  <View style={[styles.heroBadgeDot, { backgroundColor: gradientStartColor }]} />
+                  <ThemedText style={[styles.heroBadgeText, { color: white }]}>Join the community</ThemedText>
                 </View>
 
-                <ThemedText style={styles.heroTitle}>
+                <ThemedText style={[styles.heroTitle, { color: white }]}>
                   Create Your
                   {'\n'}
-                  <ThemedText style={styles.heroTitleAccent}>Account.</ThemedText>
+                  <ThemedText style={[styles.heroTitleAccent, { color: gradientStartColor }]}>Account.</ThemedText>
                 </ThemedText>
 
                 <LinearGradient
-                  colors={['#FF009D', '#FF009D00']}
+                  colors={[gradientStartColor, `${gradientStartColor}00`]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.heroAccentBar}
                 />
 
-                <ThemedText style={styles.heroSubtitle}>
-                  Sign up free and start meeting{ '\n' }people around you.
+                <ThemedText style={[styles.heroSubtitle, { color: textSecondaryColor }]}>
+                  Sign up free and start meeting{'\n'}people around you.
                 </ThemedText>
               </View>
             </ImageBackground>
 
             <LinearGradient
-              colors={['#120018', '#120018', '#120018', '#100017', '#0C0011']}
-              locations={[0, 0.06, 0.2, 0.62, 1]}
+              colors={[backgroundColor, backgroundColor, backgroundColor, '#060608']}
+              locations={[0, 0.06, 0.2, 1]}
               style={styles.authPanel}
             >
               {magicLinkSent ? (
                 <View style={styles.magicLinkContainer}>
-                  <View style={[styles.magicLinkIconBg, { backgroundColor: primaryColor + '22' }]}>
-                    <IconSymbol name="mail.fill" size={sizes.iconLarge} color={primaryColor} />
+                  <View style={[styles.magicLinkIconBg, { backgroundColor: gradientStartColor + '22' }]}>
+                    <IconSymbol name="mail.fill" size={sizes.iconLarge} color={gradientStartColor} />
                   </View>
 
-                  <ThemedText style={styles.successTitle}>Check Your Email</ThemedText>
+                  <ThemedText style={[styles.successTitle, { color: white }]}>Check Your Email</ThemedText>
 
-                  <ThemedText style={styles.successText}>
-                    We&apos;ve sent a magic link to{'\n'}
-                    <ThemedText style={styles.emailBold}>{email}</ThemedText>
+                  <ThemedText style={[styles.successText, { color: textSecondaryColor }]}>
+                    We've sent a magic link to{'\n'}
+                    <ThemedText style={[styles.emailBold, { color: white }]}>{email}</ThemedText>
                   </ThemedText>
 
-                  <ThemedText style={styles.successHint}>
+                  <ThemedText style={[styles.successHint, { color: textMutedColor }]}>
                     Click the link in the email to create your account.
                   </ThemedText>
 
                   <TouchableOpacity
-                    style={[styles.primaryButton, { backgroundColor: primaryColor }]}
+                    style={[styles.primaryButton, { backgroundColor: gradientStartColor }]}
                     onPress={() => {
                       setMagicLinkSent(false);
                       setShowEmailForm(true);
@@ -290,7 +292,7 @@ export default function SignupScreen() {
                     }}
                     activeOpacity={0.85}
                   >
-                    <ThemedText style={styles.primaryButtonText}>Use Different Email</ThemedText>
+                    <ThemedText style={[styles.primaryButtonText, { color: white }]}>Use Different Email</ThemedText>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -298,7 +300,7 @@ export default function SignupScreen() {
                     onPress={handleSignup}
                     disabled={isLoading}
                   >
-                    <ThemedText style={[styles.textButtonText, { color: primaryColor }]}>
+                    <ThemedText style={[styles.textButtonText, { color: gradientStartColor }]}>
                       Resend Link
                     </ThemedText>
                   </TouchableOpacity>
@@ -306,19 +308,19 @@ export default function SignupScreen() {
               ) : !showEmailForm ? (
                 <View style={styles.authContent}>
                   <TouchableOpacity
-                    style={styles.googleButton}
+                    style={[styles.googleButton, { backgroundColor: gradientStartColor }]}
                     onPress={handleGoogleSignup}
                     disabled={isLoading}
                     activeOpacity={0.82}
                   >
-                    <View style={styles.googleIcon}>
+                    <View style={[styles.googleIcon, { backgroundColor: white }]}>
                       <BrandIcon name="google" size={22} />
                     </View>
-                    <ThemedText style={styles.googleButtonText}>Continue with Google</ThemedText>
+                    <ThemedText style={[styles.googleButtonText, { color: white }]}>Continue with Google</ThemedText>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.appleButton}
+                    style={[styles.appleButton, { backgroundColor: surfaceColor, borderColor: gradientStartColor }]}
                     onPress={() =>
                       CustomAlert.show({
                         type: 'info',
@@ -331,25 +333,25 @@ export default function SignupScreen() {
                     activeOpacity={0.82}
                   >
                     <BrandIcon name="apple" size={22} />
-                    <ThemedText style={styles.appleButtonText}>
+                    <ThemedText style={[styles.appleButtonText, { color: white }]}>
                       Continue with Apple
                     </ThemedText>
                   </TouchableOpacity>
 
                   <View style={styles.divider}>
-                    <View style={styles.dividerLine} />
-                    <ThemedText style={styles.dividerText}>or</ThemedText>
-                    <View style={styles.dividerLine} />
+                    <View style={[styles.dividerLine, { backgroundColor: borderColor }]} />
+                    <ThemedText style={[styles.dividerText, { color: textMutedColor }]}>or</ThemedText>
+                    <View style={[styles.dividerLine, { backgroundColor: borderColor }]} />
                   </View>
 
                   <TouchableOpacity
-                    style={styles.emailButton}
+                    style={[styles.emailButton, { backgroundColor: glassBorderColor + '22', borderColor: glassBorderColor }]}
                     onPress={() => setShowEmailForm(true)}
                     disabled={isLoading}
                     activeOpacity={0.82}
                   >
-                    <IconSymbol name="mail.fill" size={sizes.iconMedium} color="#FFFFFF" />
-                    <ThemedText style={styles.emailButtonText}>
+                    <IconSymbol name="mail.fill" size={sizes.iconMedium} color={white} />
+                    <ThemedText style={[styles.emailButtonText, { color: white }]}>
                       Sign up with Email
                     </ThemedText>
                   </TouchableOpacity>
@@ -361,24 +363,31 @@ export default function SignupScreen() {
                     style={styles.backButton}
                     hitSlop={10}
                   >
-                    <ThemedText style={[styles.backButtonText, { color: primaryColor }]}>
+                    <ThemedText style={[styles.backButtonText, { color: gradientStartColor }]}>
                       ‹ Back
                     </ThemedText>
                   </TouchableOpacity>
 
                   <View>
-                    <ThemedText style={styles.emailTitle}>Sign up with Email</ThemedText>
-                    <ThemedText style={styles.emailSubtitle}>
-                      We&apos;ll send you a secure magic link.
+                    <ThemedText style={[styles.emailTitle, { color: white }]}>Sign up with Email</ThemedText>
+                    <ThemedText style={[styles.emailSubtitle, { color: textMutedColor }]}>
+                      We'll send you a secure magic link.
                     </ThemedText>
                   </View>
 
                   <View style={styles.inputGroup}>
-                    <ThemedText style={styles.inputLabel}>Email address</ThemedText>
+                    <ThemedText style={[styles.inputLabel, { color: white }]}>Email address</ThemedText>
                     <TextInput
-                      style={styles.input}
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: glassBorderColor + '22',
+                          color: white,
+                          borderColor: glassBorderColor,
+                        },
+                      ]}
                       placeholder="your@email.com"
-                      placeholderTextColor="#AFA3B8"
+                      placeholderTextColor={textMutedColor}
                       value={email}
                       onChangeText={setEmail}
                       editable={!isLoading}
@@ -400,8 +409,8 @@ export default function SignupScreen() {
                         style={[
                           styles.checkbox,
                           {
-                            backgroundColor: acceptTerms ? primaryColor : 'transparent',
-                            borderColor: acceptTerms ? primaryColor : '#5A4260',
+                            backgroundColor: acceptTerms ? gradientStartColor : 'transparent',
+                            borderColor: acceptTerms ? gradientStartColor : borderColor,
                           },
                         ]}
                       >
@@ -409,10 +418,10 @@ export default function SignupScreen() {
                       </View>
                     </TouchableOpacity>
 
-                    <ThemedText style={styles.termsText}>
+                    <ThemedText style={[styles.termsText, { color: textMutedColor }]}>
                       I agree to the{' '}
                       <ThemedText
-                        style={[styles.termsHighlight, { color: primaryColor }]}
+                        style={[styles.termsHighlight, { color: gradientStartColor }]}
                         onPress={() => router.push('/terms')}
                         suppressHighlighting
                       >
@@ -420,7 +429,7 @@ export default function SignupScreen() {
                       </ThemedText>
                       {' '}and{' '}
                       <ThemedText
-                        style={[styles.termsHighlight, { color: primaryColor }]}
+                        style={[styles.termsHighlight, { color: gradientStartColor }]}
                         onPress={() => router.push('/privacy')}
                         suppressHighlighting
                       >
@@ -430,7 +439,7 @@ export default function SignupScreen() {
                   </View>
 
                   <TouchableOpacity
-                    style={[styles.primaryButton, { backgroundColor: acceptTerms ? primaryColor : primaryColor + '50' }]}
+                    style={[styles.primaryButton, { backgroundColor: acceptTerms ? gradientStartColor : gradientStartColor + '50' }]}
                     onPress={handleSignup}
                     disabled={isLoading || !acceptTerms}
                     activeOpacity={0.85}
@@ -438,7 +447,7 @@ export default function SignupScreen() {
                     {isLoading ? (
                       <ActivityIndicator color={white} size="small" />
                     ) : (
-                      <ThemedText style={styles.primaryButtonText}>Send Magic Link</ThemedText>
+                      <ThemedText style={[styles.primaryButtonText, { color: white }]}>Send Magic Link</ThemedText>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -446,13 +455,13 @@ export default function SignupScreen() {
 
               <View style={styles.footer}>
                 <View style={styles.switchRow}>
-                  <ThemedText style={styles.footerText}>Already have an account?</ThemedText>
+                  <ThemedText style={[styles.footerText, { color: textMutedColor }]}>Already have an account?</ThemedText>
                   <TouchableOpacity
                     onPress={() => router.replace('/login')}
                     hitSlop={8}
                     activeOpacity={0.7}
                   >
-                    <ThemedText style={[styles.switchLink, { color: primaryColor }]}>Sign In</ThemedText>
+                    <ThemedText style={[styles.switchLink, { color: gradientStartColor }]}>Sign In</ThemedText>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -465,403 +474,63 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#130019',
-  },
-
-  keyboard: {
-    flex: 1,
-  },
-
-  scrollContent: {
-    flexGrow: 1,
-  },
-
-  screen: {
-    flexGrow: 1,
-    backgroundColor: '#0C0011',
-  },
-
-  hero: {
-    width: '100%',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-
-  heroImage: {
-    resizeMode: 'cover',
-  },
-
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#18001F33',
-  },
-
-  heroTopShade: {
-    ...StyleSheet.absoluteFillObject,
-    bottom: undefined,
-    height: 220,
-  },
-
-  heroFade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    gap: 8,
-  },
-
-  brandIcon: {
-    width: 52,
-    height: 52,
-  },
-
-  brandName: {
-    color: '#FF009D',
-    fontFamily: typography.families.bold,
-    fontSize: 32,
-    letterSpacing: -1,
-  },
-
-  heroCopy: {
-    paddingHorizontal: 28,
-  },
-
-  heroBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 8,
-    marginBottom: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#FFFFFF26',
-    backgroundColor: '#FFFFFF14',
-  },
-
-  heroBadgeDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FF009D',
-  },
-
-  heroBadgeText: {
-    color: '#F3E6F3',
-    fontSize: 13,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    fontFamily: typography.families.bold,
-  },
-
-  heroTitle: {
-    color: '#FFFFFF',
-    fontFamily: typography.families.bold,
-    fontSize: 36,
-    lineHeight: 41,
-    letterSpacing: -1.1,
-    textShadowColor: '#00000080',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 14,
-  },
-
-  heroTitleAccent: {
-    color: '#FF009D',
-    fontFamily: typography.families.bold,
-    fontSize: 36,
-    lineHeight: 41,
-    textShadowColor: '#FF009D59',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 18,
-  },
-
-  heroAccentBar: {
-    width: 92,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 12,
-    marginBottom: 10,
-  },
-
-  heroSubtitle: {
-    color: '#E2D4E4',
-    fontSize: 15,
-    lineHeight: 23,
-    letterSpacing: 0.1,
-    maxWidth: 300,
-    textShadowColor: '#00000066',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
-  },
-
-  authPanel: {
-    flexGrow: 0,
-    paddingHorizontal: 28,
-    paddingTop: 14,
-    paddingBottom: 18,
-  },
-
-  authContent: {
-    gap: 12,
-  },
-
-  googleButton: {
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FF009D',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-  },
-
-  googleIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  googleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontFamily: typography.families.bold,
-  },
-
-  appleButton: {
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: '#FF009D',
-    backgroundColor: '#1D0624',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-  },
-
-
-  appleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontFamily: typography.families.bold,
-  },
-
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 2,
-  },
-
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#6B5A70',
-  },
-
-  dividerText: {
-    color: '#9C8FA2',
-    paddingHorizontal: 14,
-    fontSize: 15,
-    fontFamily: typography.families.bold,
-  },
-
-  emailButton: {
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1,
-    borderColor: '#49334F',
-    backgroundColor: '#1A071F',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-  },
-
-  emailButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontFamily: typography.families.regular,
-  },
-
-  emailForm: {
-    gap: 18,
-  },
-
-  backButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 2,
-  },
-
-  backButtonText: {
-    fontSize: 16,
-    fontFamily: typography.families.bold,
-  },
-
-  emailTitle: {
-    color: '#FFFFFF',
-    fontFamily: typography.families.bold,
-    fontSize: 27,
-    letterSpacing: -0.6,
-  },
-
-  emailSubtitle: {
-    color: '#AFA3B8',
-    marginTop: 5,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-
-  inputGroup: {
-    gap: 8,
-  },
-
-  inputLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontFamily: typography.families.bold,
-  },
-
-  input: {
-    height: 54,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 17,
-    fontSize: 16,
-    fontFamily: typography.families.regular,
-    backgroundColor: '#FFFFFF12',
-    color: '#FFFFFF',
-    borderColor: '#FFFFFF26',
-  },
-
-  termsContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-
-  checkboxHit: {
-    marginTop: 1,
-  },
-
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 1,
-  },
-
-  termsText: {
-    flex: 1,
-    color: '#AFA3B8',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-
-  termsHighlight: {
-    fontFamily: typography.families.bold,
-  },
-
-  primaryButton: {
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontFamily: typography.families.bold,
-  },
-
-  magicLinkContainer: {
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-
-  magicLinkIconBg: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-
-  successTitle: {
-    color: '#FFFFFF',
-    fontFamily: typography.families.bold,
-    fontSize: 25,
-    letterSpacing: -0.5,
-  },
-
-  successText: {
-    color: '#CFC3D2',
-    textAlign: 'center',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-
-  emailBold: {
-    color: '#FFFFFF',
-    fontFamily: typography.families.bold,
-  },
-
-  successHint: {
-    color: '#AFA3B8',
-    textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-
-  textButton: {
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-
-  textButtonText: {
-    fontSize: 15,
-    fontFamily: typography.families.bold,
-  },
-
-  footer: {
-    alignItems: 'center',
-    gap: 10,
-    paddingTop: 14,
-  },
-
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-
-  footerText: {
-    color: '#AFA3B8',
-    fontSize: 15,
-  },
-
-  switchLink: {
-    fontSize: 16,
-    fontFamily: typography.families.bold,
-  },
+  safeArea: { flex: 1, backgroundColor: '#130019' },
+  keyboard: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
+  screen: { flexGrow: 1, backgroundColor: '#0C0011' },
+  hero: { width: '100%', justifyContent: 'space-between', overflow: 'hidden' },
+  heroImage: { resizeMode: 'cover' },
+  heroOverlay: { ...StyleSheet.absoluteFill, backgroundColor: '#18001F33' },
+  heroTopShade: { ...StyleSheet.absoluteFill, bottom: undefined, height: 220 },
+  heroFade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, gap: 8 },
+  brandIcon: { width: 52, height: 52 },
+  brandName: { color: '#FF009D', fontFamily: typography.families.bold, fontSize: 32, letterSpacing: -1 },
+  heroCopy: { paddingHorizontal: 28 },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 8, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: '#FFFFFF26', backgroundColor: '#FFFFFF14' },
+  heroBadgeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF009D' },
+  heroBadgeText: { color: '#F3E6F3', fontSize: 13, letterSpacing: 0.8, textTransform: 'uppercase', fontFamily: typography.families.bold },
+  heroTitle: { color: '#FFFFFF', fontFamily: typography.families.bold, fontSize: 36, lineHeight: 41, letterSpacing: -1.1, textShadowColor: '#00000080', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 14 },
+  heroTitleAccent: { color: '#FF009D', fontFamily: typography.families.bold, fontSize: 36, lineHeight: 41, textShadowColor: '#FF009D59', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 18 },
+  heroAccentBar: { width: 92, height: 4, borderRadius: 2, marginTop: 12, marginBottom: 10 },
+  heroSubtitle: { color: '#E2D4E4', fontSize: 15, lineHeight: 23, letterSpacing: 0.1, maxWidth: 300, textShadowColor: '#00000066', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10 },
+  authPanel: { flexGrow: 0, paddingHorizontal: 28, paddingTop: 14, paddingBottom: 18 },
+  authContent: { gap: 12 },
+  googleButton: { height: 56, borderRadius: 28, backgroundColor: '#FF009D', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 20 },
+  googleIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  googleButtonText: { color: '#FFFFFF', fontSize: 16, fontFamily: typography.families.bold },
+  appleButton: { height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: '#FF009D', backgroundColor: '#1D0624', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 20 },
+  appleButtonText: { color: '#FFFFFF', fontSize: 16, fontFamily: typography.families.bold },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 2 },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#6B5A70' },
+  dividerText: { color: '#9C8FA2', paddingHorizontal: 14, fontSize: 15, fontFamily: typography.families.bold },
+  emailButton: { height: 58, borderRadius: 29, borderWidth: 1, borderColor: '#49334F', backgroundColor: '#1A071F', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
+  emailButtonText: { color: '#FFFFFF', fontSize: 17, fontFamily: typography.families.regular },
+  emailForm: { gap: 18 },
+  backButton: { alignSelf: 'flex-start', paddingVertical: 2 },
+  backButtonText: { fontSize: 16, fontFamily: typography.families.bold },
+  emailTitle: { color: '#FFFFFF', fontFamily: typography.families.bold, fontSize: 27, letterSpacing: -0.6 },
+  emailSubtitle: { color: '#AFA3B8', marginTop: 5, fontSize: 15, lineHeight: 22 },
+  inputGroup: { gap: 8 },
+  inputLabel: { color: '#FFFFFF', fontSize: 14, fontFamily: typography.families.bold },
+  input: { height: 54, borderRadius: 18, borderWidth: 1, paddingHorizontal: 17, fontSize: 16, fontFamily: typography.families.regular, backgroundColor: '#FFFFFF12', color: '#FFFFFF', borderColor: '#FFFFFF26' },
+  termsContainer: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  checkboxHit: { marginTop: 1 },
+  checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginTop: 1 },
+  termsText: { flex: 1, color: '#AFA3B8', fontSize: 13, lineHeight: 19 },
+  termsHighlight: { fontFamily: typography.families.bold },
+  primaryButton: { height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontFamily: typography.families.bold },
+  magicLinkContainer: { alignItems: 'center', gap: 12, paddingVertical: 8 },
+  magicLinkIconBg: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
+  successTitle: { color: '#FFFFFF', fontFamily: typography.families.bold, fontSize: 25, letterSpacing: -0.5 },
+  successText: { color: '#CFC3D2', textAlign: 'center', fontSize: 16, lineHeight: 24 },
+  emailBold: { color: '#FFFFFF', fontFamily: typography.families.bold },
+  successHint: { color: '#AFA3B8', textAlign: 'center', fontSize: 14, lineHeight: 20 },
+  textButton: { paddingVertical: 8, alignItems: 'center' },
+  textButtonText: { fontSize: 15, fontFamily: typography.families.bold },
+  footer: { alignItems: 'center', gap: 10, paddingTop: 14 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  footerText: { color: '#AFA3B8', fontSize: 15 },
+  switchLink: { fontSize: 16, fontFamily: typography.families.bold },
 });

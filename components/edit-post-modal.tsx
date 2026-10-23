@@ -19,6 +19,7 @@ import { ThemedText } from './themed-text';
 import { colors, spacing, borderRadius } from '@/constants/design-tokens';
 import { ICONS, ICON_SIZES } from '@/constants/icons';
 import { IconSymbol } from './ui/icon-symbol';
+import { showErrorAlert } from '@/utils/error-handler';
 
 interface Post {
   _id: string;
@@ -86,7 +87,7 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
       setSelectedMedia(null);
       onClose();
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update post');
+      showErrorAlert(error, () => handleSave());
     } finally {
       setIsLoading(false);
     }

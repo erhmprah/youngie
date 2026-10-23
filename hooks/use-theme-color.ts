@@ -1,6 +1,5 @@
 // hooks/use-theme-color.ts
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors } from '@/constants/design-tokens';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -8,9 +7,8 @@ import { useTheme } from '@/contexts/ThemeContext';
 export type ColorName = keyof ReturnType<typeof getColors>;
 
 export function useThemeColor(colorName: ColorName) {
-  const theme = (useColorScheme() ?? 'light') as 'light' | 'dark';
-  const { colorScheme } = useTheme();
-  const colors = getColors(theme, colorScheme);
+  const { theme, colorScheme } = useTheme();
+  const colors = getColors(theme as 'light' | 'dark', colorScheme);
 
   return colors[colorName];
 }

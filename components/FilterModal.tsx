@@ -109,7 +109,7 @@ export function FilterModal({ visible, onClose, onApply, initialFilters }: Filte
           });
           setSuggestions(places);
         }
-      } catch {
+      } catch (error) {
         console.log('Location search error:', error);
         setSuggestions([]);
       }

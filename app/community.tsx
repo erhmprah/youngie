@@ -57,7 +57,7 @@ export default function CommunityGuidelinesView() {
 
         <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
-            For questions about these guidelines, please contact us at support@youngieapp.com
+            For questions about these guidelines, please contact us at support@youngie.social
           </ThemedText>
         </View>
       </ScrollView>

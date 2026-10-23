@@ -1,5 +1,5 @@
 // Data Policy for Youngie App
-// A social networking and dating app
+// A social networking and community app
 
 export interface PolicySection {
   title: string;
@@ -12,19 +12,19 @@ export const dataPolicyData: { lastUpdated: string; sections: PolicySection[] } 
   sections: [
     {
       title: '1. Data We Collect',
-      content: 'Youngie collects the following data to provide our service:\n\n• Account Data: Email, username, password (encrypted), profile information\n• Profile Content: Photos, bio, age, gender, interests\n• Communication Data: Messages, voice messages, call logs\n• Matching Data: Likes, passes, Super Likes, matches\n• Usage Data: Features used, time spent, tap patterns, swipe behavior\n• Device Data: Device type, OS version, unique identifiers (IMEI, advertising ID)\n• Location Data: City/region (for matching); precise location (opt-in)\n• Log Data: Access times, crash reports, diagnostics, IP addresses\n• Network Data: Connection type, signal strength'
+      content: 'Youngie collects the following data to provide our service:\n\n• Account Data: Email, username, and profile information\n• Profile Content: Photos, bio, age, gender, interests\n• Communication Data: Messages, voice messages, call logs\n• Connection Data: Friend requests, follows, and connections\n• Usage Data: Features used, time spent, and how you interact with content\n• Device Data: Device type, OS version, unique identifiers (IMEI, advertising ID)\n• Location Data: City/region (for nearby discovery); precise location (opt-in)\n• Log Data: Access times, crash reports, diagnostics, IP addresses\n• Network Data: Connection type, signal strength'
     },
     {
       title: '2. How We Use Your Data',
-      content: 'Your data enables our service:\n\n• Account Management: Creating and maintaining your account\n• Matching: Showing you potential matches based on preferences\n• Messaging: Enabling chat with your matches\n• Calls: Providing voice and video call features\n• Notifications: Sending match alerts, messages, and updates\n• Personalization: Customizing your experience and recommendations\n• Analytics: Understanding app usage to improve features\n• Security: Detecting fraud and preventing abuse\n• Moderation: Enforcing community guidelines'
+      content: 'Your data enables our service:\n\n• Account Management: Creating and maintaining your account\n• Recommendations: Suggesting posts, communities, and people to discover\n• Messaging: Enabling direct messages with your connections\n• Calls: Providing voice and video call features\n• Notifications: Sending message, comment, like, and follow alerts\n• Personalization: Customizing your feed and recommendations\n• Analytics: Understanding app usage to improve features\n• Security: Detecting fraud and preventing abuse\n• Moderation: Enforcing community guidelines'
     },
     {
-      title: '3. Matching and Discovery',
-      content: 'Your data helps you find connections:\n\n• Profile is shown to users matching your preferences\n• Location determines who sees you as "nearby"\n• Activity (likes, messages) affects your match suggestions\n• Preferences (age, gender, distance) filter potential matches\n\nYou can adjust preferences in Settings.'
+      title: '3. Discovery and Connections',
+      content: 'Your data helps you find people and communities:\n\n• Your profile and activity determine what appears in your feed\n• Location determines who is shown to you as "nearby"\n• Activity (posts, likes, comments) affects who is recommended to you\n• Preferences (age, gender, distance) filter who appears in discovery\n\nYou can adjust preferences in Settings.'
     },
     {
       title: '4. Messaging and Calls',
-      content: 'Communication data includes:\n\n• Text messages with your matches\n• Voice messages\n• Voice call logs and duration\n• Video call logs\n\nAll communications are encrypted in transit and stored securely.'
+      content: 'Communication data includes:\n\n• Text messages with people you connect with\n• Voice messages\n• Voice call logs and duration\n• Video call logs\n\nAll communications are encrypted in transit and stored securely.'
     },
     {
       title: '5. Data Storage',
@@ -40,7 +40,7 @@ export const dataPolicyData: { lastUpdated: string; sections: PolicySection[] } 
     },
     {
       title: '8. Location Data',
-      content: 'Location is important for matching:\n\n• City/Region: Used to show "nearby" users (cannot be disabled for app functionality)\n• Precise Location: Optional, for more accurate matching\n• Location is never shared with other users explicitly\n\nYou can disable precise location in device settings.'
+      content: 'Location helps power nearby discovery:\n\n• City/Region: Used to show nearby users and local content (cannot be disabled for app functionality)\n• Precise Location: Optional, for more accurate nearby results\n• Location is never shared with other users explicitly\n\nYou can disable precise location in device settings.'
     },
     {
       title: '9. Cookies and Tracking',
@@ -72,7 +72,7 @@ export const dataPolicyData: { lastUpdated: string; sections: PolicySection[] } 
     },
     {
       title: '16. Contact and Requests',
-      content: 'For data-related questions:\n\n• Email: privacy@youngieapp.com\n• In-App: Settings > Help Center\n• Response Time: Within 30 days\n\nYou can make data requests through the app.'
+      content: 'For data-related questions:\n\n• Email: privacy@youngie.social\n• In-App: Settings > Help Center\n• Response Time: Within 30 days\n\nYou can make data requests through the app.'
     }
   ]
 };

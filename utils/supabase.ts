@@ -1,11 +1,22 @@
 import { createClient, SupabaseClient, Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { toUserCopy } from './error-messages';
 
 // Get Supabase URL and ANON_KEY from environment variables
 // For Expo, we need EXPO_PUBLIC_ prefix; for backend, it's without prefix
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://srcpkwkdvslsdjegqjff.supabase.co';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyY3Brd2tkdnNsc2RqZWdxamZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwODU1MjksImV4cCI6MjA4NjY2MTUyOX0.HVHjRkpb59IVdI8aIxxi8fvGrYJ_oOlJu9WauJb5Sok';
+
+// Wraps a Supabase error so callers only ever see plain copy. `name` is
+// deliberately not copied: React Native can crash when reading it.
+const safeSupabaseError = (error: any, fallback: string): Error => {
+  const safe = new Error(toUserCopy(error, fallback));
+  if (error?.status) (safe as any).status = error.status;
+  if (error?.code) (safe as any).code = error.code;
+  if (error?.isNetworkError) (safe as any).isNetworkError = true;
+  return safe;
+};
 
 // Custom fetch function with retry logic for network errors
 const fetchWithRetry = async (input: RequestInfo | URL, init?: RequestInit, retries = 3, backoff = 1000): Promise<Response> => {
@@ -335,7 +346,7 @@ export const signInWithEmail = async (
         return { data: { session: null, user: null }, error: networkError };
       }
       
-      throw error;
+      throw safeSupabaseError(error, 'We could not sign you in. Please try again.');
     }
     
     return { data: { session: data.session, user: data.user }, error: null };
@@ -362,7 +373,10 @@ export const signInWithEmail = async (
       return { data: { session: null, user: null }, error: networkError };
     }
     
-    return { data: { session: null, user: null }, error };
+    return {
+      data: { session: null, user: null },
+      error: safeSupabaseError(error, 'We could not sign you in. Please try again.'),
+    };
   }
 };
 
@@ -378,21 +392,25 @@ export const resetPassword = async (email: string): Promise<{ error: Error | nul
 
     if (error) {
       // Create a safe Error object - do NOT use error.name to avoid React Native crash
-      const safeError = new Error(error.message || 'Password reset failed');
+      const safeError = new Error(
+        toUserCopy(error, 'We could not send the reset email. Please try again.')
+      );
       // Store original properties but don't use them as the error name
       (safeError as any).status = error.status;
       (safeError as any).code = error.code;
-      (safeError as any).rateLimit = error.message?.toLowerCase().includes('rate limit') || 
+      (safeError as any).rateLimit = error.message?.toLowerCase().includes('rate limit') ||
                                    error.code?.toLowerCase().includes('rate limit');
       // Only log a brief message, not the full Supabase error object
       console.log('Password reset failed with Supabase error');
       return { error: safeError };
     }
-    
+
     return { error: null };
   } catch (error: any) {
     // Return a safe error without throwing
-    const safeError = new Error(error?.message || 'Password reset failed');
+    const safeError = new Error(
+      toUserCopy(error, 'We could not send the reset email. Please try again.')
+    );
     (safeError as any).isError = true;
     console.log('Password reset failed');
     return { error: safeError };
@@ -406,12 +424,14 @@ export const updatePassword = async (newPassword: string): Promise<{ error: Erro
       password: newPassword,
     });
 
-    if (error) throw error;
+    if (error) throw safeSupabaseError(error, 'We could not update your password. Please try again.');
     
     return { error: null };
   } catch (error: any) {
     console.error('Update Password Error:', error);
-    return { error };
+    return {
+      error: safeSupabaseError(error, 'We could not update your password. Please try again.'),
+    };
   }
 };
 
@@ -439,6 +459,22 @@ export const signInWithMagicLink = async (
     return { data: { user: data.user }, error: null };
   } catch (error: any) {
     console.error('Magic Link Sign In Error:', error);
+    
+    // Check if it's a network error
+    const errorMessage = error.message?.toLowerCase() || '';
+    const isNetworkError = 
+      errorMessage === 'network request failed' ||
+      errorMessage.includes('network') ||
+      errorMessage.includes('fetch') ||
+      error.name === 'TypeError';
+    
+    if (isNetworkError) {
+      const networkError = new Error('Unable to connect. Please check your internet connection and try again.');
+      (networkError as any).isNetworkError = true;
+      (networkError as any).originalError = error;
+      return { data: { user: null }, error: networkError };
+    }
+    
     return { data: { user: null }, error };
   }
 };
@@ -464,6 +500,11 @@ export const signUpWithMagicLink = async (
     return { data: { user: data.user }, error: null };
   } catch (error: any) {
     console.error('Magic Link Sign Up Error:', error);
-    return { data: { user: null }, error };
+    return {
+      data: { user: null },
+      error: new Error(
+        toUserCopy(error, 'We could not send the sign-in link. Please try again.')
+      ),
+    };
   }
 };

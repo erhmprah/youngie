@@ -195,6 +195,14 @@ export const offPostCreated = () => {
   socket?.off('post:created');
 };
 
+export const onPostDeleted = (callback: (postId: string) => void) => {
+  socket?.on('post:deleted', callback);
+};
+
+export const offPostDeleted = () => {
+  socket?.off('post:deleted');
+};
+
 // Voice call event listeners
 export const onVoiceCallOffer = (callback: (data: { offer: any; caller: any; chatId: string }) => void) => {
   socket?.on('voice-call-offer', callback);

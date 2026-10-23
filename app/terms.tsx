@@ -57,7 +57,7 @@ export default function TermsOfServiceView() {
 
         <View style={[styles.footer, { borderTopColor: borderColor }]}>
           <ThemedText style={[styles.footerText, { color: lightTextColor }]}>
-            For questions about these Terms, please contact us at legal@youngieapp.com
+            For questions about these Terms, please contact us at legal@youngie.social
           </ThemedText>
         </View>
       </ScrollView>

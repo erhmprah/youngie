@@ -1,7 +1,8 @@
 // components/chat-tab-icon.tsx
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, ComponentProps } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -17,7 +18,7 @@ import {
 } from '@/utils/unreadStore';
 
 interface ChatTabIconProps {
-    color: string;
+    color: ComponentProps<typeof Feather>['color'];
 }
 
 export function ChatTabIcon({ color }: ChatTabIconProps) {

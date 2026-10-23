@@ -73,8 +73,11 @@ export default function AdBanner({ bottomInset = 0, position = 'inline', style }
   else if (!isInitialized) blockedBy = 'sdk-not-initialized';
   else if (!canRequestAds) blockedBy = 'no-consent';
 
+  // Not gated on __DEV__: a banner that silently never renders in a release
+  // build is the hardest failure mode to debug, and the effect only re-fires
+  // when `blockedBy` actually changes. Readable via `adb logcat | grep ads`.
   React.useEffect(() => {
-    if (__DEV__ && blockedBy) console.log(`[ads] banner not rendering: ${blockedBy}`);
+    if (blockedBy) console.warn(`[ads] banner not rendering: ${blockedBy}`);
   }, [blockedBy]);
 
   if (!BannerAd || !BannerAdSize || !unitId || !isInitialized || !canRequestAds) {

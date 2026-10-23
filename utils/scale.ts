@@ -1,12 +1,7 @@
 import { Dimensions, PixelRatio } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BASE_WIDTH = 375;
 const BASE_HEIGHT = 812;
-
-const scaleRatio = SCREEN_WIDTH / BASE_WIDTH;
-const verticalScaleRatio = SCREEN_HEIGHT / BASE_HEIGHT;
-const fontScale = PixelRatio.getFontScale();
 
 const MAX_SCALE = 1.15;
 const MAX_VERTICAL_SCALE = 1.2;
@@ -19,10 +14,14 @@ function clampRange(value: number, max: number, min: number): number {
 }
 
 export function scale(size: number): number {
+  const { width } = Dimensions.get('window');
+  const scaleRatio = width / BASE_WIDTH;
   return clampRange(size * scaleRatio, size * MAX_SCALE, size * MIN_SCALE);
 }
 
 export function verticalScale(size: number): number {
+  const { height } = Dimensions.get('window');
+  const verticalScaleRatio = height / BASE_HEIGHT;
   return clampRange(
     size * verticalScaleRatio,
     size * MAX_VERTICAL_SCALE,
@@ -36,8 +35,9 @@ export function moderateScale(size: number, factor: number = 0.5): number {
 }
 
 export function scaleFont(size: number, factor: number = 0.5): number {
-  const scaled = moderateScale(size, factor);
-  return scaled * clampRange(fontScale, 1.15, 1);
+  // React Native Text and TextInput apply the user's font scale automatically.
+  // Scaling it here as well would make accessibility font sizes apply twice.
+  return moderateScale(size, factor);
 }
 
 export function borderScale(size: number): number {
@@ -49,9 +49,19 @@ export function hairlineWidth(): number {
 }
 
 export const screen = {
-  width: SCREEN_WIDTH,
-  height: SCREEN_HEIGHT,
-  scaleRatio,
-  verticalScaleRatio,
-  fontScale,
+  get width() {
+    return Dimensions.get('window').width;
+  },
+  get height() {
+    return Dimensions.get('window').height;
+  },
+  get scaleRatio() {
+    return Dimensions.get('window').width / BASE_WIDTH;
+  },
+  get verticalScaleRatio() {
+    return Dimensions.get('window').height / BASE_HEIGHT;
+  },
+  get fontScale() {
+    return PixelRatio.getFontScale();
+  },
 };

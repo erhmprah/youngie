@@ -10,11 +10,12 @@ import { CustomAlert } from '@/utils/alert';
 import { communityAPI, getImageUrl } from '@/utils/api';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Calendar from 'expo-calendar';
+import type { Calendar as CalendarType } from 'expo-calendar/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, ViewToken } from 'react-native';
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface CommunityEvent {
@@ -51,7 +52,7 @@ export default function CommunityScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
-  const [availableCalendars, setAvailableCalendars] = useState<Calendar.Calendar[]>([]);
+  const [availableCalendars, setAvailableCalendars] = useState<CalendarType[]>([]);
   const [selectedEventForCalendar, setSelectedEventForCalendar] = useState<CommunityEvent | null>(null);
 
   const [feeds, setFeeds] = useState<CommunityFeed[]>([]);
@@ -61,7 +62,9 @@ export default function CommunityScreen() {
   const [feedContent, setFeedContent] = useState('');
   const [feedImages, setFeedImages] = useState<string[]>([]);
   const [feedVideo, setFeedVideo] = useState<string | null>(null);
-  const feedVideoPlayer = useVideoPlayer(feedVideo ? { uri: feedVideo } : undefined);
+  const [feedVideoDimensions, setFeedVideoDimensions] = useState<{ width: number; height: number } | null>(null);
+  const feedScrollY = useRef(new Animated.Value(0)).current;
+  const feedVideoPlayer = useVideoPlayer(feedVideo ? { uri: feedVideo } : null);
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [feedPosting, setFeedPosting] = useState(false);
@@ -72,6 +75,16 @@ export default function CommunityScreen() {
   const surfaceColor = useThemeColor('surface');
   const borderColor = useThemeColor('border');
   const white = useThemeColor('white');
+  const communityHeaderHeight = feedScrollY.interpolate({
+    inputRange: [0, 200],
+    outputRange: [200, 0],
+    extrapolate: 'clamp',
+  });
+  const communityHeaderOpacity = feedScrollY.interpolate({
+    inputRange: [0, 120, 200],
+    outputRange: [1, 0.35, 0],
+    extrapolate: 'clamp',
+  });
 
   const fetchCommunityDetails = useCallback(async () => {
     if (!id) return;
@@ -166,6 +179,7 @@ export default function CommunityScreen() {
     });
     if (!result.canceled) {
       setFeedVideo(null);
+      setFeedVideoDimensions(null);
       const uris = result.assets.map(a => a.uri);
       setFeedImages(prev => [...prev, ...uris].slice(0, 10));
     }
@@ -178,8 +192,10 @@ export default function CommunityScreen() {
       quality: 1,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
+      const asset = result.assets[0];
       setFeedImages([]);
-      setFeedVideo(result.assets[0].uri);
+      setFeedVideo(asset.uri);
+      setFeedVideoDimensions(asset.width > 0 && asset.height > 0 ? { width: asset.width, height: asset.height } : null);
     }
   };
 
@@ -234,12 +250,15 @@ export default function CommunityScreen() {
         content: feedContent.trim() || undefined,
         images: imageUrls.length > 0 ? imageUrls : undefined,
         video: videoUrl,
+        videoWidth: feedVideoDimensions?.width,
+        videoHeight: feedVideoDimensions?.height,
         pollOptions: showPoll ? validPollOptions.map((text) => ({ text, votes: [] })) : undefined,
       });
 
       setFeedContent('');
       setFeedImages([]);
       setFeedVideo(null);
+      setFeedVideoDimensions(null);
       setShowPoll(false);
       setPollOptions(['', '']);
       fetchFeed(1);
@@ -460,7 +479,7 @@ export default function CommunityScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <ThemedView style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
+        <Animated.View style={[styles.header, { height: communityHeaderHeight, opacity: communityHeaderOpacity }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <IconSymbol name="chevron.left" size={28} color={white} />
           </TouchableOpacity>
@@ -483,7 +502,7 @@ export default function CommunityScreen() {
             <ThemedText type="heading1" style={{ color: white }}>{community.name}</ThemedText>
             <ThemedText style={{ color: white, opacity: 0.9 }}>{community.members?.length || 0} Members</ThemedText>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Tabs */}
         <View style={[styles.tabs, { borderBottomColor: borderColor }]}>
@@ -491,7 +510,10 @@ export default function CommunityScreen() {
             <TouchableOpacity 
               key={tab} 
               style={[styles.tab, activeTab === tab && { borderBottomColor: primaryColor }]}
-              onPress={() => setActiveTab(tab as any)}
+              onPress={() => {
+                if (tab !== 'feed') feedScrollY.setValue(0);
+                setActiveTab(tab as any);
+              }}
             >
               <ThemedText style={{ 
                 color: activeTab === tab ? primaryColor : lightTextColor,
@@ -609,9 +631,9 @@ export default function CommunityScreen() {
                         player={feedVideoPlayer}
                         style={styles.composerVideo}
                         nativeControls
-                        contentFit="cover"
+                        contentFit="contain"
                       />
-                      <TouchableOpacity style={styles.composerRemoveImage} onPress={() => setFeedVideo(null)}>
+                      <TouchableOpacity style={styles.composerRemoveImage} onPress={() => { setFeedVideo(null); setFeedVideoDimensions(null); }}>
                         <IconSymbol name="xmark.circle.fill" size={20} color="white" />
                       </TouchableOpacity>
                     </View>
@@ -675,6 +697,7 @@ export default function CommunityScreen() {
                 lightTextColor={lightTextColor}
                 spacing={spacing}
                 typography={typography}
+                scrollY={feedScrollY}
               />
             </View>
           )}
@@ -732,9 +755,9 @@ export default function CommunityScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { height: 200, position: 'relative' },
+  header: { height: 200, position: 'relative', overflow: 'hidden' },
   coverImage: { width: '100%', height: '100%' },
-  headerOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  headerOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.4)' },
   headerContent: { position: 'absolute', bottom: spacing.lg, left: spacing.lg },
   backButton: { position: 'absolute', top: spacing.lg, left: spacing.lg, zIndex: 10, padding: spacing.xs },
   chatButton: { position: 'absolute', top: spacing.lg, right: spacing.lg, zIndex: 10, padding: spacing.xs },
@@ -809,6 +832,7 @@ interface FeedListProps {
   onLoadMore: () => void;
   primaryColor: string;
   lightTextColor: string;
+  scrollY: Animated.Value;
   spacing: typeof import('@/constants/design-tokens').spacing;
   typography: typeof import('@/constants/design-tokens').typography;
 }
@@ -828,6 +852,7 @@ const FeedListComponent: React.FC<FeedListProps> = ({
   onLoadMore,
   primaryColor,
   lightTextColor,
+  scrollY,
   spacing,
 }) => {
   const viewabilityConfig = useRef({
@@ -869,6 +894,11 @@ const FeedListComponent: React.FC<FeedListProps> = ({
       onEndReachedThreshold={0.2}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}
+      onScroll={Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        { useNativeDriver: false },
+      )}
+      scrollEventThrottle={16}
       ListFooterComponent={
         feedLoading && feeds.length > 0 ? (
           <View style={styles.feedLoading}><ActivityIndicator color={primaryColor} /></View>

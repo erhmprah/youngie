@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getRelativeTime } from '@/utils/helpers';
 import { useDebounce } from '@/hooks/use-debounce';
 import { getSocket } from '@/utils/socket';
+import { serverText } from '@/utils/error-messages';
 import { useRouter } from 'expo-router';
 
 interface Comment {
@@ -233,7 +234,7 @@ export function CommentModal({
         } catch (error: any) {
             console.error('Error adding comment:', error);
             if (error?.response?.status === 403) onMembershipLost?.();
-            Alert.alert('Error', error?.response?.data?.msg || 'Failed to add comment.');
+            Alert.alert('Error', serverText(error?.response?.data, 'Failed to add comment.'));
         } finally {
             setIsLoading(false);
         }
@@ -285,7 +286,7 @@ export function CommentModal({
                             if (error.response?.status === 404) {
                                 setComments(prev => prev.filter(c => c._id !== commentId));
                             } else {
-                                const errorMsg = error.response?.data?.msg || 'Failed to delete comment.';
+                                const errorMsg = serverText(error.response?.data, 'Failed to delete comment.');
                                 Alert.alert('Error', errorMsg);
                             }
                         }

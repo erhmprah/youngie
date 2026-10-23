@@ -1,6 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, useNavigationState } from "expo-router/react-navigation";
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+
+import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import 'react-native-reanimated';
 
@@ -77,6 +79,12 @@ function RootLayoutNav() {
   const primaryColor = useThemeColor('primary');
   const [hasSupabaseSession, setHasSupabaseSession] = useState(false);
   const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
+  const [fontsLoaded] = useFonts({
+    'Inter-Regular': Inter_400Regular,
+    'Inter-Medium': Inter_500Medium,
+    'Inter-SemiBold': Inter_600SemiBold,
+    'Inter-Bold': Inter_700Bold,
+  });
   const isAppReadyRef = useRef(false);
   const currentRouteName = useNavigationState((state) => state.routes[state.index]?.name);
   const updateAlert = useUpdateAlert();
@@ -437,7 +445,7 @@ function RootLayoutNav() {
     }
   }, [pushError, pushToken]);
 
-  if (isLoading || isCheckingSupabase) {
+  if (isLoading || isCheckingSupabase || !fontsLoaded) {
     return <AuthLoadingScreen />;
   }
 

@@ -5,13 +5,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { AudioModule, setAudioModeAsync, requestRecordingPermissionsAsync, createAudioPlayer, RecordingPresets } from 'expo-audio';
 import type { AudioRecorder, AudioPlayer, AudioStatus } from 'expo-audio';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/AuthContext';
 import { chatAPI, getImageUrl } from '@/utils/api';
+import { toUserCopy } from '@/utils/error-messages';
 import { cachedChatAPI } from '@/utils/cachedApi';
 import { getSocket, joinChat, leaveChat, sendMessage, sendTypingStart, sendTypingStop, onMessageReceived, offMessageReceived, onMessagesRead, offMessagesRead, onUserTyping, offUserTyping, onUserStopTyping, offUserStopTyping } from '@/utils/socket';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -155,7 +156,7 @@ export default function ChatScreen() {
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [audioStatus, setAudioStatus] = useState<Record<string, any>>({});
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  const highlightedMessageTimeout = useRef<number | null>(null);
+  const highlightedMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [nowTick, setNowTick] = useState<number>(Date.now());
 
   // Format last seen time to show relative time (e.g., "2 hours ago", "Yesterday")
@@ -184,17 +185,54 @@ export default function ChatScreen() {
     }
   };
 
-  const typingTimeoutRef = useRef<number | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const swipeRefs = useRef(new Map<string, Swipeable>());
   const soundRefs = useRef(new Map<string, AudioPlayer>());
   const recordingRef = useRef<AudioRecorder | null>(null);
-  const statusIntervalRef = useRef<number | null>(null);
+  const statusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isRecordingDesired = useRef(false);
   const [meteringLevels, setMeteringLevels] = useState<number[]>([]);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const previewSound = useRef<AudioPlayer | null>(null);
   const [previewStatus, setPreviewStatus] = useState<any>(null);
+
+  const releasePlayer = useCallback((player: AudioPlayer | null) => {
+    if (!player) return;
+    const sub = (player as any).__statusSub || (player as any).__previewSub;
+    if (sub) {
+      try { sub.remove(); } catch (e) { }
+      (player as any).__statusSub = null;
+      (player as any).__previewSub = null;
+    }
+    try { player.pause(); } catch (e) { }
+    try { player.seekTo(0); } catch (e) { }
+    try { player.remove(); } catch (e) { }
+  }, []);
+
+  // Stop every audio player (message playback + unsent recording preview).
+  // Audio must not survive closing the chat or navigating away.
+  const stopAllAudioPlayback = useCallback(() => {
+    if (previewSound.current) {
+      releasePlayer(previewSound.current);
+      previewSound.current = null;
+    }
+    soundRefs.current.forEach((sound) => releasePlayer(sound));
+    soundRefs.current.clear();
+    setPlayingAudio(null);
+    setPreviewStatus(null);
+    setAudioStatus({});
+  }, [releasePlayer]);
+
+  // The chat screen stays mounted inside the navigation stack, so unmount
+  // cleanup alone never runs when the user navigates away.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        stopAllAudioPlayback();
+      };
+    }, [stopAllAudioPlayback])
+  );
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -406,27 +444,8 @@ export default function ChatScreen() {
       }
       leaveChat(id as string);
 
-      // Clean up preview sound
-      if (previewSound.current) {
-        const sub = (previewSound.current as any).__previewSub;
-        if (sub) {
-          try { sub.remove(); } catch (e) { /* ignore */ }
-        }
-        previewSound.current.remove();
-        previewSound.current = null;
-      }
-
-      // Clean up all sound refs to prevent memory leaks
-      if (soundRefs.current) {
-        soundRefs.current.forEach((sound) => {
-          const sub = (sound as any).__statusSub;
-          if (sub) {
-            try { sub.remove(); } catch (e) { /* ignore */ }
-          }
-          try { sound.remove(); } catch (e) { /* ignore cleanup errors */ }
-        });
-        soundRefs.current.clear();
-      }
+      // Clean up all audio players to prevent leaks and background playback
+      stopAllAudioPlayback();
       
       // Clean up typing timeout if pending
       if (typingTimeoutRef.current) {
@@ -587,7 +606,7 @@ export default function ChatScreen() {
     setReplyTo(null);
     setAttachment(null);
     if (previewSound.current) {
-      await previewSound.current.remove();
+      releasePlayer(previewSound.current);
       previewSound.current = null;
     }
     setPreviewStatus(null);
@@ -763,7 +782,7 @@ export default function ChatScreen() {
     if (isRecording) return;
 
     if (previewSound.current) {
-      await previewSound.current.remove();
+      releasePlayer(previewSound.current);
       previewSound.current = null;
       setPreviewStatus(null);
     }
@@ -772,9 +791,7 @@ export default function ChatScreen() {
     if (playingAudio) {
       const sound = soundRefs.current.get(playingAudio);
       if (sound) {
-        try {
-          await sound.pause();
-        } catch (e) {  }
+        try { await sound.pause(); } catch (e) { }
       }
       setPlayingAudio(null);
     }
@@ -847,7 +864,7 @@ export default function ChatScreen() {
       setIsRecording(true);
     } catch (error: any) {
       console.error('Failed to start recording:', error);
-      Alert.alert('Error', `Failed to start recording: ${error?.message || error}`);
+      Alert.alert('Error', toUserCopy(error, 'We could not start recording. Please try again.'));
       isRecordingDesired.current = false;
       setIsRecording(false);
       setRecording(null);
@@ -919,9 +936,13 @@ export default function ChatScreen() {
       if (playingAudio && playingAudio !== messageId) {
         const currentSound = soundRefs.current.get(playingAudio);
         if (currentSound) {
-          const sub = (currentSound as any).__statusSub;
-          if (sub) { sub.remove(); (currentSound as any).__statusSub = null; }
-          currentSound.remove();
+          releasePlayer(currentSound);
+          soundRefs.current.delete(playingAudio);
+          setAudioStatus(prev => {
+            const next = { ...prev };
+            delete next[playingAudio];
+            return next;
+          });
         }
       }
 
@@ -937,17 +958,18 @@ export default function ChatScreen() {
           : getImageUrl(normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`);
 
         if (!uri) throw new Error('Invalid audio URL');
-        player = createAudioPlayer({ uri });
-        soundRefs.current.set(messageId, player);
+        const created = createAudioPlayer({ uri });
+        player = created;
+        soundRefs.current.set(messageId, created);
 
         const onStatus = (status: AudioStatus) => {
           setAudioStatus(prev => ({ ...prev, [messageId]: status }));
           if (status.didJustFinish) {
             setPlayingAudio(null);
-            player.seekTo(0);
+            created.seekTo(0);
           }
         };
-        (player as any).__statusSub = player.addListener('playbackStatusUpdate', onStatus);
+        (created as any).__statusSub = created.addListener('playbackStatusUpdate', onStatus);
       }
 
       const status = player.currentStatus;
@@ -985,7 +1007,7 @@ export default function ChatScreen() {
         playsInSilentMode: true,
         interruptionMode: 'duckOthers',
         allowsRecording: false,
-        shouldPlayInBackground: true,
+        shouldPlayInBackground: false,
         shouldRouteThroughEarpiece: false,
       });
 
@@ -1463,7 +1485,7 @@ export default function ChatScreen() {
               )}
               <TouchableOpacity onPress={async () => {
                 if (previewSound.current) {
-                  previewSound.current.remove();
+                  releasePlayer(previewSound.current);
                   previewSound.current = null;
                 }
                 setPreviewStatus(null);
@@ -1570,7 +1592,7 @@ export default function ChatScreen() {
 
       {/* Forward Modal */}
       {showForwardModal && messageToForward && (
-        <View style={StyleSheet.absoluteFillObject}>
+        <View style={StyleSheet.absoluteFill}>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
             onPress={() => setShowForwardModal(false)}
@@ -1619,7 +1641,7 @@ export default function ChatScreen() {
 
       {/* Message Options Modal */}
       {showMessageOptionsModal && selectedMessage && (
-        <View style={StyleSheet.absoluteFillObject}>
+        <View style={StyleSheet.absoluteFill}>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
             onPress={() => { setShowMessageOptionsModal(false); setSelectedMessage(null); }}
@@ -1664,7 +1686,7 @@ export default function ChatScreen() {
         const canDeleteForEveryone = isSent && !isRead;
 
         return (
-          <View style={StyleSheet.absoluteFillObject}>
+          <View style={StyleSheet.absoluteFill}>
             <TouchableOpacity
               style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
               onPress={() => { setShowDeleteConfirmModal(false); setDeleteMessageData(null); }}

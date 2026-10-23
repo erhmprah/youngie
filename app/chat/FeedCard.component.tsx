@@ -14,7 +14,7 @@ import { communityAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
 import { getRelativeTime } from '@/utils/helpers';
 import { getSocket } from '@/utils/socket';
 import { Ionicons } from '@expo/vector-icons';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoView, useVideoPlayer, type VideoTrack } from 'expo-video';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
@@ -32,6 +32,8 @@ interface FeedPost {
     image?: string;
     images?: string[];
     video?: string;
+    videoWidth?: number;
+    videoHeight?: number;
     media?: { url: string; type: 'image' | 'video' }[];
     createdAt: string;
     updatedAt: string;
@@ -57,15 +59,51 @@ interface FeedCardProps {
     shouldPlay?: boolean;
     communityId?: string;
     voteAPI?: (postId: string, optionIndex: number) => Promise<any>;
+    presentation?: 'card' | 'feed';
 }
 
 const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
 
-function InlineVideo({ uri, shouldPlay, style }: { uri: string; shouldPlay: boolean; style: any }) {
+function InlineVideo({ uri, shouldPlay, style, onAspectRatioChange }: { uri: string; shouldPlay?: boolean; style: any; onAspectRatioChange?: (width: number, height: number) => void }) {
     const player = useVideoPlayer({ uri }, (p) => {
         p.loop = true;
         p.muted = true;
     });
+
+    useEffect(() => {
+        let isActive = true;
+        let hasOrientedSize = false;
+        const reportDisplaySize = async (fallbackTrack: VideoTrack | null) => {
+            if (hasOrientedSize) return;
+            try {
+                const [thumbnail] = await player.generateThumbnailsAsync(0, { maxWidth: 720, maxHeight: 1280 });
+                if (isActive && thumbnail?.width && thumbnail.height) {
+                    hasOrientedSize = true;
+                    onAspectRatioChange?.(thumbnail.width, thumbnail.height);
+                    return;
+                }
+            } catch {
+                // If thumbnail extraction fails (e.g. unsupported source), use track dimensions below.
+            }
+            if (isActive && !hasOrientedSize && fallbackTrack?.size.width && fallbackTrack.size.height) {
+                onAspectRatioChange?.(fallbackTrack.size.width, fallbackTrack.size.height);
+            }
+        };
+        const initialTrack = player.videoTrack ?? player.availableVideoTracks[0] ?? null;
+        void reportDisplaySize(initialTrack);
+        const subscription = player.addListener('videoTrackChange', ({ videoTrack }) => {
+            void reportDisplaySize(videoTrack);
+        });
+        const sourceSubscription = player.addListener('sourceLoad', ({ availableVideoTracks }) => {
+            void reportDisplaySize(player.videoTrack ?? availableVideoTracks[0] ?? null);
+        });
+        return () => {
+            isActive = false;
+            subscription.remove();
+            sourceSubscription.remove();
+        };
+    }, [player, onAspectRatioChange]);
+
     useEffect(() => {
         if (shouldPlay) {
             player.replay();
@@ -79,17 +117,23 @@ function InlineVideo({ uri, shouldPlay, style }: { uri: string; shouldPlay: bool
             player={player}
             style={style}
             nativeControls={false}
-            contentFit="cover"
+            contentFit="contain"
+            pointerEvents="none"
         />
     );
 }
 
-export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId, voteAPI }: FeedCardProps) => {
+export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId, voteAPI, presentation = 'feed' }: FeedCardProps) => {
     const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [likesModalVisible, setLikesModalVisible] = useState(false);
     const [commentsModalVisible, setCommentsModalVisible] = useState(false);
+    const mediaSignature = initialPost.media?.map(({ type, url }) => `${type}:${url}`).join('|')
+        ?? initialPost.images?.join('|')
+        ?? initialPost.image
+        ?? initialPost.video
+        ?? '';
     const textColor = useThemeColor('text');
     const lightTextColor = useThemeColor('lightText');
     const errorColor = useThemeColor('error');
@@ -102,11 +146,33 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const isLiked = post.likes.some(l => l._id === currentUserId);
     const [isFavorited, setIsFavorited] = useState(post.isFavorited ?? false);
     const [pulseAnim] = useState(() => new Animated.Value(1));
-    const lastTap = useRef<number | null>(null);
     const router = useRouter();
     const [activeImageIndex, setActiveImageIndex] = useState(0);
+    const [measuredMediaSize, setMeasuredMediaSize] = useState(() => ({
+        signature: mediaSignature,
+        width: initialPost.videoWidth ?? 0,
+        height: initialPost.videoHeight ?? 0,
+    }));
+    const storedVideoSize = post.videoWidth && post.videoHeight
+        ? { width: post.videoWidth, height: post.videoHeight }
+        : undefined;
+    const getResolvedMediaSize = () => {
+        if (measuredMediaSize.signature === mediaSignature && measuredMediaSize.width > 0 && measuredMediaSize.height > 0) {
+            return { width: measuredMediaSize.width, height: measuredMediaSize.height };
+        }
+        if (storedVideoSize) return storedVideoSize;
+        if (measuredMediaSize.width > 0 && measuredMediaSize.height > 0) {
+            return { width: measuredMediaSize.width, height: measuredMediaSize.height };
+        }
+        return { width: 1, height: 1 };
+    };
     const [previewMedia, setPreviewMedia] = useState<{ attachments: any[]; index: number } | null>(null);
     const mediaTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const updateMediaAspectRatio = useCallback((width: number, height: number) => {
+        if (!width || !height) return;
+        setMeasuredMediaSize({ signature: mediaSignature, width, height });
+    }, [mediaSignature]);
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0 && viewableItems[0].index !== null) {
@@ -188,30 +254,40 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
         return items;
     };
 
-    const handleMediaTap = (url: string, type?: string) => {
-        const DOUBLE_PRESS_DELAY = 300;
+    const openPreview = (url: string, type?: string) => {
         const resolvedUrl = normalizeMediaUrl(url);
+        const items = getAllMediaItems();
+        const index = items.findIndex((item) => item.uri === resolvedUrl);
+        setPreviewMedia({ attachments: items.length > 0 ? items : [{ uri: resolvedUrl, type: type || 'image' }], index: index >= 0 ? index : 0 });
+    };
 
-        if (lastTap.current) {
+    const handleMediaTap = (url: string, type?: string) => {
+        const DOUBLE_PRESS_DELAY = 280;
+
+        // A second tap inside the window is a double-tap-to-like, but it must never
+        // cancel the pending preview: any number of taps still opens the modal.
+        if (mediaTapTimer.current) {
+            clearTimeout(mediaTapTimer.current);
+            mediaTapTimer.current = null;
+            if (!isLiked) {
+                onLike?.(post._id);
+            }
+        }
+
+        mediaTapTimer.current = setTimeout(() => {
+            mediaTapTimer.current = null;
+            openPreview(url, type);
+        }, DOUBLE_PRESS_DELAY);
+    };
+
+    useEffect(() => {
+        return () => {
             if (mediaTapTimer.current) {
                 clearTimeout(mediaTapTimer.current);
                 mediaTapTimer.current = null;
             }
-            if (!isLiked) {
-                onLike?.(post._id);
-            }
-            lastTap.current = null;
-        } else {
-            lastTap.current = 1;
-            mediaTapTimer.current = setTimeout(() => {
-                const items = getAllMediaItems();
-                const index = items.findIndex((item) => item.uri === resolvedUrl);
-                setPreviewMedia({ attachments: items.length > 0 ? items : [{ uri: resolvedUrl, type: type || 'image' }], index: index >= 0 ? index : 0 });
-                lastTap.current = null;
-                mediaTapTimer.current = null;
-            }, DOUBLE_PRESS_DELAY);
-        }
-    };
+        };
+    }, []);
 
     const handleLikePress = () => {
         onLike?.(post._id);
@@ -245,7 +321,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     };
     const { width: screenWidth } = Dimensions.get('window');
     const [cardWidth, setCardWidth] = useState(screenWidth);
-    const contentWidth = cardWidth - (spacing.lg * 2);
+    const isBorderlessFeedPost = presentation === 'feed';
+    const mediaBorderRadius = isBorderlessFeedPost ? 0 : borderRadius.lg;
+    const contentWidth = cardWidth - (isBorderlessFeedPost ? 0 : spacing.lg * 2);
+    const { width: resolvedMediaWidth, height: resolvedMediaHeight } = getResolvedMediaSize();
+    const mediaAspectRatio = resolvedMediaWidth / resolvedMediaHeight;
     const resolvedVoteAPI = voteAPI ?? (communityId ? ((postId: string, optionIndex: number) => communityAPI.voteFeedPoll(communityId, postId, optionIndex)) : undefined);
 
     const handleEdit = () => {
@@ -399,6 +479,8 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                             }
                             if (post.video) {
                                 newPostData.video = post.video;
+                                newPostData.videoWidth = post.videoWidth;
+                                newPostData.videoHeight = post.videoHeight;
                             }
 
                             await postAPI.createPost(newPostData);
@@ -414,7 +496,12 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     };
 
     return (
-        <ThemedView style={[styles.card, { backgroundColor: surfaceColor, borderColor }]} onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}>
+        <ThemedView
+            style={isBorderlessFeedPost
+                ? [styles.feedPost, { backgroundColor, borderBottomColor: borderColor }]
+                : [styles.card, { backgroundColor: surfaceColor, borderColor }]}
+            onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}
+        >
             <View style={styles.header}>
                 <View style={styles.userInfo}>
                     <TouchableOpacity 
@@ -481,28 +568,30 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
             <View>
                 {post.media && post.media.length > 0 ? (
-                <View style={[styles.postMedia, { width: contentWidth, height: contentWidth }]}>
+                <View style={[styles.postMedia, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}>
                     <FlatList
                         data={post.media}
                         renderItem={({ item, index }) => (
-                            <View style={{ width: contentWidth, height: contentWidth }}>
+                            <View style={{ width: contentWidth, aspectRatio: mediaAspectRatio }}>
                                 {item.type === 'image' ? (
-                                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
+                                    <TouchableOpacity style={styles.mediaSlide} activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <Image
  source={{ uri: getImageUrl(item.url) || '' }}
-                                            style={styles.mediaFrame}
+                                            style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}
                                             resizeMode="cover"
+                                            onLoad={activeImageIndex === index ? ({ nativeEvent }) => updateMediaAspectRatio(nativeEvent.source.width, nativeEvent.source.height) : undefined}
                                             fadeDuration={0}
                                             progressiveRenderingEnabled={true}
                                         />
 
                                     </TouchableOpacity>
                                 ) : (
-                                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
+                                    <TouchableOpacity style={styles.mediaSlide} activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
                                         <InlineVideo
                                             uri={getImageUrl(item.url) || ''}
-                                            shouldPlay={shouldPlay && activeImageIndex === index}
-                                            style={styles.mediaFrame}
+                                            shouldPlay={Boolean(shouldPlay) && activeImageIndex === index && !previewMedia}
+                                            style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }}
+                                            onAspectRatioChange={activeImageIndex === index ? updateMediaAspectRatio : undefined}
                                         />
                                     </TouchableOpacity>
                                 )}
@@ -524,16 +613,17 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                     )}
                 </View>
                 ) : post.images && post.images.length > 0 ? (
-                    <View style={[styles.postMedia, { width: contentWidth, height: contentWidth }]}>
+                    <View style={[styles.postMedia, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}>
                         <FlatList
                             data={post.images}
-                            renderItem={({ item }) => (
-                                <View style={{ width: contentWidth, height: contentWidth }}>
-                                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(item, 'image')}>
+                            renderItem={({ item, index }) => (
+                                <View style={{ width: contentWidth, aspectRatio: mediaAspectRatio }}>
+                                    <TouchableOpacity style={styles.mediaSlide} activeOpacity={0.8} onPress={() => handleMediaTap(item, 'image')}>
                                         <Image
 source={{ uri: getImageUrl(item) }}
-                                            style={styles.mediaFrame}
+                                            style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}
                                             resizeMode="cover"
+                                            onLoad={activeImageIndex === index ? ({ nativeEvent }) => updateMediaAspectRatio(nativeEvent.source.width, nativeEvent.source.height) : undefined}
                                             fadeDuration={0}
                                             progressiveRenderingEnabled={true}
                                         />
@@ -557,21 +647,23 @@ source={{ uri: getImageUrl(item) }}
                         )}
                     </View>
                 ) : post.image ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image || '', 'image')} style={{ width: contentWidth, height: contentWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image || '', 'image')} style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius, overflow: 'hidden' }}>
                         <Image
                             source={{ uri: getImageUrl(post.image || '') }}
-                            style={styles.mediaFrame}
+                            style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}
                             resizeMode="cover"
+                            onLoad={({ nativeEvent }) => updateMediaAspectRatio(nativeEvent.source.width, nativeEvent.source.height)}
                             fadeDuration={0}
                             progressiveRenderingEnabled={true}
                         />
                     </TouchableOpacity>
                 )                 : post.video ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')} style={{ width: contentWidth, height: contentWidth, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')} style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius, overflow: 'hidden' }}>
                         <InlineVideo
                             uri={getImageUrl(post.video) || ''}
-                            shouldPlay={shouldPlay}
-                            style={styles.mediaFrame}
+                            shouldPlay={Boolean(shouldPlay) && !previewMedia}
+                            style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }}
+                            onAspectRatioChange={updateMediaAspectRatio}
                         />
                     </TouchableOpacity>
                 ) : null}
@@ -680,10 +772,16 @@ export default FeedCard;
 
 const styles = StyleSheet.create({
     card: {
+        width: '100%',
         padding: spacing.lg,
         marginBottom: spacing.md,
         borderRadius: borderRadius.xl,
         ...shadows.md,
+    },
+    feedPost: {
+        width: '100%',
+        paddingVertical: spacing.lg,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     header: {
         flexDirection: 'row',
@@ -756,6 +854,10 @@ const styles = StyleSheet.create({
         height: '100%',
         borderRadius: borderRadius.lg,
         backgroundColor: '#E0E0E0',
+    },
+    mediaSlide: {
+        width: '100%',
+        height: '100%',
     },
     actionBar: {
         flexDirection: 'row',

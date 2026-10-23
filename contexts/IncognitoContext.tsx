@@ -38,8 +38,8 @@ export function IncognitoProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleIncognito = useCallback(() => {
-    setIncognito((prev) => !prev);
-  }, [setIncognito]);
+    setIncognito(!isIncognito);
+  }, [isIncognito, setIncognito]);
 
   return (
     <IncognitoContext.Provider value={{ isIncognito, toggleIncognito, setIncognito }}>

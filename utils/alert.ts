@@ -38,6 +38,21 @@ export const setAlertContext = (context: AlertContextValue) => {
   alertContextRef = context;
 };
 
+// Alert dedupe: one failure often surfaces in several layers at once (the axios
+// interceptor plus the screen's own catch), which stacks duplicate popups on the
+// user. Collapse error alerts that fire back-to-back.
+const ERROR_ALERT_WINDOW_MS = 1500;
+let lastErrorAlertAt = 0;
+
+function shouldSuppressErrorAlert(): boolean {
+  const now = Date.now();
+  if (now - lastErrorAlertAt < ERROR_ALERT_WINDOW_MS) {
+    return true;
+  }
+  lastErrorAlertAt = now;
+  return false;
+}
+
 // Type for the custom alert API
 interface CustomAlertOptions {
   type?: AlertType;
@@ -60,6 +75,9 @@ export const CustomAlert = {
    * Show a custom alert modal
    */
   show: (options: CustomAlertOptions) => {
+    if (options.type === 'error' && shouldSuppressErrorAlert()) {
+      return;
+    }
     if (alertContextRef && alertContextRef.alert) {
       const buttons: AlertButton[] = (options.buttons || []).map(btn => ({
         text: btn.text,
@@ -101,6 +119,9 @@ export const CustomAlert = {
    * Show an error alert
    */
   error: (title: string, message?: string) => {
+    if (shouldSuppressErrorAlert()) {
+      return;
+    }
     if (alertContextRef) {
       alertContextRef.error(title, message);
     } else {
@@ -161,6 +182,33 @@ export const CustomAlert = {
   native: { alert: originalAlert } as typeof Alert,
 };
 
+// Native `Alert.alert` only carries a title, no type. Map the conventional
+// titles used across the app onto alert types so the custom modal shows the
+// matching icon (and gets error dedupe for failures). Anything unrecognized
+// stays 'info'.
+const TITLE_ALERT_TYPES: Record<string, AlertType> = {
+  success: 'success',
+  error: 'error',
+  warning: 'warning',
+  info: 'info',
+
+  // Descriptive titles that still carry an unambiguous outcome.
+  'request approved': 'success',
+  joined: 'success',
+  'account deleted': 'success',
+  'could not join': 'error',
+  'request rejected': 'warning',
+  'permission needed': 'warning',
+  'permission denied': 'warning',
+  'not authorized': 'warning',
+  'play services not available': 'warning',
+  'profile not found': 'warning',
+};
+
+function inferAlertType(title?: string): AlertType {
+  return TITLE_ALERT_TYPES[(title || '').trim().toLowerCase()] || 'info';
+}
+
 /**
  * Route every native `Alert.alert` call through the custom alert system.
  * react-native's `Alert` is a shared singleton, so mutating its `alert`
@@ -176,7 +224,7 @@ Alert.alert = ((
 ) => {
   const hasDestructive = Array.isArray(buttons) && buttons.some(b => b.style === 'destructive');
   CustomAlert.show({
-    type: hasDestructive ? 'confirm' : 'info',
+    type: hasDestructive ? 'confirm' : inferAlertType(title),
     title,
     message,
     buttons: buttons?.map(b => ({

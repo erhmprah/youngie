@@ -7,6 +7,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { communityAPI } from '@/utils/api';
+import { serverText } from '@/utils/error-messages';
 
 interface CreateCommunityModalProps {
     visible: boolean;
@@ -79,7 +80,7 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
             setImage(null);
         } catch (error: any) {
             console.error('Error creating community:', error);
-            Alert.alert('Error', error.response?.data?.msg || 'Failed to create community.');
+            Alert.alert('Error', serverText(error.response?.data, 'Failed to create community.'));
         } finally {
             setIsLoading(false);
         }

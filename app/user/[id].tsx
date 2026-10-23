@@ -1,5 +1,6 @@
 import { FeedCard } from '@/app/chat/FeedCard.component';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
+import { ReportUserModal } from '@/components/report-user-modal';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
@@ -10,7 +11,7 @@ import { chatAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Image, Modal, ScrollView, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 
@@ -67,6 +68,8 @@ export default function UserProfileScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
+  const [optionsVisible, setOptionsVisible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
   const postPositions = useRef<Map<string, { y: number; height: number }>>(new Map());
   const isOwnProfile = currentUser?._id === id;
 
@@ -145,10 +148,15 @@ export default function UserProfileScreen() {
       console.log('Fetching posts for user:', id, 'page:', page);
       const response = await postAPI.getUserPosts(id as string, page, 20);
       console.log('Posts response:', response.data);
-      const { posts: newPosts, hasMore } = response.data;
+      const { posts: newPosts, hasMore, total } = response.data;
       console.log('New posts:', newPosts);
       if (page === 1) {
         setPosts(newPosts);
+        // Count comes from the posts collection (soft-delete aware) so the stat
+        // always matches what the grid can actually load.
+        if (typeof total === 'number') {
+          setStats(prev => ({ ...prev, posts: total }));
+        }
       } else {
         setPosts(prev => [...prev, ...newPosts]);
       }
@@ -212,9 +220,9 @@ export default function UserProfileScreen() {
     try {
       await userAPI.sendFriendRequest(currentUser._id, profile._id);
       await fetchProfile();
-      Alert.alert('Success', 'Friend request sent');
+      CustomAlert.success('Success', 'Friend request sent');
     } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      CustomAlert.error('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -223,9 +231,9 @@ export default function UserProfileScreen() {
     try {
       await userAPI.acceptFriendRequest(currentUser._id, profile._id);
       await fetchProfile();
-      Alert.alert('Success', 'Friend request accepted');
+      CustomAlert.success('Success', 'Friend request accepted');
     } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      CustomAlert.error('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -234,9 +242,9 @@ export default function UserProfileScreen() {
     try {
       await userAPI.cancelFriendRequest(currentUser._id, profile._id);
       await fetchProfile();
-      Alert.alert('Success', 'Friend request cancelled');
+      CustomAlert.success('Success', 'Friend request cancelled');
     } catch (error: any) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      CustomAlert.error('Error', 'Something went wrong. Please try again.');
     }
   };
 
@@ -255,9 +263,9 @@ export default function UserProfileScreen() {
             try {
               await userAPI.unfriend(currentUser._id, profile._id);
               await fetchProfile();
-              Alert.alert('Success', `${profile.username} has been unfriended`);
+              CustomAlert.success('Success', `${profile.username} has been unfriended`);
             } catch (error: any) {
-              Alert.alert('Error', 'Something went wrong. Please try again.');
+              CustomAlert.error('Error', 'Something went wrong. Please try again.');
             }
           }
         }
@@ -314,6 +322,11 @@ export default function UserProfileScreen() {
         }
       ]
     });
+  };
+
+  const handleReport = () => {
+    setOptionsVisible(false);
+    setReportModalVisible(true);
   };
 
   const renderPostItem = ({ item }: { item: Post }) => {
@@ -425,6 +438,11 @@ export default function UserProfileScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
               <IconSymbol name="chevron.left" size={28} color={textColor} />
             </TouchableOpacity>
+            {profile && !isOwnProfile && (
+              <TouchableOpacity onPress={() => setOptionsVisible(true)} style={styles.backButton} activeOpacity={0.7}>
+                <IconSymbol name="ellipsis" size={26} color={textColor} />
+              </TouchableOpacity>
+            )}
           </View>
   
           {profile && (
@@ -607,6 +625,31 @@ export default function UserProfileScreen() {
             </ScrollView>
           )}
       </SafeAreaView>
+
+      <Modal visible={optionsVisible} transparent animationType="fade" onRequestClose={() => setOptionsVisible(false)}>
+        <TouchableWithoutFeedback onPress={() => setOptionsVisible(false)}>
+          <View style={styles.optionsOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.optionsContainer, { backgroundColor: surfaceColor }]}>
+                <TouchableOpacity style={[styles.optionRow, { borderColor }]} onPress={handleReport} activeOpacity={0.7}>
+                  <IconSymbol name="flag" size={20} color={errorColor} />
+                  <ThemedText style={[styles.optionLabel, { color: errorColor }]}>Report User</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelOption} onPress={() => setOptionsVisible(false)} activeOpacity={0.7}>
+                  <ThemedText style={{ color: textColor }}>Cancel</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <ReportUserModal
+        visible={reportModalVisible}
+        onClose={() => setReportModalVisible(false)}
+        targetUserId={profile?._id || ''}
+        targetUsername={profile?.username}
+      />
     </Animated.View>
     </View>
   );
@@ -618,7 +661,13 @@ const styles = StyleSheet.create({
   coverPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
   coverPhotoPlaceholder: { width: '100%', height: '100%' },
   headerBackground: { position: 'absolute', top: 60, left: 0, right: 0, height: 200, zIndex: -1 },
-  navHeader: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  navHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm
+  },
   backButton: { padding: spacing.xs },
   scrollContent: { flex: 1 },
   content: { flex: 1, paddingHorizontal: spacing.lg },
@@ -712,6 +761,34 @@ const styles = StyleSheet.create({
   },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: spacing.xxl },
   emptyText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium, marginTop: spacing.md },
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  optionsContainer: {
+    width: '80%',
+    borderRadius: borderRadius.lg,
+    padding: spacing.sm,
+    elevation: 5
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md
+  },
+  optionLabel: {
+    fontSize: typography.sizes.body1,
+    fontFamily: typography.families.medium
+  },
+  cancelOption: {
+    alignItems: 'center',
+    paddingVertical: spacing.md
+  },
   loadingMore: { paddingVertical: spacing.md },
   modalOverlay: {
     position: 'absolute',

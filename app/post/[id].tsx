@@ -6,6 +6,8 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { FeedCard } from '@/app/chat/FeedCard.component';
 import { postAPI } from '@/utils/api';
+import { cachedPostAPI } from '@/utils/cachedApi';
+import { serverText } from '@/utils/error-messages';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius } from '@/constants/design-tokens';
@@ -34,7 +36,7 @@ export default function PostDetailScreen() {
       setPost(response.data);
     } catch (error: any) {
       console.error('Failed to fetch post:', error);
-      setError(error.response?.data?.msg || 'Failed to load post');
+      setError(serverText(error.response?.data, 'Failed to load post'));
       Alert.alert('Error', 'Failed to load post');
     } finally {
       setLoading(false);
@@ -45,9 +47,13 @@ export default function PostDetailScreen() {
     fetchPost();
   }, [fetchPost]);
 
-  const handleDelete = (postId: string) => {
-    // Handle post deletion - could navigate back or show success message
-    router.back();
+  const handleDelete = async (postId: string) => {
+    try {
+      await cachedPostAPI.deletePost(postId, post?.author?._id);
+      router.back();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete post');
+    }
   };
 
   const handleUpdate = (updatedPost: any) => {
