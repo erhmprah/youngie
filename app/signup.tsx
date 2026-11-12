@@ -9,9 +9,11 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { authAPI } from '@/utils/api';
 import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
+import { signInWithApple } from '@/utils/apple-signin';
 import { signInWithGoogle } from '@/utils/google-signin';
 import { signInWithMagicLink, supabase } from '@/utils/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
@@ -24,6 +26,7 @@ export default function SignupScreen() {
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
 
   const router = useRouter();
   const { updateUser } = useAuth();
@@ -33,6 +36,24 @@ export default function SignupScreen() {
     ? Math.max(260, Math.min(320, windowHeight * 0.4))
     : Math.min(470, Math.max(420, windowHeight * 0.5));
   const heroCopyBottom = isCompact ? 76 : 112;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync()
+        .then((available) => {
+          if (isMounted) setAppleAuthAvailable(available);
+        })
+        .catch((error) => {
+          console.warn('Could not check Apple sign-in availability:', error);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const checkSupabaseSession = async () => {
@@ -192,6 +213,21 @@ export default function SignupScreen() {
     }
   };
 
+  const handleAppleSignup = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await signInWithApple();
+      if (error || !data?.session) return;
+
+      router.replace('/auth/callback');
+    } catch (error) {
+      console.error('Apple signup error:', error);
+      CustomAlert.error('Apple Sign-Up Failed', 'Unable to sign up with Apple. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
@@ -326,24 +362,15 @@ export default function SignupScreen() {
                     <ThemedText style={[styles.googleButtonText, { color: white }]}>Continue with Google</ThemedText>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[styles.appleButton, { backgroundColor: surfaceColor, borderColor: gradientStartColor }]}
-                    onPress={() =>
-                      CustomAlert.show({
-                        type: 'info',
-                        title: 'Apple Sign-Up',
-                        message: 'Apple Sign-Up is not configured in this build yet.',
-                        buttons: [{ text: 'OK' }],
-                      })
-                    }
-                    disabled={isLoading}
-                    activeOpacity={0.82}
-                  >
-                    <BrandIcon name="apple" size={22} />
-                    <ThemedText style={[styles.appleButtonText, { color: white }]}>
-                      Continue with Apple
-                    </ThemedText>
-                  </TouchableOpacity>
+                  {Platform.OS === 'ios' && appleAuthAvailable && (
+                    <AppleAuthentication.AppleAuthenticationButton
+                      buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+                      buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                      cornerRadius={28}
+                      style={styles.appleButton}
+                      onPress={handleAppleSignup}
+                    />
+                  )}
 
                   <View style={styles.divider}>
                     <View style={[styles.dividerLine, { backgroundColor: borderColor }]} />
@@ -512,8 +539,7 @@ const styles = StyleSheet.create({
   googleButton: { height: 56, borderRadius: 28, backgroundColor: '#FF009D', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 20 },
   googleIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   googleButtonText: { color: '#FFFFFF', fontSize: 16, fontFamily: typography.families.bold },
-  appleButton: { height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: '#FF009D', backgroundColor: '#1D0624', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 20 },
-  appleButtonText: { color: '#FFFFFF', fontSize: 16, fontFamily: typography.families.bold },
+  appleButton: { width: '100%', height: 56 },
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 2 },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#6B5A70' },
   dividerText: { color: '#9C8FA2', paddingHorizontal: 14, fontSize: 15, fontFamily: typography.families.bold },

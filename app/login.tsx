@@ -10,8 +10,10 @@ import { CustomAlert } from '@/utils/alert';
 import { showFriendlySocketError } from '@/utils/socket-error';
 import { authAPI } from '@/utils/api';
 import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
+import { signInWithApple } from '@/utils/apple-signin';
 import { signInWithGoogle } from '@/utils/google-signin';
 import { signInWithMagicLink, supabase } from '@/utils/supabase';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,6 +26,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
 
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
@@ -33,6 +36,24 @@ export default function LoginScreen() {
     : Math.min(470, Math.max(420, windowHeight * 0.5));
   const heroCopyBottom = isCompact ? 76 : 112;
   const { updateUser } = useAuth();
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync()
+        .then((available) => {
+          if (isMounted) setAppleAuthAvailable(available);
+        })
+        .catch((error) => {
+          console.warn('Could not check Apple sign-in availability:', error);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const checkSupabaseSession = async () => {
@@ -222,6 +243,21 @@ export default function LoginScreen() {
       console.error('Google login error:', error);
       setIsLoading(false);
       CustomAlert.error('Google Sign-In Failed', 'Unable to sign in with Google. Please try again.');
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await signInWithApple();
+      if (error || !data?.session) return;
+
+      router.replace('/auth/callback');
+    } catch (error) {
+      console.error('Apple login error:', error);
+      CustomAlert.error('Apple Sign-In Failed', 'Unable to sign in with Apple. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -418,24 +454,15 @@ export default function LoginScreen() {
                     </ThemedText>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.appleButton}
-                    onPress={() =>
-                      CustomAlert.show({
-                        type: 'info',
-                        title: 'Apple Sign-In',
-                        message: 'Apple Sign-In is not configured in this build yet.',
-                        buttons: [{ text: 'OK' }],
-                      })
-                    }
-                    disabled={isLoading}
-                    activeOpacity={0.82}
-                  >
-                    <BrandIcon name="apple" size={22} />
-                    <ThemedText style={styles.appleButtonText}>
-                      Continue with Apple
-                    </ThemedText>
-                  </TouchableOpacity>
+                  {Platform.OS === 'ios' && appleAuthAvailable && (
+                    <AppleAuthentication.AppleAuthenticationButton
+                      buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                      buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                      cornerRadius={28}
+                      style={styles.appleButton}
+                      onPress={handleAppleLogin}
+                    />
+                  )}
 
                   <View style={styles.divider}>
                     <View style={styles.dividerLine} />
@@ -764,21 +791,8 @@ const styles = StyleSheet.create({
     fontFamily: typography.families.bold,
   },
   appleButton: {
+    width: '100%',
     height: 56,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: '#FF009D',
-    backgroundColor: '#1D0624',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-  },
-  appleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontFamily: typography.families.bold,
   },
   divider: {
     flexDirection: 'row',
