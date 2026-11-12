@@ -1,14 +1,30 @@
 // components/ui/icon-symbol.tsx
 
-import React, { useMemo , ComponentProps } from 'react';
-import { Feather } from '@expo/vector-icons';
-import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
+import React, { useMemo, ComponentProps } from 'react';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { type StyleProp, type TextStyle } from 'react-native';
 
 type IconColor = ComponentProps<typeof Feather>['color'];
 
-// Define a mapping from a generic name to a Feather icon name
+type IconLibrary = 'feather' | 'ionicons';
+
 type IconMapping = {
   [key: string]: ComponentProps<typeof Feather>['name'];
+};
+
+const IONIC_COMPAT: Record<string, ComponentProps<typeof Ionicons>['name']> = {
+  'checkmark-circle': 'checkmark-circle',
+  'checkmark-circle-outline': 'checkmark-circle-outline',
+  'close-circle': 'close-circle',
+  'close-circle-outline': 'close-circle-outline',
+  'alert-circle': 'alert-circle',
+  'alert-circle-outline': 'alert-circle-outline',
+  'information-circle-outline': 'information-circle-outline',
+  'warning-outline': 'warning',
+  'help-circle': 'help-circle',
+  'warning': 'warning',
+  'info': 'information-circle',
+  'alert': 'alert-circle',
 };
 
 // Use a more consistent and professional set of icons from Feather
@@ -186,12 +202,23 @@ export function IconSymbol({
   color: IconColor;
   style?: StyleProp<TextStyle>;
 }) {
-  // Memoize the icon lookup to avoid recomputation on re-renders
-  const iconName = useMemo(() => MAPPING[name], [name]);
+  const resolvedIcon = useMemo<{ library: IconLibrary; name: string }>(() => {
+    const featherName = MAPPING[name];
+    if (featherName) {
+      return { library: 'feather', name: featherName };
+    }
 
-  if (!iconName) {
-    return <Feather name="alert-circle" size={size} color={color} style={style} />;
+    const ionicName = IONIC_COMPAT[name];
+    if (ionicName) {
+      return { library: 'ionicons', name: ionicName };
+    }
+
+    return { library: 'feather', name: 'alert-circle' };
+  }, [name]);
+
+  if (resolvedIcon.library === 'ionicons') {
+    return <Ionicons name={resolvedIcon.name as ComponentProps<typeof Ionicons>['name']} size={size} color={color} style={style} />;
   }
 
-  return <Feather name={iconName} size={size} color={color} style={style} />;
+  return <Feather name={resolvedIcon.name as ComponentProps<typeof Feather>['name']} size={size} color={color} style={style} />;
 }
