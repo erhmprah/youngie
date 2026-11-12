@@ -27,8 +27,11 @@ export default function LoginScreen() {
 
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
-  const heroHeight = Math.min(470, Math.max(420, windowHeight * 0.5));
-  const heroCopyBottom = 112;
+  const isCompact = windowHeight < 800;
+  const heroHeight = isCompact
+    ? Math.max(260, Math.min(320, windowHeight * 0.4))
+    : Math.min(470, Math.max(420, windowHeight * 0.5));
+  const heroCopyBottom = isCompact ? 76 : 112;
   const { updateUser } = useAuth();
 
   useEffect(() => {
@@ -245,8 +248,8 @@ export default function LoginScreen() {
               imageStyle={styles.heroImage}
             >
               <LinearGradient
-                colors={['#0B000F99', '#14002000']}
-                locations={[0, 0.55]}
+                colors={['#0B000FE6', '#14002000']}
+                locations={[0, 0.62]}
                 style={styles.heroTopShade}
                 pointerEvents="none"
               />
@@ -260,37 +263,41 @@ export default function LoginScreen() {
                 pointerEvents="none"
               />
 
-              <View style={styles.brandRow}>
+              <View style={[styles.brandRow, isCompact && styles.brandRowCompact]}>
                 <Image
                   source={require('@/assets/images/youngie_icon.png')}
-                  style={styles.brandIcon}
+                  style={[styles.brandIcon, isCompact && styles.brandIconCompact]}
                   resizeMode="contain"
                 />
-                <ThemedText style={styles.brandName}>Youngie</ThemedText>
+                <ThemedText style={[styles.brandName, isCompact && styles.brandNameCompact]}>Youngie</ThemedText>
               </View>
 
               <View style={[styles.heroCopy, { paddingBottom: heroCopyBottom }]}>
-                <View style={styles.heroBadge}>
-                  <View style={styles.heroBadgeDot} />
-                  <ThemedText style={styles.heroBadgeText}>Meet people near you</ThemedText>
-                </View>
+                {!isCompact && (
+                  <View style={styles.heroBadge}>
+                    <View style={styles.heroBadgeDot} />
+                    <ThemedText style={styles.heroBadgeText}>Meet people near you</ThemedText>
+                  </View>
+                )}
 
-                <ThemedText style={styles.heroTitle}>
+                <ThemedText style={[styles.heroTitle, isCompact && styles.heroTitleCompact]}>
                   Real People.
                   {'\n'}
-                  <ThemedText style={styles.heroTitleAccent}>New Connections.</ThemedText>
+                  <ThemedText style={[styles.heroTitleAccent, isCompact && styles.heroTitleAccentCompact]}>New Connections.</ThemedText>
                 </ThemedText>
 
                 <LinearGradient
                   colors={['#FF009D', '#FF009D00']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={styles.heroAccentBar}
+                  style={[styles.heroAccentBar, isCompact && styles.heroAccentBarCompact]}
                 />
 
-                <ThemedText style={styles.heroSubtitle}>
-                  Meet, chat and discover amazing{'\n'}people around you.
-                </ThemedText>
+                {!isCompact && (
+                  <ThemedText style={styles.heroSubtitle}>
+                    Meet, chat and discover amazing{'\n'}people around you.
+                  </ThemedText>
+                )}
               </View>
             </ImageBackground>
 
@@ -508,7 +515,7 @@ const styles = StyleSheet.create({
   heroTopShade: {
     ...StyleSheet.absoluteFill,
     bottom: undefined,
-    height: 220,
+    height: 250,
   },
   heroOverlay: {
     ...StyleSheet.absoluteFill,
@@ -527,15 +534,31 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 8,
   },
+  brandRowCompact: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
   brandIcon: {
     width: 52,
     height: 52,
+  },
+  brandIconCompact: {
+    width: 42,
+    height: 42,
   },
   brandName: {
     color: '#FF009D',
     fontFamily: typography.families.bold,
     fontSize: 32,
+    lineHeight: 38,
     letterSpacing: -1,
+    textShadowColor: '#00000099',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  brandNameCompact: {
+    fontSize: 26,
+    lineHeight: 31,
   },
   heroCopy: {
     paddingHorizontal: 28,
@@ -585,12 +608,25 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 18,
   },
+  heroTitleCompact: {
+    fontSize: 30,
+    lineHeight: 35,
+  },
+  heroTitleAccentCompact: {
+    fontSize: 30,
+    lineHeight: 35,
+  },
   heroAccentBar: {
     width: 92,
     height: 4,
     borderRadius: 2,
     marginTop: 12,
     marginBottom: 10,
+  },
+  heroAccentBarCompact: {
+    width: 72,
+    marginTop: 10,
+    marginBottom: 0,
   },
   heroSubtitle: {
     color: '#E2D4E4',

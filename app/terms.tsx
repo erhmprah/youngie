@@ -44,7 +44,7 @@ export default function TermsOfServiceView() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-         <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1 }]}>
+         <View style={[styles.section, { backgroundColor: surfaceColor, borderColor, borderWidth: 1, padding: spacing.lg }]}>
            <ThemedText style={[styles.title, { color: textColor }]}>
              Terms of Service
            </ThemedText>
@@ -75,11 +75,14 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.xl,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
     borderBottomWidth: 1,
   },
   title: {
     fontSize: typography.sizes.heading1,
+    lineHeight: typography.sizes.heading1 * 1.2,
     fontWeight: typography.weights.bold,
     marginBottom: spacing.sm,
   },

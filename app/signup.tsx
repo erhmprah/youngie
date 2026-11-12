@@ -28,8 +28,11 @@ export default function SignupScreen() {
   const router = useRouter();
   const { updateUser } = useAuth();
   const { height: windowHeight } = useWindowDimensions();
-  const heroHeight = Math.min(470, Math.max(420, windowHeight * 0.5));
-  const heroCopyBottom = 112;
+  const isCompact = windowHeight < 800;
+  const heroHeight = isCompact
+    ? Math.max(260, Math.min(320, windowHeight * 0.4))
+    : Math.min(470, Math.max(420, windowHeight * 0.5));
+  const heroCopyBottom = isCompact ? 76 : 112;
 
   useEffect(() => {
     const checkSupabaseSession = async () => {
@@ -212,8 +215,8 @@ export default function SignupScreen() {
               imageStyle={styles.heroImage}
             >
               <LinearGradient
-                colors={[`${backgroundColor}99`, `${backgroundColor}00`]}
-                locations={[0, 0.55]}
+                colors={[`${backgroundColor}E6`, `${backgroundColor}00`]}
+                locations={[0, 0.62]}
                 style={styles.heroTopShade}
                 pointerEvents="none"
               />
@@ -227,37 +230,41 @@ export default function SignupScreen() {
                 pointerEvents="none"
               />
 
-              <View style={styles.brandRow}>
+              <View style={[styles.brandRow, isCompact && styles.brandRowCompact]}>
                 <Image
                   source={require('@/assets/images/youngie_icon.png')}
-                  style={styles.brandIcon}
+                  style={[styles.brandIcon, isCompact && styles.brandIconCompact]}
                   resizeMode="contain"
                 />
-                <ThemedText style={styles.brandName}>Youngie</ThemedText>
+                <ThemedText style={[styles.brandName, isCompact && styles.brandNameCompact]}>Youngie</ThemedText>
               </View>
 
               <View style={[styles.heroCopy, { paddingBottom: heroCopyBottom }]}>
-                <View style={[styles.heroBadge, { backgroundColor: glassBorderColor + '22', borderColor: glassBorderColor }]}>
-                  <View style={[styles.heroBadgeDot, { backgroundColor: gradientStartColor }]} />
-                  <ThemedText style={[styles.heroBadgeText, { color: white }]}>Join the community</ThemedText>
-                </View>
+                {!isCompact && (
+                  <View style={[styles.heroBadge, { backgroundColor: glassBorderColor + '22', borderColor: glassBorderColor }]}>
+                    <View style={[styles.heroBadgeDot, { backgroundColor: gradientStartColor }]} />
+                    <ThemedText style={[styles.heroBadgeText, { color: white }]}>Join the community</ThemedText>
+                  </View>
+                )}
 
-                <ThemedText style={[styles.heroTitle, { color: white }]}>
+                <ThemedText style={[styles.heroTitle, { color: white }, isCompact && styles.heroTitleCompact]}>
                   Create Your
                   {'\n'}
-                  <ThemedText style={[styles.heroTitleAccent, { color: gradientStartColor }]}>Account.</ThemedText>
+                  <ThemedText style={[styles.heroTitleAccent, { color: gradientStartColor }, isCompact && styles.heroTitleAccentCompact]}>Account.</ThemedText>
                 </ThemedText>
 
                 <LinearGradient
                   colors={[gradientStartColor, `${gradientStartColor}00`]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={styles.heroAccentBar}
+                  style={[styles.heroAccentBar, isCompact && styles.heroAccentBarCompact]}
                 />
 
-                <ThemedText style={[styles.heroSubtitle, { color: textSecondaryColor }]}>
-                  Sign up free and start meeting{'\n'}people around you.
-                </ThemedText>
+                {!isCompact && (
+                  <ThemedText style={[styles.heroSubtitle, { color: textSecondaryColor }]}>
+                    Sign up free and start meeting{'\n'}people around you.
+                  </ThemedText>
+                )}
               </View>
             </ImageBackground>
 
@@ -481,18 +488,24 @@ const styles = StyleSheet.create({
   hero: { width: '100%', justifyContent: 'space-between', overflow: 'hidden' },
   heroImage: { resizeMode: 'cover' },
   heroOverlay: { ...StyleSheet.absoluteFill, backgroundColor: '#18001F33' },
-  heroTopShade: { ...StyleSheet.absoluteFill, bottom: undefined, height: 220 },
+  heroTopShade: { ...StyleSheet.absoluteFill, bottom: undefined, height: 250 },
   heroFade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   brandRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, gap: 8 },
+  brandRowCompact: { paddingHorizontal: 20, paddingTop: 8 },
   brandIcon: { width: 52, height: 52 },
-  brandName: { color: '#FF009D', fontFamily: typography.families.bold, fontSize: 32, letterSpacing: -1 },
+  brandIconCompact: { width: 42, height: 42 },
+  brandName: { color: '#FF009D', fontFamily: typography.families.bold, fontSize: 32, lineHeight: 38, letterSpacing: -1, textShadowColor: '#00000099', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
+  brandNameCompact: { fontSize: 26, lineHeight: 31 },
   heroCopy: { paddingHorizontal: 28 },
   heroBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 8, marginBottom: 12, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: '#FFFFFF26', backgroundColor: '#FFFFFF14' },
   heroBadgeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF009D' },
   heroBadgeText: { color: '#F3E6F3', fontSize: 13, letterSpacing: 0.8, textTransform: 'uppercase', fontFamily: typography.families.bold },
   heroTitle: { color: '#FFFFFF', fontFamily: typography.families.bold, fontSize: 36, lineHeight: 41, letterSpacing: -1.1, textShadowColor: '#00000080', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 14 },
   heroTitleAccent: { color: '#FF009D', fontFamily: typography.families.bold, fontSize: 36, lineHeight: 41, textShadowColor: '#FF009D59', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 18 },
+  heroTitleCompact: { fontSize: 30, lineHeight: 35 },
+  heroTitleAccentCompact: { fontSize: 30, lineHeight: 35 },
   heroAccentBar: { width: 92, height: 4, borderRadius: 2, marginTop: 12, marginBottom: 10 },
+  heroAccentBarCompact: { width: 72, marginTop: 10, marginBottom: 0 },
   heroSubtitle: { color: '#E2D4E4', fontSize: 15, lineHeight: 23, letterSpacing: 0.1, maxWidth: 300, textShadowColor: '#00000066', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10 },
   authPanel: { flexGrow: 0, paddingHorizontal: 28, paddingTop: 14, paddingBottom: 18 },
   authContent: { gap: 12 },
