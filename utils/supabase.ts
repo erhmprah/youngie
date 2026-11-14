@@ -3,9 +3,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { toUserCopy } from './error-messages';
 
-// Get Supabase URL and ANON_KEY from environment variables
-// For Expo, we need EXPO_PUBLIC_ prefix; for backend, it's without prefix
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://srcpkwkdvslsdjegqjff.supabase.co';
+const defaultSupabaseUrl = 'https://srcpkwkdvslsdjegqjff.supabase.co';
+const rawSupabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || defaultSupabaseUrl;
+
+function resolveSupabaseUrl(raw: string): string {
+  for (const candidate of [raw, `https://${raw}`]) {
+    try {
+      const u = new URL(candidate);
+      if ((u.protocol === 'https:' || u.protocol === 'http:') && u.hostname && !u.hostname.startsWith('.')) {
+        return candidate;
+      }
+    } catch {}
+  }
+  return defaultSupabaseUrl;
+}
+
+const supabaseUrl = resolveSupabaseUrl(rawSupabaseUrl);
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyY3Brd2tkdnNsc2RqZWdxamZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwODU1MjksImV4cCI6MjA4NjY2MTUyOX0.HVHjRkpb59IVdI8aIxxi8fvGrYJ_oOlJu9WauJb5Sok';
 
 // Wraps a Supabase error so callers only ever see plain copy. `name` is

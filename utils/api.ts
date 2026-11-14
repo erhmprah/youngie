@@ -132,12 +132,19 @@ export function getNextEndpoint(): string {
 export function markEndpointFailed(url: string): void {
   const endpoint = serverEndpoints.find(ep => ep.url === url);
   if (endpoint) {
-    endpoint.failureCount++;
-    endpoint.lastChecked = Date.now();
-    
-    if (endpoint.failureCount >= MAX_FAILURES_BEFORE_MARK_UNHEALTHY) {
-      endpoint.healthy = false;
-      console.warn(`🔴 Server marked unhealthy: ${url} (${endpoint.failureCount} failures)`);
+    if (endpoint.healthy) {
+      endpoint.failureCount++;
+      endpoint.lastChecked = Date.now();
+      
+      if (endpoint.failureCount >= MAX_FAILURES_BEFORE_MARK_UNHEALTHY) {
+        endpoint.healthy = false;
+        console.warn(`🔴 Server marked unhealthy: ${url} (${endpoint.failureCount} failures)`);
+      }
+    } else {
+      endpoint.lastChecked = Date.now();
+      if (endpoint.failureCount < MAX_FAILURES_BEFORE_MARK_UNHEALTHY) {
+        endpoint.failureCount = MAX_FAILURES_BEFORE_MARK_UNHEALTHY;
+      }
     }
   }
 }
@@ -203,14 +210,16 @@ setInterval(() => {
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
-      const response = await fetch(`${endpoint.url.replace('/api', '')}/health`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      let response: Response;
+      try {
+        response = await fetch(`${endpoint.url.replace('/api', '')}/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       
       if (response.ok) {
         markEndpointHealthy(endpoint.url);

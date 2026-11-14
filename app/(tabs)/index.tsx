@@ -110,6 +110,10 @@ function getCommunityMediaAspectRatio(width: number, height: number) {
     return width / height;
 }
 
+function getCommunityFeedVideoAspectRatio(width: number, height: number) {
+    return getCommunityMediaAspectRatio(width, height) / 0.7;
+}
+
 function CommunityFeedImage({ uri }: { uri: string | undefined }) {
     const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -138,12 +142,12 @@ function CommunityFeedVideo({ uri, shouldPlay, videoWidth, videoHeight }: { uri:
         videoPlayer.muted = true;
     });
     const [aspectRatio, setAspectRatio] = useState(() => videoWidth && videoHeight
-        ? getCommunityMediaAspectRatio(videoWidth, videoHeight)
-        : getCommunityMediaAspectRatio(player.videoTrack?.size.width || 0, player.videoTrack?.size.height || 0));
+        ? getCommunityFeedVideoAspectRatio(videoWidth, videoHeight)
+        : getCommunityFeedVideoAspectRatio(player.videoTrack?.size.width || 0, player.videoTrack?.size.height || 0));
 
     const reportTrackSize = useCallback((track: VideoTrack | null) => {
         if (!track?.size.width || !track.size.height) return;
-        setAspectRatio(getCommunityMediaAspectRatio(track.size.width, track.size.height));
+        setAspectRatio(getCommunityFeedVideoAspectRatio(track.size.width, track.size.height));
     }, [videoWidth, videoHeight]);
 
     useEffect(() => {
@@ -179,7 +183,7 @@ function CommunityFeedVideo({ uri, shouldPlay, videoWidth, videoHeight }: { uri:
             <VideoView
                 player={player}
                 style={styles.communityPostImage}
-                contentFit="contain"
+                contentFit="cover"
                 nativeControls={false}
                 pointerEvents="none"
             />

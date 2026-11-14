@@ -32,8 +32,8 @@ export default function LoginScreen() {
   const { height: windowHeight } = useWindowDimensions();
   const isCompact = windowHeight < 800;
   const heroHeight = isCompact
-    ? Math.max(260, Math.min(320, windowHeight * 0.4))
-    : Math.min(470, Math.max(420, windowHeight * 0.5));
+    ? Math.max(260, Math.min(320, windowHeight * 0.4)) + 48
+    : Math.min(470, Math.max(420, windowHeight * 0.5)) + 48;
   const heroCopyBottom = isCompact ? 76 : 112;
   const { updateUser } = useAuth();
 
@@ -558,12 +558,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 12,
+    paddingTop: 28,
     gap: 8,
+    transform: [{ translateY: 18 }],
   },
   brandRowCompact: {
     paddingHorizontal: 20,
-    paddingTop: 8,
+    paddingTop: 22,
+    transform: [{ translateY: 14 }],
   },
   brandIcon: {
     width: 52,

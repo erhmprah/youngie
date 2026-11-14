@@ -37,10 +37,12 @@ export const initSocket = (userId: string): Socket => {
     auth: async (cb) => {
       cb({ token: await AsyncStorage.getItem('authToken') });
     },
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
+    tryAllTransports: true,
     reconnection: true,
     reconnectionDelay: 1000,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: Infinity,
+    timeout: 20000,
     forceNew: true,
   });
 
@@ -64,7 +66,12 @@ export const initSocket = (userId: string): Socket => {
   });
 
   socket.on('connect_error', (error) => {
-    console.error('Socket connection error:', error.message);
+    console.error('Socket connection error:', {
+      message: error.message,
+      description: 'description' in error ? error.description : undefined,
+      context: 'context' in error ? error.context : undefined,
+      url: SOCKET_URL,
+    });
   });
 
   // Set up AppState listener only once

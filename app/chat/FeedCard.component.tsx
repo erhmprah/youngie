@@ -63,6 +63,7 @@ interface FeedCardProps {
 }
 
 const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
+const FEED_VIDEO_HEIGHT_SCALE = 0.7;
 
 function InlineVideo({ uri, shouldPlay, style, onAspectRatioChange }: { uri: string; shouldPlay?: boolean; style: any; onAspectRatioChange?: (width: number, height: number) => void }) {
     const player = useVideoPlayer({ uri }, (p) => {
@@ -117,7 +118,7 @@ function InlineVideo({ uri, shouldPlay, style, onAspectRatioChange }: { uri: str
             player={player}
             style={style}
             nativeControls={false}
-            contentFit="contain"
+            contentFit="cover"
             pointerEvents="none"
         />
     );
@@ -325,7 +326,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const mediaBorderRadius = isBorderlessFeedPost ? 0 : borderRadius.lg;
     const contentWidth = cardWidth - (isBorderlessFeedPost ? 0 : spacing.lg * 2);
     const { width: resolvedMediaWidth, height: resolvedMediaHeight } = getResolvedMediaSize();
-    const mediaAspectRatio = resolvedMediaWidth / resolvedMediaHeight;
+    const isVideoMedia = post.media?.length
+        ? post.media[activeImageIndex]?.type === 'video'
+        : Boolean(post.video);
+    const mediaAspectRatio = resolvedMediaWidth / resolvedMediaHeight
+        / (isVideoMedia ? FEED_VIDEO_HEIGHT_SCALE : 1);
     const resolvedVoteAPI = voteAPI ?? (communityId ? ((postId: string, optionIndex: number) => communityAPI.voteFeedPoll(communityId, postId, optionIndex)) : undefined);
 
     const handleEdit = () => {

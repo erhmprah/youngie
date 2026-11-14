@@ -2,7 +2,7 @@ import React, { createContext, useState, useCallback, useEffect } from 'react';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNetwork } from '@/contexts/NetworkContext';
-import api, { BASE_URL, isNetworkErrorResponse } from '@/utils/api';
+import api, { BASE_URL } from '@/utils/api';
 import { disconnectSocket } from '@/utils/socket';
 import { supabase } from '@/utils/supabase';
 import { getClientLocation, getDeviceName } from '@/utils/deviceInfo';
@@ -31,6 +31,8 @@ interface User {
    posts?: any[];
 }
 
+const CACHED_USER_KEY = 'cachedUser';
+
 interface AuthContextType {
    user: User | null;
    isLoading: boolean;
@@ -53,75 +55,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    const [sessionId, setSessionId] = useState<string | null>(null);
    const { isOffline } = useNetwork();
 
-    // Restore token and user data on app start
-    useEffect(() => {
-       const restoreAuth = async () => {
-          try {
-             const token = await AsyncStorage.getItem('authToken');
-             if (token) {
-                try {
-                   const controller = new AbortController();
-                   const timeoutId = setTimeout(() => controller.abort(), 3000);
-                   
-                   const response = await fetch(`${BASE_URL}/api/auth/me`, {
-                      method: 'GET',
-                      headers: {
-                         'x-auth-token': token,
-                         'Content-Type': 'application/json'
-                      },
-                      signal: controller.signal,
-                   });
-                   
-                   clearTimeout(timeoutId);
-
-                    if (!response.ok) {
-                       if (response.status === 403) {
-                          try {
-                             const data = await response.json();
-                             await handleSuspension(data.msg || 'You are not authorized to use this app.');
-                          } catch {
-                             await handleSuspension('You are not authorized to use this app.');
-                          }
-                          return;
-                       }
-                       throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const userData = await response.json();
-                    if (userData.suspended) {
-                       await handleSuspension('You are not authorized to use this app.');
-                       return;
-                    }
-
-                    setUser(userData);
-                } catch (error: any) {
-                   console.warn('Failed to restore auth with MongoDB token:', error);
-                   // MongoDB token is invalid/expired — attempt to recover using
-                   // the persisted Supabase session so the user stays signed in.
-                   await AsyncStorage.removeItem('authToken');
-                   await AsyncStorage.removeItem('sessionId');
-                   await trySupabaseRestore();
-                   return;
-                }
-                
-                const storedSessionId = await AsyncStorage.getItem('sessionId');
-                if (storedSessionId) setSessionId(storedSessionId);
-             } else {
-                // No MongoDB token — attempt to restore from Supabase session
-                await trySupabaseRestore();
-             }
-          } catch (error: any) {
-             console.warn('Failed to restore auth:', error);
-             await AsyncStorage.removeItem('authToken');
-             await AsyncStorage.removeItem('sessionId');
-             await trySupabaseRestore();
-          } finally {
-             setIsLoading(false);
-          }
-       };
-
-       restoreAuth();
-    }, []);
+   const handleSuspension = useCallback(async (message?: string) => {
+      try {
+         await supabase.auth.signOut();
+      } catch (error) {
+         console.warn('Supabase sign out failed during suspension handling:', error);
+      }
+      await AsyncStorage.multiRemove([
+         'authToken',
+         'sessionId',
+         CACHED_USER_KEY,
+         'profileCompleted',
+         'pendingProfileCompletion',
+         'supabaseUserId',
+         'userEmail',
+      ]);
+      setUser(null);
+      setSessionId(null);
+      if (message) {
+         Alert.alert('Not Authorized', toUserCopy(message, 'This account is not available right now.'));
+      }
+   }, []);
 
     const register = useCallback(
       async (username: string, email: string, password: string, birthYear: number, gender: string, location?: string) => {
@@ -154,6 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Store token
             await AsyncStorage.setItem('authToken', token);
+            await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(userData));
             if (newSessionId) {
                await AsyncStorage.setItem('sessionId', newSessionId);
                setSessionId(newSessionId);
@@ -169,7 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsLoading(false);
          }
       },
-      []
+      [handleSuspension]
     );
 
    const login = useCallback(async (email: string, password: string) => {
@@ -204,6 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
          // Store token
          await AsyncStorage.setItem('authToken', token);
+         await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(userData));
          if (newSessionId) {
             await AsyncStorage.setItem('sessionId', newSessionId);
             setSessionId(newSessionId);
@@ -216,29 +172,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } finally {
          setIsLoading(false);
       }
-   }, []);
+   }, [handleSuspension]);
 
    const logout = useCallback(async () => {
       setIsLoading(true);
       try {
+         try {
+            await api.post('/auth/logout');
+         } catch (error) {
+            console.warn('Could not revoke the server session during logout:', error);
+         }
          disconnectSocket(); // Disconnect socket first
-         // Clear token from storage
-         await AsyncStorage.removeItem('authToken');
-         await AsyncStorage.removeItem('sessionId');
-         
-         // Sign out from Supabase and wait for it to complete
-         await supabase.auth.signOut();
-         
+         await AsyncStorage.multiRemove([
+            'authToken',
+            'sessionId',
+            CACHED_USER_KEY,
+            'profileCompleted',
+            'pendingProfileCompletion',
+            'supabaseUserId',
+            'userEmail',
+         ]);
+         try {
+            await supabase.auth.signOut();
+         } catch (error) {
+            console.warn('Supabase sign out failed:', error);
+         }
          setUser(null);
          setSessionId(null);
-         
-         // Force a small delay to ensure state updates
-         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error: any) {
          console.error('Logout error:', error);
          disconnectSocket(); // Ensure socket is disconnected
+         await AsyncStorage.multiRemove(['authToken', 'sessionId', CACHED_USER_KEY]);
          // Even if logout fails, clear the local user state
          setUser(null);
+         setSessionId(null);
       } finally {
          setIsLoading(false);
       }
@@ -256,25 +223,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error(toUserError(error, { fallback: 'Failed to log out other devices' }).message);
        }
     }, [sessionId]);
-
-    const handleSuspension = useCallback(async (message?: string) => {
-       try {
-          await supabase.auth.signOut();
-       } catch (e) {
-          console.log('Supabase signOut error:', e);
-       }
-       await AsyncStorage.removeItem('authToken');
-       await AsyncStorage.removeItem('sessionId');
-       await AsyncStorage.removeItem('profileCompleted');
-       await AsyncStorage.removeItem('pendingProfileCompletion');
-       await AsyncStorage.removeItem('supabaseUserId');
-       await AsyncStorage.removeItem('userEmail');
-       setUser(null);
-       setSessionId(null);
-        if (message) {
-          Alert.alert('Not Authorized', toUserCopy(message, 'This account is not available right now.'));
-        }
-     }, []);
 
      const trySupabaseRestore = useCallback(async (): Promise<boolean> => {
         try {
@@ -322,6 +270,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
            if (data?.needsProfileCompletion === false && data?.token) {
               await AsyncStorage.setItem('authToken', data.token);
+              await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(data.user));
               if (data.sessionId) {
                  await AsyncStorage.setItem('sessionId', data.sessionId);
                  setSessionId(data.sessionId);
@@ -342,6 +291,87 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
            return false;
         }
      }, [handleSuspension]);
+
+     useEffect(() => {
+        const restoreAuth = async () => {
+           try {
+              const token = await AsyncStorage.getItem('authToken');
+              if (!token) {
+                 await trySupabaseRestore();
+                 return;
+              }
+
+              let timeoutId: ReturnType<typeof setTimeout> | undefined;
+              try {
+                 const controller = new AbortController();
+                 timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                 const response = await fetch(`${BASE_URL}/api/auth/me`, {
+                    method: 'GET',
+                    headers: {
+                       'x-auth-token': token,
+                       'Content-Type': 'application/json',
+                    },
+                    signal: controller.signal,
+                 });
+
+                 if (!response.ok) {
+                    if (response.status === 403) {
+                       const data = await response.json().catch(() => null);
+                       await handleSuspension(data?.msg || 'You are not authorized to use this app.');
+                       return;
+                    }
+                    if (response.status === 401 || response.status === 404) {
+                       await AsyncStorage.multiRemove(['authToken', 'sessionId', CACHED_USER_KEY]);
+                       await trySupabaseRestore();
+                       return;
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                 }
+
+                 const { token: refreshedToken, ...userData } = await response.json();
+                 if (userData.suspended) {
+                    await handleSuspension('You are not authorized to use this app.');
+                    return;
+                 }
+                 if (refreshedToken) {
+                    await AsyncStorage.setItem('authToken', refreshedToken);
+                 }
+                 await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(userData));
+                 setUser(userData);
+                 const storedSessionId = await AsyncStorage.getItem('sessionId');
+                 if (storedSessionId) setSessionId(storedSessionId);
+              } catch (error: unknown) {
+                 console.warn('Failed to restore auth with MongoDB token:', error);
+                 const cachedUser = await AsyncStorage.getItem(CACHED_USER_KEY);
+                 if (cachedUser) {
+                    try {
+                       setUser(JSON.parse(cachedUser) as User);
+                       const storedSessionId = await AsyncStorage.getItem('sessionId');
+                       if (storedSessionId) setSessionId(storedSessionId);
+                    } catch (cacheError) {
+                       console.warn('Failed to restore cached user:', cacheError);
+                    }
+                 }
+              } finally {
+                 if (timeoutId) clearTimeout(timeoutId);
+              }
+           } catch (error: unknown) {
+              console.warn('Failed to restore auth:', error);
+           } finally {
+              setIsLoading(false);
+           }
+        };
+
+        void restoreAuth();
+     }, [handleSuspension, trySupabaseRestore]);
+
+     useEffect(() => {
+        if (!user?._id) return;
+        AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user)).catch(error => {
+           console.warn('Failed to cache user data:', error);
+        });
+     }, [user]);
 
      const updateUser = useCallback((updatedUser: Partial<User>) => {
        setUser((prevUser) => prevUser ? { ...prevUser, ...updatedUser } : (updatedUser as User));

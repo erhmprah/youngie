@@ -33,8 +33,8 @@ export default function SignupScreen() {
   const { height: windowHeight } = useWindowDimensions();
   const isCompact = windowHeight < 800;
   const heroHeight = isCompact
-    ? Math.max(260, Math.min(320, windowHeight * 0.4))
-    : Math.min(470, Math.max(420, windowHeight * 0.5));
+    ? Math.max(260, Math.min(320, windowHeight * 0.4)) + 48
+    : Math.min(470, Math.max(420, windowHeight * 0.5)) + 48;
   const heroCopyBottom = isCompact ? 76 : 112;
 
   useEffect(() => {
@@ -517,8 +517,8 @@ const styles = StyleSheet.create({
   heroOverlay: { ...StyleSheet.absoluteFill, backgroundColor: '#18001F33' },
   heroTopShade: { ...StyleSheet.absoluteFill, bottom: undefined, height: 250 },
   heroFade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, gap: 8 },
-  brandRowCompact: { paddingHorizontal: 20, paddingTop: 8 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 28, gap: 8, transform: [{ translateY: 18 }] },
+  brandRowCompact: { paddingHorizontal: 20, paddingTop: 22, transform: [{ translateY: 14 }] },
   brandIcon: { width: 52, height: 52 },
   brandIconCompact: { width: 42, height: 42 },
   brandName: { color: '#FF009D', fontFamily: typography.families.bold, fontSize: 32, lineHeight: 38, letterSpacing: -1, textShadowColor: '#00000099', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
