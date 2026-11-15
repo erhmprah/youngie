@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { StyleSheet, View, SectionList, TouchableOpacity, ActivityIndicator, Alert, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -60,8 +60,11 @@ export default function NotificationsScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const colorScheme = useColorScheme();
-  const colors = getColors(colorScheme as 'light' | 'dark');
-  const styles = dynamicStyles(colors);
+  const colors = useMemo(() => getColors(colorScheme as 'light' | 'dark'), [colorScheme]);
+  const styles = useMemo(() => dynamicStyles(colors), [colors]);
+
+  const swipeActiveRef = useRef(false);
+  const pendingRefetchRef = useRef(false);
 
   useEffect(() => {
     if (user) {
@@ -97,6 +100,13 @@ export default function NotificationsScreen() {
 
 
   const fetchNotifications = async () => {
+    // Defer refetch while a swipe gesture is active on iOS: re-rendering the
+    // list (which toggles the unread dot / background color) mid-gesture
+    // desyncs the native gesture handler and crashes the notification screen.
+    if (swipeActiveRef.current) {
+      pendingRefetchRef.current = true;
+      return;
+    }
     setIsLoading(true);
     try {
       const response = await notificationAPI.getNotifications(1, 20);
@@ -111,7 +121,7 @@ export default function NotificationsScreen() {
   };
 
   const loadMoreNotifications = async () => {
-    if (loadingMore || !hasMore) return;
+    if (loadingMore || !hasMore || swipeActiveRef.current) return;
     setLoadingMore(true);
     try {
       const nextPage = page + 1;
@@ -120,6 +130,7 @@ export default function NotificationsScreen() {
       setHasMore(response.data.pagination?.hasNextPage || false);
       setPage(nextPage);
     } catch (error) {
+      console.error('Failed to load more notifications:', error);
     } finally {
       setLoadingMore(false);
     }
@@ -132,6 +143,7 @@ export default function NotificationsScreen() {
         notif._id === notificationId ? { ...notif, isRead: true } : notif
       ));
     } catch (error) {
+      showErrorAlert(error);
     }
   }, []);
 
@@ -300,7 +312,7 @@ export default function NotificationsScreen() {
       .filter(section => section.data.length > 0);
   }, [notifications]);
 
-  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, notificationId: string) => {
+  const renderRightActions = useCallback((progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, notificationId: string) => {
     const trans = dragX.interpolate({
       inputRange: [-80, 0],
       outputRange: [0, 80],
@@ -314,7 +326,7 @@ export default function NotificationsScreen() {
         </Animated.View>
       </TouchableOpacity>
     );
-  };
+  }, [handleMarkAsRead, colors, styles]);
 
   const handleNotificationPress = async (notification: Notification) => {
     // Mark as read when tapped
@@ -463,7 +475,16 @@ export default function NotificationsScreen() {
     return (
       <Swipeable
         renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item._id)}
-        onSwipeableOpen={() => handleMarkAsRead(item._id)}
+        onSwipeableOpen={() => {
+          swipeActiveRef.current = true;
+        }}
+        onSwipeableClose={() => {
+          swipeActiveRef.current = false;
+          if (pendingRefetchRef.current) {
+            pendingRefetchRef.current = false;
+            fetchNotifications();
+          }
+        }}
         friction={2}
         rightThreshold={40}
       >

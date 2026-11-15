@@ -512,18 +512,23 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const isNetworkError = !error.response;
-    
-    if (isNetworkError) {
-      console.warn('⚠️ Network Error: Could not reach backend.');
-      console.warn(`   Attempted URL: ${error.config?.baseURL}${error.config?.url}`);
-      console.warn('   Check your API_URL and ensure the server is running.');
-    } else {
-      console.log('⚠️ API Error:', error.response.status, error.response.data);
+    try {
+      const isNetworkError = !error.response;
+      
+      if (isNetworkError) {
+        console.warn('⚠️ Network Error: Could not reach backend.');
+        console.warn(`   Attempted URL: ${error.config?.baseURL}${error.config?.url}`);
+        console.warn('   Check your API_URL and ensure the server is running.');
+      } else {
+        console.log('⚠️ API Error:', error.response.status, error.response.data);
+      }
+      
+      const showAlert = !(error.config as any)?._skipGlobalErrorAlert;
+      showApiErrorAlert(error, isNetworkError, undefined, showAlert);
+    } catch (err) {
+      // Never let the error handler itself crash the app
+      console.error('Error handler threw:', err);
     }
-    
-    const showAlert = !(config as any)?._skipGlobalErrorAlert;
-    showApiErrorAlert(error, isNetworkError, undefined, showAlert);
     
     return Promise.reject(error);
   }
