@@ -295,13 +295,60 @@ export const zIndex = {
 };
 
 // Helper function to get colors based on theme
-export const getColors = (theme: 'light' | 'dark', colorScheme: string = 'default') => {
-  // For now, we only support the modern dark theme as default
-  // The colorScheme parameter is kept for backward compatibility
-  if (theme === 'light') {
-    return lightTheme;
+const namedAccentColors: Record<string, string> = {
+  blue: '#007AFF',
+  magenta: '#D72C67',
+  green: '#34C759',
+  orange: '#FF9500',
+  purple: '#AF52DE',
+  red: '#FF3B30',
+};
+
+function normalizeHexColor(color: string): string | undefined {
+  const hex = color.startsWith('#') ? color.slice(1) : color;
+  if (/^[\da-f]{3}$/i.test(hex)) {
+    return `#${hex.split('').map(char => char + char).join('').toUpperCase()}`;
   }
-  return darkTheme;
+  if (/^[\da-f]{6}$/i.test(hex)) {
+    return `#${hex.toUpperCase()}`;
+  }
+  return undefined;
+}
+
+function blendHexColor(color: string, target: number, amount: number): string {
+  const hex = color.slice(1);
+  const channels = [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16));
+  const blended = channels.map(channel =>
+    Math.round(channel + (target - channel) * amount)
+      .toString(16)
+      .padStart(2, '0')
+  );
+  return `#${blended.join('').toUpperCase()}`;
+}
+
+export const getColors = (theme: 'light' | 'dark', colorScheme: string = 'default') => {
+  const baseColors = theme === 'light' ? lightTheme : darkTheme;
+  const selectedColor = namedAccentColors[colorScheme.toLowerCase()] ?? normalizeHexColor(colorScheme);
+  if (!selectedColor) return baseColors;
+
+  const primaryDark = blendHexColor(selectedColor, 0, 0.2);
+  const primaryLight = blendHexColor(selectedColor, 255, 0.25);
+  const [red, green, blue] = [1, 3, 5].map(index =>
+    parseInt(selectedColor.slice(index, index + 2), 16)
+  );
+  const glassOpacity = theme === 'dark' ? 0.15 : 0.1;
+
+  return {
+    ...baseColors,
+    primary: selectedColor,
+    primaryLight,
+    primaryDark,
+    primaryGlass: `rgba(${red}, ${green}, ${blue}, ${glassOpacity})`,
+    inputBorderFocus: selectedColor,
+    gradientStart: selectedColor,
+    gradientMid: primaryDark,
+    gradientEnd: blendHexColor(selectedColor, 0, 0.4),
+  };
 };
 
 // Export default colors (dark theme) for backward compatibility

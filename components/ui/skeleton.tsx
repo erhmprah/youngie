@@ -7,7 +7,6 @@ import {
   StyleSheet, 
   ViewStyle
 } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors } from '@/constants/design-tokens';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -27,9 +26,7 @@ export function Skeleton({
   isLoading = true,
 }: SkeletonProps) {
   const [animatedValue] = useState(() => new Animated.Value(0));
-  const systemColorScheme = useColorScheme();
-  const theme: 'light' | 'dark' = systemColorScheme === 'dark' ? 'dark' : 'light';
-  const { colorScheme } = useTheme();
+  const { theme, colorScheme } = useTheme();
   const colors = getColors(theme, colorScheme);
 
   useEffect(() => {
@@ -146,9 +143,7 @@ interface SkeletonCardProps {
 }
 
 export function SkeletonCard({ style, isLoading = true }: SkeletonCardProps) {
-  const systemColorScheme = useColorScheme();
-  const theme: 'light' | 'dark' = systemColorScheme === 'dark' ? 'dark' : 'light';
-  const { colorScheme } = useTheme();
+  const { theme, colorScheme } = useTheme();
   const colors = getColors(theme, colorScheme);
 
   return (
@@ -304,9 +299,7 @@ export function SkeletonChatBubble({
   style,
   isLoading = true,
 }: SkeletonChatBubbleProps) {
-  const systemColorScheme = useColorScheme();
-  const theme: 'light' | 'dark' = systemColorScheme === 'dark' ? 'dark' : 'light';
-  const { colorScheme } = useTheme();
+  const { theme, colorScheme } = useTheme();
   const colors = getColors(theme, colorScheme);
 
   return (

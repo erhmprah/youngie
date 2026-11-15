@@ -12,7 +12,7 @@ import { cachedNotificationAPI } from '@/utils/cachedApi';
 import { serverText } from '@/utils/error-messages';
 import { getColors, spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
 import { verticalScale } from '@/utils/scale';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Swipeable } from 'react-native-gesture-handler';
 import { showErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
@@ -59,8 +59,8 @@ export default function NotificationsScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => getColors(colorScheme as 'light' | 'dark'), [colorScheme]);
+  const { theme, colorScheme } = useTheme();
+  const colors = useMemo(() => getColors(theme, colorScheme), [theme, colorScheme]);
   const styles = useMemo(() => dynamicStyles(colors), [colors]);
 
   const swipeActiveRef = useRef(false);

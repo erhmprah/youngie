@@ -5,7 +5,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { cachedNotificationAPI } from '@/utils/cachedApi';
 import { getColors, sizes } from '@/constants/design-tokens';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getSocket } from '@/utils/socket';
 import {
   getUnreadNotificationCount,
@@ -19,8 +19,8 @@ export function NotificationBell() {
   const { user } = useAuth();
   const router = useRouter();
   const [unreadCount, setUnreadCount] = useState(getUnreadNotificationCount());
-  const colorScheme = useColorScheme();
-  const colors = getColors(colorScheme as 'light' | 'dark');
+  const { theme, colorScheme } = useTheme();
+  const colors = getColors(theme, colorScheme);
   const styles = dynamicStyles(colors);
   const fetchInProgressRef = useRef(false);
   const pendingRefetchRef = useRef(false);
