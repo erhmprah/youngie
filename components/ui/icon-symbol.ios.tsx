@@ -6,8 +6,8 @@ import { StyleProp, ViewStyle } from 'react-native';
 // name must resolve to a real SF Symbol (or a safe fallback).
 const SF_SYMBOLS: Record<string, string> = {
   // Navigation & UI
-  'house.fill': 'house',
-  'magnifyingglass': 'magnifyingglass',
+  'house.fill': 'house.fill',
+  'magnifyingglass': 'magnifyingglass.circle.fill',
   'compass': 'compass',
   'settings': 'gear',
   'gear': 'gear',
