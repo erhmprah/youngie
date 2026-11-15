@@ -57,6 +57,7 @@ export default function UserProfileScreen() {
   const profileId = Array.isArray(id) ? id[0] : id;
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'self' | 'friend' | 'requested' | 'received' | 'none'>('none');
   const [stats, setStats] = useState({ posts: 0, friends: 0 });
   const loadingOpacity = useRef(new Animated.Value(1)).current;
@@ -74,6 +75,7 @@ export default function UserProfileScreen() {
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const postPositions = useRef<Map<string, { y: number; height: number }>>(new Map());
+  const profileRequestId = useRef(0);
   const isOwnProfile = currentUser?._id === profileId;
 
   const backgroundColor = useThemeColor('background');
@@ -87,6 +89,7 @@ export default function UserProfileScreen() {
   const cardBackgroundColor = useThemeColor('surface');
 
   const fetchProfile = useCallback(async () => {
+    const requestId = ++profileRequestId.current;
     if (!profileId) {
       setIsLoading(false);
       return;
@@ -106,15 +109,21 @@ export default function UserProfileScreen() {
 
     setIsLoading(true);
     setProfile(null);
+    setProfileError(null);
     setConnectionStatus('none');
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const userRes = await userAPI.getProfile(profileId);
+      const userRes = await Promise.race([
+        userAPI.getProfile(profileId),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Profile request timed out')), 15000);
+        }),
+      ]);
+      if (requestId !== profileRequestId.current) return;
       const targetData = userRes.data;
       if (!targetData) {
         setProfile(null);
-        Alert.alert('Profile Not Found', 'This profile is no longer available.', [
-          { text: 'OK', onPress: () => router.back() }
-        ]);
+        setProfileError('This profile is no longer available.');
         return;
       }
 
@@ -139,10 +148,12 @@ export default function UserProfileScreen() {
         }
       }
     } catch (error) {
+      if (requestId !== profileRequestId.current) return;
       console.error('Error fetching user profile:', error);
-      Alert.alert('Error', 'Failed to load profile');
+      setProfileError('Could not load this profile. Check your connection and try again.');
     } finally {
-      setIsLoading(false);
+      if (timeoutId) clearTimeout(timeoutId);
+      if (requestId === profileRequestId.current) setIsLoading(false);
     }
   }, [profileId, currentUser?._id, isAuthLoading, router]);
 
@@ -197,7 +208,10 @@ export default function UserProfileScreen() {
   };
 
   useEffect(() => {
-    fetchProfile();
+    void fetchProfile();
+    return () => {
+      profileRequestId.current += 1;
+    };
   }, [fetchProfile]);
 
   useEffect(() => {
@@ -419,7 +433,7 @@ export default function UserProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor }}>
-      <Stack.Screen options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
 
       {/* Loading View */}
       <Animated.View style={[
@@ -432,7 +446,7 @@ export default function UserProfileScreen() {
           right: 0, 
           bottom: 0, 
           zIndex: 1,
-          pointerEvents: isLoading ? 'auto' : 'none'
+          pointerEvents: 'none'
         }
       ]}>
         <ActivityIndicator size="large" color={primaryColor} />
@@ -453,6 +467,24 @@ export default function UserProfileScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {!isLoading && !profile && (
+            <View style={styles.profileLoadError}>
+              <ThemedText style={{ color: textColor, textAlign: 'center' }}>
+                {profileError || 'Unable to load this profile.'}
+              </ThemedText>
+              <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: primaryColor }]}
+                onPress={() => void fetchProfile()}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={styles.buttonText}>Try Again</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
+                <ThemedText style={{ color: textColor }}>Go Back</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
   
           {profile && (
             <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} onScroll={handleScroll} scrollEventThrottle={16}>
@@ -679,6 +711,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm
   },
   backButton: { padding: spacing.xs },
+  profileLoadError: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.xl },
   scrollContent: { flex: 1 },
   content: { flex: 1, paddingHorizontal: spacing.lg },
   profileHeader: { alignItems: 'center', marginTop: -60, paddingBottom: spacing.lg },
