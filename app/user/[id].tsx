@@ -84,9 +84,18 @@ export default function UserProfileScreen() {
   const cardBackgroundColor = useThemeColor('surface');
 
   const fetchProfile = useCallback(async () => {
-    if (!id || !currentUser?._id) return;
+    const profileId = Array.isArray(id) ? id[0] : id;
+    if (!profileId) {
+      setIsLoading(false);
+      return;
+    }
+    if (!currentUser?._id) {
+      // Wait for auth to load; avoid rendering a stuck loading state if unauthenticated.
+      setIsLoading(false);
+      return;
+    }
 
-    if (id === 'anonymous') {
+    if (profileId === 'anonymous') {
       setIsLoading(false);
       Alert.alert('Anonymous User', 'This profile is anonymous and cannot be viewed.', [
         { text: 'OK', onPress: () => router.back() }
@@ -97,14 +106,13 @@ export default function UserProfileScreen() {
     setIsLoading(true);
     try {
       const [userRes, myProfileRes] = await Promise.all([
-        userAPI.getProfile(id as string),
+        userAPI.getProfile(profileId),
         userAPI.getProfile(currentUser._id)
       ]);
 
       const targetData = userRes.data;
       if (!targetData) {
         setProfile(null);
-        setIsLoading(false);
         Alert.alert('Profile Not Found', 'This profile is no longer available.', [
           { text: 'OK', onPress: () => router.back() }
         ]);
@@ -145,14 +153,15 @@ export default function UserProfileScreen() {
   }, [id, currentUser?._id]);
 
   const fetchPosts = useCallback(async (page: number = 1) => {
-    if (!id) return;
+    const profileId = Array.isArray(id) ? id[0] : id;
+    if (!profileId) return;
     setLoadingPosts(true);
     try {
-      console.log('Fetching posts for user:', id, 'page:', page);
-      const response = await postAPI.getUserPosts(id as string, page, 20);
-      console.log('Posts response:', response.data);
-      const { posts: newPosts, hasMore, total } = response.data;
-      console.log('New posts:', newPosts);
+      const response = await postAPI.getUserPosts(profileId, page, 20);
+      const data = response.data || {};
+      const newPosts = Array.isArray(data.posts) ? data.posts : Array.isArray(data) ? data : [];
+      const hasMore = typeof data.hasMore === 'boolean' ? data.hasMore : false;
+      const total = data.total;
       if (page === 1) {
         setPosts(newPosts);
         // Count comes from the posts collection (soft-delete aware) so the stat
@@ -173,11 +182,12 @@ export default function UserProfileScreen() {
   }, [id]);
 
   const fetchAlbum = useCallback(async () => {
-    if (!id) return;
+    const profileId = Array.isArray(id) ? id[0] : id;
+    if (!profileId) return;
     setLoadingAlbum(true);
     try {
-      const response = await userAPI.getAlbum(id as string, 1, 30);
-      setAlbum(response.data.data || []);
+      const response = await userAPI.getAlbum(profileId, 1, 30);
+      setAlbum(response.data?.data || []);
     } catch (error) {
       console.error('Error fetching album:', error);
       setAlbum([]);
@@ -520,6 +530,7 @@ export default function UserProfileScreen() {
                         <ThemedText style={{ color: textColor }}>Message</ThemedText>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={() => handleUnfriend()} activeOpacity={0.7}>
+                        <IconSymbol name="person.remove" size={18} color={errorColor} />
                         <ThemedText style={{ color: errorColor }}>Unfriend</ThemedText>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.blockButton, { borderColor: errorColor }]} onPress={handleBlock} activeOpacity={0.7}>
