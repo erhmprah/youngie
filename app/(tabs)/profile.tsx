@@ -803,7 +803,15 @@ export default function ProfileScreen() {
             return (
                 <TouchableOpacity 
                     style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}
-                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${item._id}`); }}
+                    onPress={() => {
+                        const friendId = item?._id;
+                        if (!friendId) {
+                            console.warn('Cannot open friend profile without a user ID');
+                            return;
+                        }
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        router.push({ pathname: '/user/[id]', params: { id: String(friendId) } });
+                    }}
                 >
                     {item.profilePhoto ? (
                         <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />

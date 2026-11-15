@@ -513,8 +513,9 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                         style={styles.authorRow}
                         disabled={isAnonPost}
                         onPress={() => {
-                            if (!isAnonPost && post.author._id !== currentUserId) {
-                                router.push(`/user/${post.author._id}`);
+                            const authorId = post.author?._id;
+                            if (!isAnonPost && authorId && authorId !== currentUserId) {
+                                router.push({ pathname: '/user/[id]', params: { id: String(authorId) } });
                             }
                         }}
                     >
