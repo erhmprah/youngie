@@ -90,8 +90,7 @@ export default function UserProfileScreen() {
       return;
     }
     if (!currentUser?._id) {
-      // Wait for auth to load; avoid rendering a stuck loading state if unauthenticated.
-      setIsLoading(false);
+      // Wait for auth context to hydrate before resolving profile state.
       return;
     }
 
@@ -264,10 +263,11 @@ export default function UserProfileScreen() {
   const handleUnfriend = async () => {
     if (!currentUser?._id || !profile) return;
 
-    Alert.alert(
-      'Unfriend User',
-      `Are you sure you want to unfriend ${profile.username}?`,
-      [
+    CustomAlert.show({
+      type: 'confirm',
+      title: 'Unfriend',
+      message: `Are you sure you want to remove ${profile.username} as a friend?`,
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Unfriend',
@@ -282,8 +282,9 @@ export default function UserProfileScreen() {
             }
           }
         }
-      ]
-    );
+      ],
+      dismissable: true
+    });
   };
 
   const handleMessage = async () => {
