@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { StyleSheet, View, SectionList, TouchableOpacity, ActivityIndicator, Alert, Animated } from 'react-native';
+import { AppState, StyleSheet, View, SectionList, TouchableOpacity, ActivityIndicator, Alert, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,27 +74,14 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     if (!user) return;
-    let appState: any;
-    let subscription: any;
-
-    import('react-native').then((m) => {
-      const { AppState } = m;
-      appState = AppState;
-      if (!appState?.addEventListener) return;
-
-      subscription = appState.addEventListener('change', (nextState: string) => {
-        if (nextState === 'active') {
-          fetchNotifications();
-        }
-      });
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchNotifications();
+      }
     });
 
     return () => {
-      try {
-        subscription?.remove?.();
-      } catch {
-        // ignore
-      }
+      subscription.remove();
     };
   }, [user]);
 
