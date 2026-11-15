@@ -3,30 +3,19 @@ import axios, { AxiosInstance } from 'axios';
 import { router } from 'expo-router';
 import { CustomAlert } from './alert';
 import { classifyText, resolveCopy, serverText, toUserError } from './error-messages';
-import { Platform } from 'react-native';
 
-// Use machine IP for iOS simulator or physical devices.
-// For Android emulator, '10.0.2.2' maps to the host machine's localhost.
-// For iOS simulator, 'localhost' (or your machine's IP) often works.
-// For physical devices, you MUST use your machine's actual local IP address (e.g., '192.168.1.X').
-// Ensure your backend server is running and accessible on the specified port.
-// If you encounter a 'Network Error', verify this URL is correct for your device/emulator and network.
+export const API_URL = process.env.EXPO_PUBLIC_API_URL;
+if (!API_URL) {
+  throw new Error('EXPO_PUBLIC_API_URL must be set to use the backend API.');
+}
 
-// Pick the right host for the current platform when no explicit override is set.
-// Android emulator needs 10.0.2.2; iOS simulator and web can use localhost.
-const DEFAULT_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+export const SOCKET_URL = API_URL.replace(/\/api\/?$/, '');
 
 // Load Balancing Configuration
 // Support multiple server endpoints for failover and load distribution
 const SERVER_ENDPOINTS = process.env.EXPO_PUBLIC_SERVER_ENDPOINTS
-  ? process.env.EXPO_PUBLIC_SERVER_ENDPOINTS.split(',').map(s => s.trim())
-  : [`http://${DEFAULT_HOST}:5001`];
-
-// Primary API URL (main server)
-const PRIMARY_API_URL = process.env.EXPO_PUBLIC_API_URL || `http://${DEFAULT_HOST}:5001/api`;
-
-// For backwards compatibility, use single URL
-const API_URL = PRIMARY_API_URL;
+  ? process.env.EXPO_PUBLIC_SERVER_ENDPOINTS.split(',').map(s => s.trim()).filter(Boolean)
+  : [SOCKET_URL];
 
 console.log('🌐 API Configured:', API_URL);
 const BASE_URL = API_URL.replace('/api', '');
@@ -871,11 +860,6 @@ export const getImageUrl = (imagePath?: string): string | undefined => {
   }
   return imagePath;
 };
-
-// Get base URL (without /api) for Socket.IO
-export const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL
-  ? process.env.EXPO_PUBLIC_API_URL.replace(/\/api\/?$/, '')
-  : (SERVER_ENDPOINTS[0] || `http://${DEFAULT_HOST}:5001`); // Uses load balancer for WebSocket connections
 
 export { BASE_URL };
 

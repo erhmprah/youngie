@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { API_URL } from '@/utils/api';
 
 // Try to import expo-device (optional - may not be installed)
 let Device: any = null;
@@ -69,8 +70,6 @@ if (EXPO_PROJECT_ID) {
 // API methods will be imported from api.ts after we add them
 // For now, we'll define the API call inline to avoid circular dependencies
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5001/api';
 
 // Configure notification handling behavior
 Notifications.setNotificationHandler({
