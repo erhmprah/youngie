@@ -179,10 +179,34 @@ export default function AuthCallback() {
 
     // Listen for the magic-link URL being opened while the app is already running
     // (warm start). On cold start the URL is delivered via Linking.getInitialURL().
+    const processCallbackUrl = async (callbackUrl: string) => {
+      try {
+        let url = callbackUrl;
+        if (url.includes('expo-development-client')) {
+          const encodedUrl = new URL(url).searchParams.get('url');
+          if (encodedUrl) url = decodeURIComponent(encodedUrl);
+        }
+
+        const parsedUrl = new URL(url);
+        const hashParams = new URLSearchParams(parsedUrl.hash.replace(/^#/, ''));
+        const hasAuthData = ['code', 'access_token'].some(
+          key => parsedUrl.searchParams.has(key) || hashParams.has(key)
+        );
+        if (!hasAuthData) return false;
+
+        const session = await handleOAuthCallback(url);
+        if (!session || !isMounted) return false;
+        setStatus('success');
+        await navigateToNextScreen(session);
+        return true;
+      } catch (error: any) {
+        console.error('Could not process magic-link callback:', error?.message || error);
+        return false;
+      }
+    };
+
     const onDeepLink = (event: { url: string }) => {
-      console.log('Deep link received while running:', event.url);
-      // Supabase's detectSessionInUrl will pick up the params from the URL and
-      // establish the session automatically; nothing else to do here.
+      void processCallbackUrl(event.url);
     };
     const linkingSubscription = Linking.addEventListener('url', onDeepLink);
 
@@ -207,6 +231,7 @@ export default function AuthCallback() {
           console.log('getUser timed out or failed, proceeding without user data');
         }
         
+        user = user || session?.user;
         if (!user?.email) {
           await AsyncStorage.setItem('pendingProfileCompletion', 'true');
           router.replace('/complete-profile');
@@ -266,6 +291,9 @@ export default function AuthCallback() {
       try {
         console.log('Processing auth callback...');
 
+        let initialUrl = await Linking.getInitialURL();
+        if (initialUrl && await processCallbackUrl(initialUrl)) return;
+
         // First, check if we already have a session
         const { data: { session } } = await supabase.auth.getSession();
         if (session && isMounted) {
@@ -291,10 +319,6 @@ export default function AuthCallback() {
           }
         }
 
-        // Get the initial URL from Linking
-        let initialUrl = await Linking.getInitialURL();
-        console.log('Initial URL from Linking:', initialUrl);
-        
         // Log all available URL parameters for debugging
         if (initialUrl) {
           try {
@@ -306,9 +330,6 @@ export default function AuthCallback() {
             }
             
             const urlObj = new URL(urlToParse);
-            console.log('URL params:', Object.fromEntries(urlObj.searchParams));
-            console.log('URL hash:', initialUrl.split('#')[1] || 'none');
-            
             // Check for Supabase token in URL (magic link flow)
             const token = urlObj.searchParams.get('token') || 
                           urlObj.searchParams.get('access_token') || 

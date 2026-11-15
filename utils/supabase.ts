@@ -163,105 +163,37 @@ export const getCurrentUser = async () => {
 // Function to handle the OAuth callback URL and exchange code for session
 export const handleOAuthCallback = async (url: string) => {
   try {
-    console.log('Handling OAuth callback:', url);
-    
-    // Handle different URL formats
-    let urlToParse = url;
-    
-    // If the URL is a custom scheme URL (youngie://...), extract the params
-    if (url.startsWith('youngie://')) {
-      // The URL might have the auth code in the query string or as the full path
-      // For youngie://auth/callback?code=xxx, we need to parse it
-      const urlObj = new URL(url);
-      const code = urlObj.searchParams.get('code');
-      const errorDescription = urlObj.searchParams.get('error_description');
-      const accessToken = urlObj.searchParams.get('access_token');
-      const refreshToken = urlObj.searchParams.get('refresh_token');
-      
-      if (errorDescription) {
-        throw new Error(errorDescription);
-      }
-      
-      if (code) {
-        console.log('Found code in URL params');
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          console.error('Exchange code error:', error);
-          throw error;
-        }
-        console.log('Session established via code exchange');
-        return data.session;
-      }
-      
-      if (accessToken && refreshToken) {
-        console.log('Found tokens in URL params');
-        const { data, error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-        if (error) throw error;
-        return data.session;
-      }
-      
-      // For hash-based auth (some OAuth flows use # instead of ?)
-      const hashParams = new URLSearchParams(urlObj.hash.substring(1));
-      const hashAccessToken = hashParams.get('access_token');
-      const hashRefreshToken = hashParams.get('refresh_token');
-      
-      if (hashAccessToken && hashRefreshToken) {
-        console.log('Found tokens in URL hash');
-        const { data, error } = await supabase.auth.setSession({
-          access_token: hashAccessToken,
-          refresh_token: hashRefreshToken,
-        });
-        if (error) throw error;
-        return data.session;
-      }
-      
-      throw new Error('No code or tokens found in youngie:// callback URL');
-    }
-    
-    // Parse the URL and extract the code parameter (for https URLs)
     const urlObj = new URL(url);
-    const code = urlObj.searchParams.get('code');
-    const errorDescription = urlObj.searchParams.get('error_description');
-    
+    const hashParams = new URLSearchParams(urlObj.hash.replace(/^#/, ''));
+    const params = urlObj.searchParams;
+    const code = params.get('code') || hashParams.get('code');
+    const errorDescription =
+      params.get('error_description') || hashParams.get('error_description');
+
     if (errorDescription) {
       throw new Error(errorDescription);
     }
-    
-    if (!code) {
-      // Check if we have access_token and refresh_token in hash (another auth flow)
-      const hashParams = new URLSearchParams(urlObj.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
-      
-      if (accessToken && refreshToken) {
-        // Set the session from hash parameters
-        const { data, error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-        
-        if (error) throw error;
-        return data.session;
-      }
-      
-      throw new Error('No code or tokens found in callback URL');
+
+    if (code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) throw error;
+      return data.session;
     }
-    
-    // Exchange the code for a session
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-    
-    if (error) {
-      console.error('Exchange code error:', error);
-      throw error;
+
+    const accessToken = params.get('access_token') || hashParams.get('access_token');
+    const refreshToken = params.get('refresh_token') || hashParams.get('refresh_token');
+    if (accessToken && refreshToken) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) throw error;
+      return data.session;
     }
-    
-    console.log('Session established successfully');
-    return data.session;
+
+    throw new Error('No authorization code or token pair found in callback URL');
   } catch (error: any) {
-    console.error('OAuth Callback Error:', error);
+    console.error('OAuth callback could not establish a session:', error?.message || error);
     throw error;
   }
 };
