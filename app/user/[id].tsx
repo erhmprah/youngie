@@ -28,6 +28,8 @@ interface UserProfile {
   educationLevel?: string;
   interests?: string[];
   friends?: any[];
+  friendRequests?: any[];
+  incomingRequests?: any[];
   posts?: any[];
   isPrivate?: boolean;
 }
@@ -126,23 +128,14 @@ export default function UserProfileScreen() {
       if (targetId === currentUser._id) {
         setConnectionStatus('self');
       } else {
-        setIsLoading(false);
-        try {
-          const myProfileRes = await userAPI.getProfile(currentUser._id);
-          const myData = myProfileRes.data || {};
-          const myFriends = Array.isArray(myData.friends) ? myData.friends : [];
-          const myFriendRequests = Array.isArray(myData.friendRequests) ? myData.friendRequests : [];
-          const myIncomingRequests = Array.isArray(myData.incomingRequests) ? myData.incomingRequests : [];
-
-          if (myFriends.some((friend: any) => (typeof friend === 'string' ? friend : friend._id) === targetId)) {
-            setConnectionStatus('friend');
-          } else if (myFriendRequests.some((requestId: any) => (typeof requestId === 'string' ? requestId : requestId._id) === targetId)) {
-            setConnectionStatus('requested');
-          } else if (myIncomingRequests.some((requestId: any) => (typeof requestId === 'string' ? requestId : requestId._id) === targetId)) {
-            setConnectionStatus('received');
-          }
-        } catch (error) {
-          console.warn('Could not load connection status for user profile:', error);
+        const includesUser = (users: any[] | undefined) =>
+          users?.some(user => (typeof user === 'string' ? user : user?._id) === currentUser._id) ?? false;
+        if (includesUser(targetData.friends)) {
+          setConnectionStatus('friend');
+        } else if (includesUser(targetData.incomingRequests)) {
+          setConnectionStatus('requested');
+        } else if (includesUser(targetData.friendRequests)) {
+          setConnectionStatus('received');
         }
       }
     } catch (error) {
