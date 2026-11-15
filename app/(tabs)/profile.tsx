@@ -801,29 +801,33 @@ export default function ProfileScreen() {
             }
             // Handle friends list
             return (
-                <TouchableOpacity 
+                <View
                     style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}
-                    onPress={() => {
-                        const friendId = item?._id;
-                        if (!friendId) {
-                            console.warn('Cannot open friend profile without a user ID');
-                            return;
-                        }
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        router.push({ pathname: '/user/[id]', params: { id: String(friendId) } });
-                    }}
                 >
-                    {item.profilePhoto ? (
-                        <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
-                    ) : (
-                        <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
-                            <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
+                    <TouchableOpacity
+                        style={styles.friendTouchable}
+                        onPress={() => {
+                            const friendId = item?._id;
+                            if (!friendId) {
+                                console.warn('Cannot open friend profile without a user ID');
+                                return;
+                            }
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            router.navigate({ pathname: '/user/[id]', params: { id: String(friendId) } });
+                        }}
+                    >
+                        {item.profilePhoto ? (
+                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
+                        ) : (
+                            <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
+                                <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
+                            </View>
+                        )}
+                        <View style={styles.friendInfo}>
+                            <ThemedText style={{ fontFamily: typography.families.bold, fontSize: typography.sizes.body1 }}>{item.username}</ThemedText>
+                            <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>{item.bio || 'No bio'}</ThemedText>
                         </View>
-                    )}
-                    <View style={styles.friendInfo}>
-                        <ThemedText style={{ fontFamily: typography.families.bold, fontSize: typography.sizes.body1 }}>{item.username}</ThemedText>
-                        <ThemedText style={{ color: lightTextColor, fontSize: typography.sizes.caption }}>{item.bio || 'No bio'}</ThemedText>
-                    </View>
+                    </TouchableOpacity>
                     <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                         <TouchableOpacity style={[styles.messageBtn, { backgroundColor: primaryColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleMessage(item._id); }}>
                             <IconSymbol name="message.fill" size={20} color={white} />
@@ -835,7 +839,7 @@ export default function ProfileScreen() {
                             <IconSymbol name="person.slash" size={18} color={white} />
                         </TouchableOpacity>
                     </View>
-                </TouchableOpacity>
+                </View>
             );
         } else {
             return (
