@@ -3,6 +3,7 @@ import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import 'react-native-reanimated';
 
@@ -80,6 +81,8 @@ function RootLayoutNav() {
   const [hasSupabaseSession, setHasSupabaseSession] = useState(false);
   const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
   const [fontsLoaded] = useFonts({
+    ...Feather.font,
+    ...Ionicons.font,
     'Inter-Regular': Inter_400Regular,
     'Inter-Medium': Inter_500Medium,
     'Inter-SemiBold': Inter_600SemiBold,

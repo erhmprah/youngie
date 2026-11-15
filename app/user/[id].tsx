@@ -119,15 +119,18 @@ export default function UserProfileScreen() {
 
       // Determine connection status
       const targetId = targetData._id;
-      const myData = myProfileRes.data;
+      const myData = myProfileRes?.data || {};
+      const myFriends = Array.isArray(myData.friends) ? myData.friends : [];
+      const myFriendRequests = Array.isArray(myData.friendRequests) ? myData.friendRequests : [];
+      const myIncomingRequests = Array.isArray(myData.incomingRequests) ? myData.incomingRequests : [];
 
       if (targetId === currentUser._id) {
         setConnectionStatus('self');
-      } else if (myData.friends.some((f: any) => (typeof f === 'string' ? f : f._id) === targetId)) {
+      } else if (myFriends.some((f: any) => (typeof f === 'string' ? f : f._id) === targetId)) {
         setConnectionStatus('friend');
-      } else if (myData.friendRequests.some((id: any) => (typeof id === 'string' ? id : id._id) === targetId)) {
+      } else if (myFriendRequests.some((id: any) => (typeof id === 'string' ? id : id._id) === targetId)) {
         setConnectionStatus('requested');
-      } else if (myData.incomingRequests?.some((id: any) => (typeof id === 'string' ? id : id._id) === targetId)) {
+      } else if (myIncomingRequests.some((id: any) => (typeof id === 'string' ? id : id._id) === targetId)) {
         setConnectionStatus('received');
       } else {
         setConnectionStatus('none');
