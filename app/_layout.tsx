@@ -57,20 +57,16 @@ function getNumber(value: unknown): number | undefined {
 
 // Conditionally import expo-notifications
 let Notifications: any = null;
+let useLastNotificationResponse: (() => any) | null = null;
 try {
-  Notifications = require('expo-notifications');
+  const ExpoNotifications = require('expo-notifications');
+  Notifications = ExpoNotifications;
+  useLastNotificationResponse =
+    typeof ExpoNotifications.useLastNotificationResponse === 'function'
+      ? ExpoNotifications.useLastNotificationResponse
+      : null;
 } catch (e) {
   console.warn('expo-notifications not available, notifications will be disabled');
-}
-
-// Cold-start handler: when the app is launched (from a killed state) by
-// tapping a notification, the addNotificationResponseReceivedListener may
-// miss the event. useLastNotificationResponse captures it reliably.
-let useLastNotificationResponse: any = null;
-try {
-  useLastNotificationResponse = require('expo-notifications').useLastNotificationResponse;
-} catch (e) {
-  // not available
 }
 
 function RootLayoutNav() {
@@ -240,7 +236,8 @@ function RootLayoutNav() {
   // notification, route the user to the right screen using the last
   // response captured by expo-notifications. Only act once, after auth is
   // resolved, so we don't navigate before the navigator exists.
-  const lastNotificationResponse = useLastNotificationResponse ? useLastNotificationResponse() : null;
+  const noopLastNotificationResponse = () => null;
+  const lastNotificationResponse = (useLastNotificationResponse || noopLastNotificationResponse)();
   const coldStartHandledRef = useRef(false);
   useEffect(() => {
     if (!lastNotificationResponse || coldStartHandledRef.current) return;

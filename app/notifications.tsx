@@ -438,6 +438,10 @@ export default function NotificationsScreen() {
   };
 
   const renderNotification = ({ item }: { item: Notification }) => {
+    const sender = item.sender || { _id: 'unknown', username: 'Someone' };
+    const senders = Array.isArray(item.senders)
+      ? item.senders.filter((s): s is NotificationSender => !!s && !!s._id)
+      : [];
     const isPendingFriendRequest = item.type === 'follow' && item.message === 'sent you a friend request' && !item.isRead;
     const isPendingCommunityRequest = item.type === 'community_join_request' && !item.isRead;
     const isPendingChatInvitation = item.type === 'chat_invitation' && !item.isRead;
@@ -446,17 +450,17 @@ export default function NotificationsScreen() {
 
     const count = item.count || 1;
     const isAggregated = count > 1;
-    const displaySenders = (item.senders && item.senders.length ? item.senders : [item.sender]).slice(0, 3);
+    const displaySenders = (senders.length ? senders : [sender]).slice(0, 3);
     const extraSenders = Math.max(count - displaySenders.length, 0);
-    const primaryName = (item.senders && item.senders[0]?.username) || item.sender.username;
+    const primaryName = senders[0]?.username || sender.username || 'Someone';
     const others = count - 1;
-    const isAnonymousSender = item.sender._id === 'anonymous';
+    const isAnonymousSender = sender._id === 'anonymous';
 
-    const renderAvatar = (sender: NotificationSender, index: number) => {
-      const source = sender.profilePhoto || sender.avatar;
+    const renderAvatar = (avatarSender: NotificationSender, index: number) => {
+      const source = avatarSender.profilePhoto || avatarSender.avatar;
       return (
         <View
-          key={sender._id + index}
+          key={(avatarSender._id || 'sender') + index}
           style={[
             styles.avatarContainer,
             { backgroundColor: colors.surface },
@@ -494,10 +498,10 @@ export default function NotificationsScreen() {
           activeOpacity={0.7}
         >
           <TouchableOpacity
-            disabled={isAnonymousSender}
+            disabled={isAnonymousSender || !sender._id || sender._id === 'unknown'}
             onPress={() => {
-              if (!isAnonymousSender) {
-                router.push(`/user/${item.sender._id}`);
+              if (!isAnonymousSender && sender._id && sender._id !== 'unknown') {
+                router.push(`/user/${sender._id}`);
               }
             }}
           >
@@ -526,13 +530,13 @@ export default function NotificationsScreen() {
               <View style={styles.actionButtons}>
                 <TouchableOpacity
                   style={styles.acceptButton}
-                  onPress={() => handleAcceptRequest(item.sender._id, item._id)}
+                  onPress={() => sender._id && sender._id !== 'anonymous' && handleAcceptRequest(sender._id, item._id)}
                 >
                   <ThemedText style={styles.buttonText}>Accept</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.ignoreButton}
-                  onPress={() => handleIgnoreRequest(item.sender._id, item._id)}
+                  onPress={() => sender._id && sender._id !== 'anonymous' && handleIgnoreRequest(sender._id, item._id)}
                 >
                   <ThemedText style={styles.buttonText}>Ignore</ThemedText>
                 </TouchableOpacity>
@@ -543,13 +547,13 @@ export default function NotificationsScreen() {
               <View style={styles.actionButtons}>
                 <TouchableOpacity
                   style={styles.acceptButton}
-                  onPress={() => handleApproveCommunity(item.relatedCommunity!, item.sender._id, item._id)}
+                  onPress={() => sender._id && handleApproveCommunity(item.relatedCommunity!, sender._id, item._id)}
                 >
                   <ThemedText style={styles.buttonText}>Approve</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.ignoreButton}
-                  onPress={() => handleRejectCommunity(item.relatedCommunity!, item.sender._id, item._id)}
+                  onPress={() => sender._id && handleRejectCommunity(item.relatedCommunity!, sender._id, item._id)}
                 >
                   <ThemedText style={styles.buttonText}>Reject</ThemedText>
                 </TouchableOpacity>

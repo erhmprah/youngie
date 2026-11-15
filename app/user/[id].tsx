@@ -51,7 +51,8 @@ interface AlbumPhoto {
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isLoading: isAuthLoading } = useAuth();
+  const profileId = Array.isArray(id) ? id[0] : id;
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'self' | 'friend' | 'requested' | 'received' | 'none'>('none');
@@ -71,7 +72,7 @@ export default function UserProfileScreen() {
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const postPositions = useRef<Map<string, { y: number; height: number }>>(new Map());
-  const isOwnProfile = currentUser?._id === id;
+  const isOwnProfile = currentUser?._id === profileId;
 
   const backgroundColor = useThemeColor('background');
   const primaryColor = useThemeColor('primary');
@@ -84,13 +85,12 @@ export default function UserProfileScreen() {
   const cardBackgroundColor = useThemeColor('surface');
 
   const fetchProfile = useCallback(async () => {
-    const profileId = Array.isArray(id) ? id[0] : id;
     if (!profileId) {
       setIsLoading(false);
       return;
     }
     if (!currentUser?._id) {
-      // Wait for auth context to hydrate before resolving profile state.
+      if (!isAuthLoading) setIsLoading(false);
       return;
     }
 
@@ -103,12 +103,10 @@ export default function UserProfileScreen() {
     }
 
     setIsLoading(true);
+    setProfile(null);
+    setConnectionStatus('none');
     try {
-      const [userRes, myProfileRes] = await Promise.all([
-        userAPI.getProfile(profileId),
-        userAPI.getProfile(currentUser._id)
-      ]);
-
+      const userRes = await userAPI.getProfile(profileId);
       const targetData = userRes.data;
       if (!targetData) {
         setProfile(null);
@@ -124,32 +122,36 @@ export default function UserProfileScreen() {
         friends: targetData.friends?.length || 0
       });
 
-      // Determine connection status
       const targetId = targetData._id;
-      const myData = myProfileRes?.data || {};
-      const myFriends = Array.isArray(myData.friends) ? myData.friends : [];
-      const myFriendRequests = Array.isArray(myData.friendRequests) ? myData.friendRequests : [];
-      const myIncomingRequests = Array.isArray(myData.incomingRequests) ? myData.incomingRequests : [];
-
       if (targetId === currentUser._id) {
         setConnectionStatus('self');
-      } else if (myFriends.some((f: any) => (typeof f === 'string' ? f : f._id) === targetId)) {
-        setConnectionStatus('friend');
-      } else if (myFriendRequests.some((id: any) => (typeof id === 'string' ? id : id._id) === targetId)) {
-        setConnectionStatus('requested');
-      } else if (myIncomingRequests.some((id: any) => (typeof id === 'string' ? id : id._id) === targetId)) {
-        setConnectionStatus('received');
       } else {
-        setConnectionStatus('none');
-      }
+        setIsLoading(false);
+        try {
+          const myProfileRes = await userAPI.getProfile(currentUser._id);
+          const myData = myProfileRes.data || {};
+          const myFriends = Array.isArray(myData.friends) ? myData.friends : [];
+          const myFriendRequests = Array.isArray(myData.friendRequests) ? myData.friendRequests : [];
+          const myIncomingRequests = Array.isArray(myData.incomingRequests) ? myData.incomingRequests : [];
 
+          if (myFriends.some((friend: any) => (typeof friend === 'string' ? friend : friend._id) === targetId)) {
+            setConnectionStatus('friend');
+          } else if (myFriendRequests.some((requestId: any) => (typeof requestId === 'string' ? requestId : requestId._id) === targetId)) {
+            setConnectionStatus('requested');
+          } else if (myIncomingRequests.some((requestId: any) => (typeof requestId === 'string' ? requestId : requestId._id) === targetId)) {
+            setConnectionStatus('received');
+          }
+        } catch (error) {
+          console.warn('Could not load connection status for user profile:', error);
+        }
+      }
     } catch (error) {
       console.error('Error fetching user profile:', error);
       Alert.alert('Error', 'Failed to load profile');
     } finally {
       setIsLoading(false);
     }
-  }, [id, currentUser?._id]);
+  }, [profileId, currentUser?._id, isAuthLoading, router]);
 
   const fetchPosts = useCallback(async (page: number = 1) => {
     const profileId = Array.isArray(id) ? id[0] : id;
