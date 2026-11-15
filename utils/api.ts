@@ -533,7 +533,8 @@ api.interceptors.response.use(
       console.log('⚠️ API Error:', error.response.status, error.response.data);
     }
     
-    showApiErrorAlert(error, isNetworkError);
+    const showAlert = !(config as any)?._skipGlobalErrorAlert;
+    showApiErrorAlert(error, isNetworkError, undefined, showAlert);
     
     return Promise.reject(error);
   }
@@ -584,7 +585,7 @@ export const authAPI = {
 export const appAPI = {
   // Get the current published app version for a platform (no auth required)
   getCurrentVersion: (platform: 'ios' | 'android') =>
-    api.get(`/app-version/current`, { params: { platform } }),
+    api.get(`/app-version/current`, { params: { platform }, _skipGlobalErrorAlert: true } as any),
 };
 
 export const userAPI = {
@@ -873,8 +874,8 @@ export const getImageUrl = (imagePath?: string): string | undefined => {
 
 // Get base URL (without /api) for Socket.IO
 export const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL
-  ? process.env.EXPO_PUBLIC_API_URL.replace('/api', '')
-  : `http://${DEFAULT_HOST}:5001`; // Uses load balancer for WebSocket connections
+  ? process.env.EXPO_PUBLIC_API_URL.replace(/\/api\/?$/, '')
+  : (SERVER_ENDPOINTS[0] || `http://${DEFAULT_HOST}:5001`); // Uses load balancer for WebSocket connections
 
 export { BASE_URL };
 

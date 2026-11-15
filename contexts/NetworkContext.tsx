@@ -23,10 +23,13 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isChecking.current = true;
     try {
       const state = await Network.getNetworkStateAsync();
-      const online = state.isConnected ?? state.isInternetReachable ?? false;
+      const connected = state.isConnected ?? false;
+      const reachable = state.isInternetReachable;
+      // Treat null/unknown reachability as online when connected to avoid false "no connection" on launch.
+      const online = connected && reachable !== false;
       setIsOnline(online);
       setNetworkType(state.type ?? null);
-      setIsInternetReachable(state.isInternetReachable ?? null);
+      setIsInternetReachable(reachable ?? null);
       setAppOfflineState(!online);
     } catch (error) {
       console.warn('Network state check failed:', error);
@@ -44,10 +47,13 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       if (Network.addNetworkStateListener) {
         subscription = Network.addNetworkStateListener((state) => {
-          const online = state.isConnected ?? state.isInternetReachable ?? false;
+          const connected = state.isConnected ?? false;
+          const reachable = state.isInternetReachable;
+          // Treat null/unknown reachability as online when connected to avoid false "no connection" on launch.
+          const online = connected && reachable !== false;
           setIsOnline(online);
           setNetworkType(state.type ?? null);
-          setIsInternetReachable(state.isInternetReachable ?? null);
+          setIsInternetReachable(reachable ?? null);
           setAppOfflineState(!online);
         });
       }
