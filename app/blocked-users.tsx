@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, FlatList, TouchableOpacity, Image, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getImageUrl, BASE_URL } from '@/utils/api';
+import { BASE_URL } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { CustomAlert } from '@/utils/alert';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface BlockedUser {
     _id: string;
@@ -63,9 +64,12 @@ export default function BlockedUsersScreen() {
     const renderItem = ({ item }: { item: BlockedUser }) => (
         <View style={[styles.userItem, { backgroundColor: surfaceColor }]}>
             <View style={styles.userInfo}>
-                <Image 
-                    source={{ uri: getImageUrl(item.profilePhoto || item.avatar) }} 
+                <OptimizedStorageImage
+                    imagePath={item.profilePhoto || item.avatar}
+                    transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }}
                     style={styles.avatar} 
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
                 />
                 <ThemedText style={styles.username}>{item.username}</ThemedText>
             </View>

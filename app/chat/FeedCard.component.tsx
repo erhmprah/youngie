@@ -11,13 +11,15 @@ import { borderRadius, shadows, spacing, typography } from '@/constants/design-t
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { communityAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import { getRelativeTime } from '@/utils/helpers';
 import { getSocket } from '@/utils/socket';
+import { getVideoSource } from '@/utils/video-source';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer, type VideoTrack } from 'expo-video';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, FlatList, Image, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
+import { Alert, Animated, Dimensions, FlatList, StyleSheet, TouchableOpacity, View, ViewToken } from 'react-native';
 
 interface FeedPost {
     _id: string;
@@ -38,6 +40,9 @@ interface FeedPost {
     createdAt: string;
     updatedAt: string;
     likes: { _id: string; username: string; profilePhoto?: string }[];
+    likesCount?: number;
+    commentsCount?: number;
+    isLiked?: boolean;
     isFavorited?: boolean;
     comments: any[];
     tags?: { _id: string; username: string }[];
@@ -57,6 +62,8 @@ interface FeedCardProps {
     onComment?: (post: FeedPost) => void;
     onFavorite?: (postId: string) => void;
     shouldPlay?: boolean;
+    shouldLoadMedia?: boolean;
+    compactInteractions?: boolean;
     communityId?: string;
     voteAPI?: (postId: string, optionIndex: number) => Promise<any>;
     presentation?: 'card' | 'feed';
@@ -66,7 +73,7 @@ const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
 const FEED_VIDEO_HEIGHT_SCALE = 0.7;
 
 function InlineVideo({ uri, shouldPlay, style, onAspectRatioChange }: { uri: string; shouldPlay?: boolean; style: any; onAspectRatioChange?: (width: number, height: number) => void }) {
-    const player = useVideoPlayer({ uri }, (p) => {
+    const player = useVideoPlayer(getVideoSource(uri), (p) => {
         p.loop = true;
         p.muted = true;
     });
@@ -124,12 +131,13 @@ function InlineVideo({ uri, shouldPlay, style, onAspectRatioChange }: { uri: str
     );
 }
 
-export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, communityId, voteAPI, presentation = 'feed' }: FeedCardProps) => {
+export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete, onReport, onUpdate, onLike, onComment, onFavorite, shouldPlay, shouldLoadMedia = true, compactInteractions = false, communityId, voteAPI, presentation = 'feed' }: FeedCardProps) => {
     const [post, setPost] = useState(initialPost);
     const [optionsVisible, setOptionsVisible] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [likesModalVisible, setLikesModalVisible] = useState(false);
     const [commentsModalVisible, setCommentsModalVisible] = useState(false);
+    const [interactionPost, setInteractionPost] = useState<FeedPost | null>(null);
     const mediaSignature = initialPost.media?.map(({ type, url }) => `${type}:${url}`).join('|')
         ?? initialPost.images?.join('|')
         ?? initialPost.image
@@ -144,7 +152,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     const borderColor = useThemeColor('border');
     const isOwner = post.author._id === currentUserId;
     const isAnonPost = !!post.isAnonymous;
-    const isLiked = post.likes.some(l => l._id === currentUserId);
+    const isLiked = post.isLiked ?? post.likes.some(l => l._id === currentUserId);
     const [isFavorited, setIsFavorited] = useState(post.isFavorited ?? false);
     const [pulseAnim] = useState(() => new Animated.Value(1));
     const router = useRouter();
@@ -184,6 +192,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
     useEffect(() => {
         setPost(initialPost);
         setActiveImageIndex(0);
+        setInteractionPost(null);
     }, [initialPost]);
 
     useEffect(() => {
@@ -292,6 +301,32 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
 
     const handleLikePress = () => {
         onLike?.(post._id);
+    };
+
+    const loadInteractionPost = async () => {
+        if (!compactInteractions || interactionPost?._id === post._id) {
+            return interactionPost ?? post;
+        }
+        try {
+            const response = await postAPI.getPost(post._id);
+            if (!response?.data) throw new Error('Post details were unavailable');
+            setInteractionPost(response.data);
+            return response.data as FeedPost;
+        } catch (error) {
+            console.error('Error loading post interactions:', error);
+            Alert.alert('Error', 'Unable to load post interactions. Please try again.');
+            return null;
+        }
+    };
+
+    const openLikes = async () => {
+        if (compactInteractions && !await loadInteractionPost()) return;
+        setLikesModalVisible(true);
+    };
+
+    const openComments = async () => {
+        if (compactInteractions && !await loadInteractionPost()) return;
+        setCommentsModalVisible(true);
     };
 
     const handleFavoritePress = async () => {
@@ -521,7 +556,7 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                     >
                         <View style={styles.avatarContainer}>
                             {post.author.profilePhoto ? (
-                                <Image source={{ uri: getImageUrl(post.author.profilePhoto) }} style={styles.profilePhoto} />
+                                <OptimizedStorageImage imagePath={post.author.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.profilePhoto} cachePolicy="memory-disk" contentFit="cover" />
                             ) : (
                                 <View style={[styles.profilePhotoPlaceholder, { backgroundColor: primaryColor }]}>
                                     <IconSymbol name="person.fill" size={16} color="white" />
@@ -575,19 +610,20 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
             <View>
                 {post.media && post.media.length > 0 ? (
                 <View style={[styles.postMedia, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}>
-                    <FlatList
+                    {shouldLoadMedia ? <FlatList
                         data={post.media}
                         renderItem={({ item, index }) => (
                             <View style={{ width: contentWidth, aspectRatio: mediaAspectRatio }}>
                                 {item.type === 'image' ? (
                                     <TouchableOpacity style={styles.mediaSlide} activeOpacity={0.8} onPress={() => handleMediaTap(item.url, item.type)}>
-                                        <Image
- source={{ uri: getImageUrl(item.url) || '' }}
+                                        <OptimizedStorageImage
+                                            imagePath={item.url}
+                                            transform={{ width: 800, quality: 75 }}
                                             style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}
-                                            resizeMode="cover"
-                                            onLoad={activeImageIndex === index ? ({ nativeEvent }) => updateMediaAspectRatio(nativeEvent.source.width, nativeEvent.source.height) : undefined}
-                                            fadeDuration={0}
-                                            progressiveRenderingEnabled={true}
+                                            contentFit="cover"
+                                            cachePolicy="memory-disk"
+                                            onLoad={activeImageIndex === index ? ({ source }) => updateMediaAspectRatio(source.width, source.height) : undefined}
+                                            transition={0}
                                         />
 
                                     </TouchableOpacity>
@@ -608,8 +644,11 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                         showsHorizontalScrollIndicator={false}
                         onViewableItemsChanged={onViewableItemsChanged}
                         viewabilityConfig={viewabilityConfig}
+                        initialNumToRender={1}
+                        maxToRenderPerBatch={1}
+                        windowSize={3}
                         style={{ width: contentWidth }}
-                    />
+                    /> : <View style={{ width: contentWidth, aspectRatio: mediaAspectRatio }} />}
                     {(post.media?.length || 0) > 1 && (
                         <>
                             <View style={styles.imageCounter}>
@@ -620,18 +659,19 @@ export const FeedCard = React.memo(({ post: initialPost, currentUserId, onDelete
                 </View>
                 ) : post.images && post.images.length > 0 ? (
                     <View style={[styles.postMedia, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}>
-                        <FlatList
+                        {shouldLoadMedia ? <FlatList
                             data={post.images}
                             renderItem={({ item, index }) => (
                                 <View style={{ width: contentWidth, aspectRatio: mediaAspectRatio }}>
                                     <TouchableOpacity style={styles.mediaSlide} activeOpacity={0.8} onPress={() => handleMediaTap(item, 'image')}>
-                                        <Image
-source={{ uri: getImageUrl(item) }}
+                                        <OptimizedStorageImage
+                                            imagePath={item}
+                                            transform={{ width: 800, quality: 75 }}
                                             style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}
-                                            resizeMode="cover"
-                                            onLoad={activeImageIndex === index ? ({ nativeEvent }) => updateMediaAspectRatio(nativeEvent.source.width, nativeEvent.source.height) : undefined}
-                                            fadeDuration={0}
-                                            progressiveRenderingEnabled={true}
+                                            contentFit="cover"
+                                            cachePolicy="memory-disk"
+                                            onLoad={activeImageIndex === index ? ({ source }) => updateMediaAspectRatio(source.width, source.height) : undefined}
+                                            transition={0}
                                         />
 
                                     </TouchableOpacity>
@@ -642,8 +682,11 @@ source={{ uri: getImageUrl(item) }}
                             showsHorizontalScrollIndicator={false}
                             onViewableItemsChanged={onViewableItemsChanged}
                             viewabilityConfig={viewabilityConfig}
-                        style={{ width: contentWidth }}
-                        />
+                            initialNumToRender={1}
+                            maxToRenderPerBatch={1}
+                            windowSize={3}
+                            style={{ width: contentWidth }}
+                            /> : <View style={{ width: contentWidth, aspectRatio: mediaAspectRatio }} />}
                         {post.images.length > 1 && (
                             <>
                                 <View style={styles.imageCounter}>
@@ -653,18 +696,23 @@ source={{ uri: getImageUrl(item) }}
                         )}
                     </View>
                 ) : post.image ? (
+                    shouldLoadMedia ? (
                     <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.image || '', 'image')} style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius, overflow: 'hidden' }}>
-                        <Image
-                            source={{ uri: getImageUrl(post.image || '') }}
+                        <OptimizedStorageImage
+                            imagePath={post.image}
+                            transform={{ width: 800, quality: 75 }}
                             style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]}
-                            resizeMode="cover"
-                            onLoad={({ nativeEvent }) => updateMediaAspectRatio(nativeEvent.source.width, nativeEvent.source.height)}
-                            fadeDuration={0}
-                            progressiveRenderingEnabled={true}
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                            onLoad={({ source }) => updateMediaAspectRatio(source.width, source.height)}
+                            transition={0}
                         />
                     </TouchableOpacity>
+                    ) : (
+                        <View style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]} />
+                    )
                 )                 : post.video ? (
-                    <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')} style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius, overflow: 'hidden' }}>
+                    shouldLoadMedia ? <TouchableOpacity activeOpacity={0.8} onPress={() => handleMediaTap(post.video || '', 'video')} style={{ width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius, overflow: 'hidden' }}>
                         <InlineVideo
                             uri={getImageUrl(post.video) || ''}
                             shouldPlay={Boolean(shouldPlay) && !previewMedia}
@@ -672,6 +720,7 @@ source={{ uri: getImageUrl(item) }}
                             onAspectRatioChange={updateMediaAspectRatio}
                         />
                     </TouchableOpacity>
+                    : <View style={[styles.mediaFrame, { width: contentWidth, aspectRatio: mediaAspectRatio, borderRadius: mediaBorderRadius }]} />
                 ) : null}
             </View>
 
@@ -684,22 +733,22 @@ source={{ uri: getImageUrl(item) }}
                         >
                             <IconSymbol name="heart.fill" size={24} color={isLiked ? errorColor : textColor} />
                         </TouchableOpacity>
-                        {post.likes.length > 0 && (
-                            <TouchableOpacity onPress={() => setLikesModalVisible(true)}>
+                        {(post.likesCount ?? post.likes.length) > 0 && (
+                            <TouchableOpacity onPress={() => void openLikes()}>
                                 <ThemedText style={[styles.actionCount, { color: textColor }]}>
-                                    {post.likes.length.toLocaleString()}
+                                    {(post.likesCount ?? post.likes.length).toLocaleString()}
                                 </ThemedText>
                             </TouchableOpacity>
                         )}
                     </View>
                     <View style={styles.actionWithCount}>
-                        <TouchableOpacity style={styles.actionBtn} onPress={() => setCommentsModalVisible(true)}>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => void openComments()}>
                             <IconSymbol name="message.fill" size={24} color={textColor} />
                         </TouchableOpacity>
-                        {post.comments.length > 0 && (
-                            <TouchableOpacity onPress={() => setCommentsModalVisible(true)}>
+                        {(post.commentsCount ?? post.comments.length) > 0 && (
+                            <TouchableOpacity onPress={() => void openComments()}>
                                 <ThemedText style={[styles.actionCount, { color: textColor }]}>
-                                    {post.comments.length.toLocaleString()}
+                                    {(post.commentsCount ?? post.comments.length).toLocaleString()}
                                 </ThemedText>
                             </TouchableOpacity>
                         )}
@@ -752,13 +801,13 @@ source={{ uri: getImageUrl(item) }}
             <LikesModal
                 visible={likesModalVisible}
                 onClose={() => setLikesModalVisible(false)}
-                likes={post.likes}
+                likes={(interactionPost ?? post).likes}
             />
             
             <CommentModal
                 visible={commentsModalVisible}
                 onClose={() => setCommentsModalVisible(false)}
-                post={post}
+                post={interactionPost ?? post}
                 communityContext={communityId ? { communityId } : undefined}
             />
 

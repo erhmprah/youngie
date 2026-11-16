@@ -1,7 +1,7 @@
 // components/chat-settings-modal.tsx
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Switch, Image } from 'react-native';
+import { Modal, StyleSheet, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Switch } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
@@ -11,6 +11,7 @@ import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
 import { chatAPI, userAPI, communityAPI } from '@/utils/api';
 import { serverText } from '@/utils/error-messages';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface ChatSettingsModalProps {
     visible: boolean;
@@ -322,9 +323,12 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                             <View style={styles.groupPhotoContainer}>
                                 <ThemedText style={styles.label}>Group Photo</ThemedText>
                                 <View style={styles.groupPhotoRow}>
-                                    <Image 
-                                        source={{ uri: chat?.groupPhoto }} 
+                                    <OptimizedStorageImage
+                                        imagePath={chat?.groupPhoto}
+                                        transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }}
                                         style={styles.groupPhoto}
+                                        cachePolicy="memory-disk"
+                                        contentFit="cover"
                                     />
                                 </View>
                             </View>
@@ -376,7 +380,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                                 <View key={participant._id} style={[styles.memberRow, { borderBottomColor: borderColor }]}>
                                     <View style={[styles.memberAvatar, { backgroundColor: surfaceColor }]}>
                                         {participant.profilePhoto ? (
-                                            <Image source={{ uri: participant.profilePhoto }} style={styles.avatar} />
+                                            <OptimizedStorageImage imagePath={participant.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                                         ) : (
                                             <IconSymbol name="person.fill" size={20} color={lightTextColor} />
                                         )}
@@ -434,7 +438,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                                         >
                                             <View style={[styles.memberAvatar, { backgroundColor: surfaceColor }]}>
                                                 {user.profilePhoto ? (
-                                                    <Image source={{ uri: user.profilePhoto }} style={styles.avatar} />
+                                                    <OptimizedStorageImage imagePath={user.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                                                 ) : (
                                                     <IconSymbol name="person.fill" size={20} color={lightTextColor} />
                                                 )}
@@ -454,7 +458,7 @@ const ChatSettingsModalComponent = ({ visible, onClose, chat, onChatUpdate, onMe
                                         <View key={pendingUser._id} style={[styles.pendingRow, { borderBottomColor: borderColor }]}>
                                             <View style={[styles.memberAvatar, { backgroundColor: surfaceColor }]}>
                                                 {pendingUser.profilePhoto ? (
-                                                    <Image source={{ uri: pendingUser.profilePhoto }} style={styles.avatar} />
+                                                    <OptimizedStorageImage imagePath={pendingUser.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                                                 ) : (
                                                     <IconSymbol name="person.fill" size={20} color={lightTextColor} />
                                                 )}

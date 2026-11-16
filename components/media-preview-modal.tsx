@@ -1,5 +1,6 @@
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageUrl } from '@/utils/api';
+import { getVideoSource } from '@/utils/video-source';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -163,7 +164,7 @@ export function MediaPreviewModal({ visible, onClose, attachment, attachments, i
     const activeUri = activeMedia?.uri || '';
     const activeIsVideo = !!activeMedia?.isVideo;
 
-    const player = useVideoPlayer({ uri: activeUri }, (p) => {
+    const player = useVideoPlayer(getVideoSource(activeUri), (p) => {
         p.loop = false;
     });
 

@@ -14,6 +14,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { getSocket } from '@/utils/socket';
 import { serverText } from '@/utils/error-messages';
 import { useRouter } from 'expo-router';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface Comment {
     _id: string;
@@ -309,7 +310,7 @@ export function CommentModal({
                     }
                 }}>
                     {item.author.profilePhoto ? (
-                        <Image source={{ uri: getImageUrl(item.author.profilePhoto) }} style={styles.avatar} />
+                        <OptimizedStorageImage imagePath={item.author.profilePhoto} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                     ) : (
                         <View style={[styles.avatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                             <Ionicons name="person" size={20} color={lightTextColor} />
@@ -446,7 +447,7 @@ export function CommentModal({
                             {isAnonymous ? (
                                 <Image source={{ uri: 'https://i.pravatar.cc/150?u=anon' }} style={styles.avatar} />
                             ) : user?.profilePhoto ? (
-                                <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatar} />
+                                <OptimizedStorageImage imagePath={user.profilePhoto} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                             ) : (
                                 <View style={[styles.avatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}><Ionicons name="person" size={20} color={lightTextColor} /></View>
                             )}
@@ -540,7 +541,7 @@ export function CommentModal({
                                         >
                                             <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                                                 {item.profilePhoto ? (
-                                                    <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.avatarImage} />
+                                                    <OptimizedStorageImage imagePath={item.profilePhoto} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.avatarImage} cachePolicy="memory-disk" contentFit="cover" />
                                                 ) : (
                                                     <Ionicons name="person" size={20} color={lightTextColor} />
                                                 )}

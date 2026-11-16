@@ -1,12 +1,13 @@
 // app/(tabs)/explore.tsx
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, TextInput, Dimensions, ActivityIndicator, Image } from 'react-native';
+import { StyleSheet, View, ScrollView, TouchableOpacity, TextInput, Dimensions, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { postAPI, userAPI, communityAPI, getImageUrl } from '@/utils/api';
+import { postAPI, userAPI, communityAPI } from '@/utils/api';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import { serverText } from '@/utils/error-messages';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -359,7 +360,7 @@ export default function ExploreScreen() {
                       <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${user._id}`); }}>
                         <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                           {user.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatarImage} />
+                            <OptimizedStorageImage imagePath={user.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.avatarImage} cachePolicy="memory-disk" contentFit="cover" />
                           ) : (
                             <IconSymbol name="person.fill" size={24} color={lightTextColor} />
                           )}
@@ -381,7 +382,7 @@ export default function ExploreScreen() {
                       <TouchableOpacity key={post._id} style={[styles.postRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${post._id}`); }}>
                         <View style={styles.postHeader}>
                           {post.author?.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(post.author!.profilePhoto) }} style={styles.postAvatar} />
+                            <OptimizedStorageImage imagePath={post.author!.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.postAvatar} cachePolicy="memory-disk" contentFit="cover" />
                           ) : (
                             <View style={[styles.postAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                                 <IconSymbol name="person.fill" size={12} color={lightTextColor} />
@@ -410,7 +411,7 @@ export default function ExploreScreen() {
                         <TouchableOpacity key={community._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${community._id}`); }}>
                           <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                             {community.image ? (
-                              <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                              <OptimizedStorageImage imagePath={community.image} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.avatarImage} cachePolicy="memory-disk" contentFit="cover" />
                             ) : (
                               <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
                             )}
@@ -508,7 +509,7 @@ export default function ExploreScreen() {
                         </View>
                       </LinearGradient>
                       {post.images && post.images.length > 0 && (
-                        <Image source={{ uri: getImageUrl(post.images[0]) }} style={styles.trendImage} />
+                        <OptimizedStorageImage imagePath={post.images[0]} transform={{ width: 640, quality: 75 }} style={styles.trendImage} cachePolicy="memory-disk" contentFit="cover" />
                       )}
                     </TouchableOpacity>
                   ))}
@@ -536,7 +537,7 @@ export default function ExploreScreen() {
                   <TouchableOpacity key={user._id} style={[styles.userRow, { borderBottomColor: borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/user/${user._id}`); }}>
                     <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                       {user.profilePhoto ? (
-                        <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.avatarImage} />
+                        <OptimizedStorageImage imagePath={user.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.avatarImage} cachePolicy="memory-disk" contentFit="cover" />
                       ) : (
                         <IconSymbol name="person.fill" size={24} color={lightTextColor} />
                       )}
@@ -573,7 +574,7 @@ export default function ExploreScreen() {
                   >
                     <View style={[styles.userAvatar, { backgroundColor: surfaceColor }]}>
                       {community.image ? (
-                        <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                        <OptimizedStorageImage imagePath={community.image} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.avatarImage} cachePolicy="memory-disk" contentFit="cover" />
                       ) : (
                         <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
                       )}
@@ -615,7 +616,7 @@ export default function ExploreScreen() {
                   >
                     <View style={[styles.communityAvatar, { backgroundColor: surfaceColor }]}>
                       {community.image ? (
-                        <Image source={{ uri: getImageUrl(community.image) }} style={styles.avatarImage} />
+                        <OptimizedStorageImage imagePath={community.image} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.avatarImage} cachePolicy="memory-disk" contentFit="cover" />
                       ) : (
                         <IconSymbol name="person.3.fill" size={24} color={lightTextColor} />
                       )}

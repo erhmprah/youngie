@@ -1,13 +1,13 @@
 // app/(tabs)/chat.tsx
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, FlatList, TouchableOpacity, ActivityIndicator, Alert, Image, RefreshControl } from 'react-native';
+import { StyleSheet, View, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { chatAPI, getImageUrl } from '@/utils/api';
+import { chatAPI } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, sizes } from '@/constants/design-tokens';
@@ -15,6 +15,7 @@ import { onNewNotification, offNewNotification, getSocket } from '@/utils/socket
 import { SelectFriendModal } from '@/components/select-friend-modal';
 import * as Haptics from 'expo-haptics';
 import { showErrorAlert } from '@/utils/error-handler';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface User {
     _id: string;
@@ -271,15 +272,15 @@ export default function ChatScreen() {
         const participant = item.participants.find(p => p._id !== user?._id);
         
         let chatName = '';
-        let avatarSource = undefined;
+        let avatarPath: string | undefined;
         const isGroup = item.isGroupChat;
 
         if (isGroup) {
             chatName = item.name || 'Group Chat';
-            avatarSource = item.groupPhoto ? { uri: getImageUrl(item.groupPhoto) } : undefined;
+            avatarPath = item.groupPhoto;
         } else {
             chatName = participant?.username || 'Unknown User';
-            avatarSource = participant?.profilePhoto ? { uri: getImageUrl(participant.profilePhoto) } : undefined;
+            avatarPath = participant?.profilePhoto;
         }
 
         return (
@@ -294,8 +295,8 @@ export default function ChatScreen() {
                 }}
             >
                 <View style={[styles.avatarCircle, { backgroundColor: surfaceColor }]}>
-                    {avatarSource ? (
-                        <Image source={avatarSource} style={styles.chatAvatar} />
+                    {avatarPath ? (
+                        <OptimizedStorageImage imagePath={avatarPath} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.chatAvatar} cachePolicy="memory-disk" contentFit="cover" />
                     ) : (
                         <IconSymbol name={isGroup ? "person.2.fill" : "person.fill"} size={24} color={lightTextColor} />
                     )}

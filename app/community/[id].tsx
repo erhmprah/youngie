@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CustomAlert } from '@/utils/alert';
 import { communityAPI, getImageUrl } from '@/utils/api';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Calendar from 'expo-calendar';
 import type { Calendar as CalendarType } from 'expo-calendar/legacy';
@@ -17,6 +18,9 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { compressImageForUpload } from '@/utils/media-optimization';
+import { compressVideoForUpload } from '@/utils/video-optimization';
+import { getVideoSource } from '@/utils/video-source';
 
 interface CommunityEvent {
   _id: string;
@@ -64,7 +68,7 @@ export default function CommunityScreen() {
   const [feedVideo, setFeedVideo] = useState<string | null>(null);
   const [feedVideoDimensions, setFeedVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const feedScrollY = useRef(new Animated.Value(0)).current;
-  const feedVideoPlayer = useVideoPlayer(feedVideo ? { uri: feedVideo } : null);
+  const feedVideoPlayer = useVideoPlayer(getVideoSource(feedVideo));
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [feedPosting, setFeedPosting] = useState(false);
@@ -189,7 +193,6 @@ export default function CommunityScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['videos'],
       allowsEditing: true,
-      quality: 1,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       const asset = result.assets[0];
@@ -223,10 +226,9 @@ export default function CommunityScreen() {
           imageUrls.push(uri);
           continue;
         }
-        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
         const filename = `feed-image-${Date.now()}-${Math.random()}.jpg`;
         const upload = await communityAPI.uploadImageBase64({
-          imageData: `data:image/jpeg;base64,${base64}`,
+          imageData: await compressImageForUpload(uri),
           filename,
         });
         if (upload?.imageUrl) imageUrls.push(upload.imageUrl);
@@ -236,7 +238,8 @@ export default function CommunityScreen() {
         if (feedVideo.startsWith('http') || feedVideo.startsWith('/uploads')) {
           videoUrl = feedVideo;
         } else {
-          const base64 = await FileSystem.readAsStringAsync(feedVideo, { encoding: 'base64' });
+          const compressedVideoUri = await compressVideoForUpload(feedVideo);
+          const base64 = await FileSystem.readAsStringAsync(compressedVideoUri, { encoding: 'base64' });
           const filename = `feed-video-${Date.now()}.mp4`;
           const upload = await communityAPI.uploadVideoBase64({
             videoData: `data:video/mp4;base64,${base64}`,
@@ -413,9 +416,12 @@ export default function CommunityScreen() {
         <ThemedText type="body2" style={{ color: textColor }}>{item.description}</ThemedText>
         <View style={styles.organizerRow}>
           {item.creator.profilePhoto ? (
-            <Image 
-              source={{ uri: getImageUrl(item.creator.profilePhoto) }} 
+            <OptimizedStorageImage
+              imagePath={item.creator.profilePhoto}
+              transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }}
               style={styles.organizerAvatar} 
+              cachePolicy="memory-disk"
+              contentFit="cover"
             />
           ) : (
             <View style={[styles.organizerAvatarPlaceholder, { backgroundColor: surfaceColor }]}>
@@ -442,7 +448,7 @@ export default function CommunityScreen() {
         onPress={() => memberId && router.push(`/user/${memberId}`)}
       >
         {item.profilePhoto ? (
-          <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.memberAvatar} />
+          <OptimizedStorageImage imagePath={item.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.memberAvatar} cachePolicy="memory-disk" contentFit="cover" />
         ) : (
           <View style={[styles.memberAvatarPlaceholder, { backgroundColor: primaryColor + '20' }]}>
             <IconSymbol name="person.fill" size={20} color={primaryColor} />
@@ -496,7 +502,7 @@ export default function CommunityScreen() {
           >
             <IconSymbol name="message.fill" size={24} color={white} />
           </TouchableOpacity>
-          <Image source={{ uri: getImageUrl(community.image) }} style={styles.coverImage} />
+          <OptimizedStorageImage imagePath={community.image} transform={{ width: 1280, quality: 75 }} style={styles.coverImage} cachePolicy="memory-disk" contentFit="cover" />
           <View style={styles.headerOverlay} />
           <View style={styles.headerContent}>
             <ThemedText type="heading1" style={{ color: white }}>{community.name}</ThemedText>
@@ -582,7 +588,7 @@ export default function CommunityScreen() {
                 <View style={[styles.composer, { backgroundColor: surfaceColor, borderColor }]}>
                   <View style={styles.composerHeader}>
                     {user?.profilePhoto ? (
-                      <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.composerAvatar} />
+                      <OptimizedStorageImage imagePath={user.profilePhoto} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.composerAvatar} cachePolicy="memory-disk" contentFit="cover" />
                     ) : (
                       <View style={[styles.composerAvatarPlaceholder, { backgroundColor: primaryColor + '20' }]}>
                         <IconSymbol name="person.fill" size={16} color={primaryColor} />
@@ -890,6 +896,10 @@ const FeedListComponent: React.FC<FeedListProps> = ({
       renderItem={renderItem}
       keyExtractor={item => item._id}
       contentContainerStyle={styles.feedList}
+      initialNumToRender={3}
+      maxToRenderPerBatch={2}
+      windowSize={7}
+      updateCellsBatchingPeriod={50}
       onEndReached={onLoadMore}
       onEndReachedThreshold={0.2}
       onViewableItemsChanged={onViewableItemsChanged}

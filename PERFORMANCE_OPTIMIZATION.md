@@ -392,6 +392,48 @@ import { CacheManager } from '@nickmillerdev/react-native-image-cache';
 />
 ```
 
+For Supabase Storage images, use `OptimizedStorageImage` for feed and profile thumbnails. It requests a resized, lower-quality Storage image variant and falls back to the original URL if the transformed request fails. Image transformations must be enabled for the Supabase project for the reduced-byte variant to be served. The viewer should continue using the original URL when users open an image.
+
+The current presets use 256px avatars, 480px album tiles, 800px feed images, and 1280px profile covers. Compare Storage egress and image-transformation usage after rollout to confirm that transformation charges are outweighed by bandwidth savings.
+
+Small-image optimization also covers chat lists and settings, community member lists, swipe grids, story viewers, and muted/blocked user lists. Full-size photo viewing remains on the original asset; story photos request a 1280px-wide variant suitable for full-screen display.
+
+The swipe-card hero image now uses a transformed 800x1200 variant with memory/disk caching instead of downloading the original photo. The swipe grid also limits its FlatList render window and batch sizes to reduce premature thumbnail requests.
+
+Swipe-card album photos are fetched on demand only when the viewer advances past the profile photo or the currently loaded album photos. They load six at a time; this avoids album requests for profiles users swipe past without browsing, while retaining access to the full album through the carousel.
+
+Swipe discovery initializes saved filters and fetches the first profile page once; the focus handler skips its initial invocation to avoid a duplicate request. Returning from a profile preserves the current cards and position, refreshing only if the discovery list is at least five minutes old. Explicit refreshes and filter changes still fetch immediately.
+
+Discovery pagination now guards against overlapping page requests and ignores responses superseded by a refresh or filter change. The backend applies the page offset once, uses stable tie ordering for recommendations, and returns that page's ranked candidates without applying the offset again. Replacing the result set resets the current card index, preventing stale cards from being shown after the list changes.
+
+The swipe discovery endpoint now selects only fields needed for ranking and the swipe/grid cards, and returns a small profile summary rather than full user documents and relationship lists. This reduces database reads and response payloads as users browse discovery. Album pages likewise return only each photo's ID, image URL, and creation date rather than internal database fields.
+
+Profile post feeds load ten posts at a time and fetch another page as the user approaches the end of the currently loaded posts, rather than loading the full feed at once. Post media is mounted only for the visible post and one upcoming post; other posts reserve the same media space without requesting images or creating video players. This bounded window also unmounts offscreen video players and media trees as the user scrolls. Visibility calculations account for the post list's offset inside the full profile scroll view, and are disabled while the Album tab is active, so stale post positions cannot trigger playback or media updates. Refreshing profile details for the same user does not refetch the already-loaded post pages. Profile post and album requests are invalidated when leaving the profile so late responses cannot update an unmounted screen. Profile albums are fetched only when the Album tab is first opened, then load 12 thumbnails at a time and request subsequent pages near the end of the loaded grid. These changes limit unnecessary and offscreen media downloads while progressively loading more content during scrolling.
+
+Profile-summary, profile-post, and album loading requests suppress the global network-error alert so slow requests do not create repeated popups. Failures are shown inline with retry actions; profile-summary failures already use the profile's inline error and retry screen.
+
+The profile-summary endpoint also returns the visible album photo count without downloading photo records, keeping the Photos stat accurate while album thumbnails remain lazy-loaded until the Album tab is opened.
+
+Profile post requests use a compact interaction summary (like/comment counts and the viewer's like state) instead of fetching all liker and comment user records for every post. Full interaction details are fetched only when the likes or comments view is opened. Other `getUserPosts` callers retain the full response by default.
+
+Post image/video carousels render one slide initially and use a three-viewport render window with one-item batches, reducing speculative downloads of distant carousel slides.
+
+The public profile screen uses a lightweight profile-summary endpoint instead of downloading fully populated friend, follower, match, and request lists just to display counts and determine the relationship state. The endpoint calculates counts and relationship flags server-side and preserves private-profile visibility rules.
+
+The report-user modal is mounted only after the user selects the report action, avoiding initialization of its form and related effects on every profile visit.
+
+New videos are transcoded on-device on iOS and Android before post, story, community, or chat uploads. The native compressor caps the long dimension at 1280px and targets a 2.5 Mbps bitrate for source files over 2 MB; smaller videos are left alone. Web video uploads are unchanged. Existing stored videos are not transcoded. The native compressor requires a fresh EAS build on both platforms.
+
+Remote non-HLS videos use Expo Video's native cache on iOS and Android, allowing subsequent playback to reuse downloaded data. The cache uses Expo Video's bounded LRU storage; HLS sources are excluded on iOS due to platform limitations.
+
+Feed FlatLists use a smaller render window so fewer offscreen posts mount their media players and image requests before they are near the viewport. This can slightly increase blank space during very fast scrolling; monitor scroll behavior and media egress after rollout.
+
+The home feed now mounts post and community-post media only for viewable feed cards and the next content card. Offscreen cards keep a media-sized placeholder, avoiding image downloads and video-player initialization until a card approaches the viewport; video playback remains limited to the currently visible video post.
+
+Chat message images use transformed, disk-cached previews, while reply thumbnails request smaller variants. Opening an attachment still uses its original URL.
+
+The same small transformed variants and disk cache are used for avatars in comments, likes, notifications, and friend lists. Profile post and album grids load thumbnail-sized variants; opening a photo still uses its full URL.
+
 ### 3.4 Implement Lazy Image Loading
 
 ```typescript

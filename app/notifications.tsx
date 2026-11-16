@@ -3,7 +3,7 @@ import { AppState, StyleSheet, View, SectionList, TouchableOpacity, ActivityIndi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
@@ -455,7 +455,7 @@ export default function NotificationsScreen() {
           ]}
         >
           {source ? (
-            <Image source={{ uri: getImageUrl(source) }} style={styles.avatar} />
+            <OptimizedStorageImage imagePath={source} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
           ) : (
             <Ionicons name="person" size={24} color={colors.lightText} />
           )}

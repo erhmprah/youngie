@@ -44,6 +44,11 @@ export const signInWithGoogle = async () => {
       Alert.alert('Sign-in in progress', 'Sign-in is already in progress.');
     } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
       Alert.alert('Play Services not available', 'Please install Google Play Services.');
+    } else if (error.message === 'No ID token received from Google') {
+      Alert.alert(
+        'Sign-in unavailable',
+        'We couldn’t complete Google sign-in. Please try again.'
+      );
     } else {
       const friendly = toUserError(error, {
         title: 'Sign-in failed',

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, FlatList, TouchableOpacity, Image, View, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity, View, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { userAPI, getImageUrl } from '@/utils/api';
+import { userAPI } from '@/utils/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface MutedUser {
     _id: string;
@@ -53,9 +54,12 @@ export default function MutedUsersScreen() {
     const renderItem = ({ item }: { item: MutedUser }) => (
         <View style={[styles.userItem, { backgroundColor: surfaceColor }]}>
             <View style={styles.userInfo}>
-                <Image 
-                    source={{ uri: getImageUrl(item.profilePhoto || item.avatar) }} 
+                <OptimizedStorageImage
+                    imagePath={item.profilePhoto || item.avatar}
+                    transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }}
                     style={styles.avatar} 
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
                 />
                 <ThemedText style={styles.username}>{item.username}</ThemedText>
             </View>

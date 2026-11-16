@@ -5,7 +5,6 @@ import { StyleSheet, View, ScrollView, TouchableOpacity, FlatList, ActivityIndic
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { EditProfileModal } from '@/components/edit-profile-modal';
@@ -22,6 +21,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SkeletonProfile, SkeletonGrid } from '@/components/ui/skeleton';
 import { spacing, typography, borderRadius, shadows, sizes } from '@/constants/design-tokens';
 import { ImageViewerModal } from '@/components/image-viewer-modal';
+import { compressImageForUpload } from '@/utils/media-optimization';
+import { getVideoSource } from '@/utils/video-source';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import * as Haptics from 'expo-haptics';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
@@ -215,13 +217,12 @@ export default function ProfileScreen() {
 
         if (!result.canceled) {
             const uri = result.assets[0].uri;
-            const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
             const filename = `profile-photo-${Date.now()}.jpg`;
 
             try {
                 CustomAlert.loading('Uploading photo...', 'Please wait');
                 const response = await userAPI.uploadProfilePhotoBase64(user._id, {
-                    imageData: `data:image/jpeg;base64,${base64}`,
+                    imageData: await compressImageForUpload(uri, 512),
                     filename
                 }) as any;
                 if (response.profilePhoto) {
@@ -253,13 +254,12 @@ export default function ProfileScreen() {
 
         if (!result.canceled) {
             const uri = result.assets[0].uri;
-            const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
             const filename = `cover-photo-${Date.now()}.jpg`;
 
             try {
                 CustomAlert.loading('Uploading cover photo...', 'Please wait');
                 const response = await userAPI.uploadCoverPhotoBase64(user._id, {
-                    imageData: `data:image/jpeg;base64,${base64}`,
+                    imageData: await compressImageForUpload(uri, 1600),
                     filename
                 }) as any;
                 if (response.coverPhoto) {
@@ -291,13 +291,12 @@ export default function ProfileScreen() {
 
         if (!result.canceled) {
             const uri = result.assets[0].uri;
-            const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
             const filename = `album-photo-${Date.now()}.jpg`;
 
             try {
                 CustomAlert.loading('Uploading photo...', 'Please wait');
                 await userAPI.uploadAlbumPhoto(user._id, {
-                    imageData: `data:image/jpeg;base64,${base64}`,
+                    imageData: await compressImageForUpload(uri, 1600),
                     filename
                 });
                 CustomAlert.success('Success', 'Photo added to album');
@@ -478,7 +477,7 @@ export default function ProfileScreen() {
             <ThemedView style={styles.container}>
                 <View style={styles.coverPhotoContainer}>
                     {user?.coverPhoto ? (
-                        <Image source={{ uri: getImageUrl(user.coverPhoto) }} style={styles.coverPhoto} />
+                        <OptimizedStorageImage imagePath={user.coverPhoto} transform={{ width: 1280, quality: 75 }} style={styles.coverPhoto} cachePolicy="memory-disk" contentFit="cover" />
                     ) : (
                         <LinearGradient colors={[primaryColor + '20', primaryColor + '10']} style={styles.coverPhotoPlaceholder} />
                     )}
@@ -497,10 +496,12 @@ export default function ProfileScreen() {
                             delayLongPress={500}
                         >
                             {user?.profilePhoto ? (
-                                <Image 
-                                    source={{ uri: getImageUrl(user?.profilePhoto) }} 
+                                <OptimizedStorageImage
+                                    imagePath={user?.profilePhoto}
+                                    transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }}
                                     style={[styles.avatarImage, { borderColor: primaryColor }]} 
-                                    resizeMode="cover"
+                                    cachePolicy="memory-disk"
+                                    contentFit="cover"
                                 />
                             ) : (
                                 <View style={[styles.avatarPlaceholder, { borderColor: primaryColor, backgroundColor: cardBackgroundColor }]}>
@@ -714,7 +715,7 @@ export default function ProfileScreen() {
             return (
                 <TouchableOpacity style={[styles.postItem, { borderColor }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/post/${item._id}`); }}>
                     {thumbnailUri ? (
-                        <Image source={{ uri: getImageUrl(thumbnailUri) }} style={styles.postThumbnail} />
+                        <OptimizedStorageImage imagePath={thumbnailUri} transform={{ width: 480, quality: 75 }} style={styles.postThumbnail} cachePolicy="memory-disk" contentFit="cover" />
                     ) : item.video ? (
                         <PostVideoThumbnail uri={getImageUrl(item.video)!} style={styles.postThumbnail} />
                     ) : null}
@@ -748,7 +749,7 @@ export default function ProfileScreen() {
                 return (
                     <View style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}>
                         {item.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
+                            <OptimizedStorageImage imagePath={item.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.friendAvatar} cachePolicy="memory-disk" contentFit="cover" />
                         ) : (
                             <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
                                 <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
@@ -772,7 +773,7 @@ export default function ProfileScreen() {
                 return (
                     <View style={[styles.friendItem, { backgroundColor: cardBackgroundColor, borderColor }]}>
                         {item.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
+                            <OptimizedStorageImage imagePath={item.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.friendAvatar} cachePolicy="memory-disk" contentFit="cover" />
                         ) : (
                             <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
                                 <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
@@ -817,7 +818,7 @@ export default function ProfileScreen() {
                         }}
                     >
                         {item.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.friendAvatar} />
+                            <OptimizedStorageImage imagePath={item.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.friendAvatar} cachePolicy="memory-disk" contentFit="cover" />
                         ) : (
                             <View style={[styles.friendAvatar, { backgroundColor: cardBackgroundColor, justifyContent: 'center', alignItems: 'center', borderWidth: sizes.dividerWidth, borderColor: borderColor }]}>
                                 <IconSymbol name="person.fill" size={sizes.iconLarge} color={lightTextColor} />
@@ -848,7 +849,7 @@ export default function ProfileScreen() {
                     onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); handleDeleteAlbumPhoto(item._id); }}
                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedImage(getImageUrl(item.image) ?? null); setSelectedPhotoId(item._id); }}
                 >
-                    <Image source={{ uri: getImageUrl(item.image) }} style={styles.postThumbnail} />
+                    <OptimizedStorageImage imagePath={item.image} transform={{ width: 480, quality: 75 }} style={styles.postThumbnail} cachePolicy="memory-disk" contentFit="cover" />
                 </TouchableOpacity>
             );
         }
@@ -894,7 +895,7 @@ export default function ProfileScreen() {
 }
 
 function PostVideoThumbnail({ uri, style }: { uri: string; style: any }) {
-    const player = useVideoPlayer({ uri }, (p) => {
+    const player = useVideoPlayer(getVideoSource(uri), (p) => {
         p.loop = true;
         p.muted = true;
         p.play();

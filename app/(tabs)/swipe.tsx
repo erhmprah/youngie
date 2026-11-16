@@ -1,13 +1,13 @@
 // app/(tabs)/swipe.tsx
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { StyleSheet, View, TouchableOpacity, Animated, PanResponder, Dimensions, Image, ActivityIndicator, Alert, FlatList } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Animated, PanResponder, Dimensions, ActivityIndicator, Alert, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { userAPI, getImageUrl } from '@/utils/api';
+import { userAPI } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { Ionicons } from '@expo/vector-icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -21,11 +21,13 @@ import * as Haptics from 'expo-haptics';
 import { showErrorAlert, showNetworkErrorAlert } from '@/utils/error-handler';
 import { CustomAlert } from '@/utils/alert';
 import { useInterstitialAdHelper } from '@/hooks/useInterstitialAdHelper';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 // Interstitial cadence: show a full-screen ad every N completed swipes.
 // Kept high enough that it never interrupts the core swipe loop, but low
 // enough to be worth anything to the ad account.
 const INTERSTITIAL_INTERVAL = 10;
+const DISCOVERY_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const { width, height } = Dimensions.get('window');
 
@@ -48,6 +50,9 @@ export default function SwipeScreen() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [albums, setAlbums] = useState<{[key: string]: any[]}>({});
+    const [albumPages, setAlbumPages] = useState<Record<string, number>>({});
+    const [albumHasMore, setAlbumHasMore] = useState<Record<string, boolean>>({});
+    const albumRequests = useRef(new Set<string>());
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isFilterVisible, setFilterVisible] = useState(false);
     const [filters, setFilters] = useState<FilterState>({
@@ -56,9 +61,14 @@ export default function SwipeScreen() {
         gender: [],
         location: ''
     });
+    const filtersRef = useRef(filters);
+    const isInitialFocus = useRef(true);
     const [currentPage, setCurrentPage] = useState(0);
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const nearbyRequestId = useRef(0);
+    const nearbyLoadingRef = useRef(false);
+    const lastDiscoveryFetchAt = useRef(0);
     const [viewMode, setViewMode] = useState<'swipe' | 'grid'>('swipe');
     const [swipeHistory, setSwipeHistory] = useState<any[]>([]);
     // Tracks how many swipes have completed since the last interstitial was
@@ -85,13 +95,14 @@ export default function SwipeScreen() {
                 const savedFilters = await AsyncStorage.getItem('discovery_filters');
                 if (savedFilters) {
                     const parsedFilters = JSON.parse(savedFilters);
+                    filtersRef.current = parsedFilters;
                     setFilters(parsedFilters);
                     fetchNearbyUsers(parsedFilters, 0, false);
                 } else {
-                    fetchNearbyUsers({ minAge: '', maxAge: '', gender: [], location: '' }, 0, false);
+                    fetchNearbyUsers(filtersRef.current, 0, false);
                 }
             } catch (error) {
-                fetchNearbyUsers({ minAge: '', maxAge: '', gender: [], location: '' }, 0, false);
+                fetchNearbyUsers(filtersRef.current, 0, false);
             }
         };
         loadFilters();
@@ -116,9 +127,6 @@ export default function SwipeScreen() {
     }, []);
 
     useEffect(() => {
-        if (profiles[currentIndex]?._id && !albums[profiles[currentIndex]._id]) {
-            fetchUserAlbum(profiles[currentIndex]._id);
-        }
         setCurrentImageIndex(0); // Reset to first image when profile changes
     }, [profiles[currentIndex]?._id]);
 
@@ -130,8 +138,13 @@ export default function SwipeScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            // Refetch profiles when screen comes into focus to exclude sent requests
-            fetchNearbyUsers(undefined, 0, false);
+            if (isInitialFocus.current) {
+                isInitialFocus.current = false;
+                return;
+            }
+            if (Date.now() - lastDiscoveryFetchAt.current >= DISCOVERY_REFRESH_INTERVAL_MS) {
+                fetchNearbyUsers(filtersRef.current, 0, false);
+            }
         }, [])
     );
 
@@ -151,21 +164,38 @@ export default function SwipeScreen() {
         const album = albums[currentProfile._id] || [];
         const images = [];
         if (currentProfile.profilePhoto) {
-            images.push({ uri: getImageUrl(currentProfile.profilePhoto), type: 'profile' });
+            images.push({ imagePath: currentProfile.profilePhoto, type: 'profile' });
         }
         album.forEach((photo: any) => {
-            images.push({ uri: getImageUrl(photo.image), type: 'album' });
+            images.push({ imagePath: photo.image, type: 'album' });
         });
         return images;
     }, [currentProfile, albums]);
 
     const currentImage = currentImages[currentImageIndex] || null;
 
-    const nextImage = () => {
-        setCurrentImageIndex(prev => (prev + 1) % currentImages.length);
+    const nextImage = async () => {
+        if (!currentProfile) return;
+        if (currentImageIndex + 1 < currentImages.length) {
+            setCurrentImageIndex(prev => prev + 1);
+            return;
+        }
+
+        const userId = currentProfile._id;
+        if (!albumPages[userId] || albumHasMore[userId]) {
+            const page = (albumPages[userId] || 0) + 1;
+            const loaded = await fetchUserAlbum(userId, page);
+            if (loaded && profiles[currentIndex]?._id === userId) {
+                setCurrentImageIndex(currentImages.length);
+            }
+            return;
+        }
+
+        setCurrentImageIndex(0);
     };
 
     const prevImage = () => {
+        if (currentImageIndex === 0) return;
         setCurrentImageIndex(prev => (prev - 1 + currentImages.length) % currentImages.length);
     };
 
@@ -252,7 +282,7 @@ export default function SwipeScreen() {
                     viewProfile();
                 } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
                     // Tap: switch photo based on which half of the card was tapped
-                    if (currentImages.length > 1) {
+                    if (currentProfile) {
                         const cardLeft = spacing.md;
                         const cardWidth = width - spacing.md * 2;
                         const cardCenter = cardLeft + cardWidth / 2;
@@ -271,7 +301,10 @@ export default function SwipeScreen() {
     );
 
     const fetchNearbyUsers = async (filterParams?: FilterState, page: number = 0, append: boolean = false) => {
+        if (append && nearbyLoadingRef.current) return;
+        const requestId = append ? nearbyRequestId.current : ++nearbyRequestId.current;
         try {
+            nearbyLoadingRef.current = true;
             if (!append) {
                 setIsLoading(true);
             } else {
@@ -279,6 +312,7 @@ export default function SwipeScreen() {
             }
             const activeFilters = filterParams || filters;
             const response = await userAPI.getRecommendedUsers({ ...activeFilters, page, limit: 20 });
+            if (requestId !== nearbyRequestId.current) return;
 
             if (!response.data) {
                 showNetworkErrorAlert(() => fetchNearbyUsers(undefined, page, false));
@@ -291,30 +325,57 @@ export default function SwipeScreen() {
                 setProfiles(prev => [...prev, ...users]);
             } else {
                 setProfiles(users);
+                setCurrentIndex(0);
             }
             setHasMore(newHasMore);
             setCurrentPage(page);
+            if (!append) {
+                lastDiscoveryFetchAt.current = Date.now();
+            }
         } catch (error: any) {
+            if (requestId !== nearbyRequestId.current) return;
             showErrorAlert(error, () => fetchNearbyUsers(undefined, page, false));
         } finally {
-            setIsLoading(false);
-            setLoadingMore(false);
+            if (requestId === nearbyRequestId.current) {
+                nearbyLoadingRef.current = false;
+                setIsLoading(false);
+                setLoadingMore(false);
+            }
         }
     };
 
-    const fetchUserAlbum = async (userId: string) => {
+    const fetchUserAlbum = async (userId: string, page: number): Promise<boolean> => {
+        if (albumRequests.current.has(userId)) return false;
+        albumRequests.current.add(userId);
         try {
-            const response = await userAPI.getAlbum(userId, 1, 30);
-            if (response.data) {
-                setAlbums(prev => ({ ...prev, [userId]: response.data.data || [] }));
+            const response = await userAPI.getAlbum(userId, page, 6);
+            if (!response.data) {
+                showNetworkErrorAlert(() => void fetchUserAlbum(userId, page));
+                return false;
             }
+            const photos = Array.isArray(response.data.data) ? response.data.data : [];
+            setAlbums(prev => ({
+                ...prev,
+                [userId]: page === 1 ? photos : [...(prev[userId] || []), ...photos],
+            }));
+            setAlbumPages(prev => ({ ...prev, [userId]: page }));
+            setAlbumHasMore(prev => ({
+                ...prev,
+                [userId]: response.data.pagination?.hasNextPage === true,
+            }));
+            return true;
         } catch (error: any) {
             if (error.response?.status === 401) {
                 try {
                     await logout();
                 } catch (logoutErr) {
                 }
+            } else {
+                showErrorAlert(error, () => void fetchUserAlbum(userId, page));
             }
+            return false;
+        } finally {
+            albumRequests.current.delete(userId);
         }
     };
 
@@ -343,6 +404,7 @@ export default function SwipeScreen() {
     };
 
     const handleApplyFilters = async (newFilters: FilterState) => {
+        filtersRef.current = newFilters;
         setFilters(newFilters);
         setCurrentPage(0);
         setHasMore(true);
@@ -441,7 +503,13 @@ export default function SwipeScreen() {
                                         </Animated.View>
 
                                         {currentImage ? (
-                                            <Image source={{ uri: currentImage.uri }} style={styles.cardImage} />
+                                            <OptimizedStorageImage
+                                                imagePath={currentImage.imagePath}
+                                                transform={{ width: 800, height: 1200, quality: 75, resize: 'cover' }}
+                                                style={styles.cardImage}
+                                                cachePolicy="memory-disk"
+                                                contentFit="cover"
+                                            />
                                         ) : (
                                             <View style={[styles.cardImage, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                                                 <IconSymbol name="person.fill" size={120} color={lightTextColor} />
@@ -630,7 +698,7 @@ const GridView = ({
         >
             <View style={styles.gridImageContainer}>
                 {item.profilePhoto ? (
-                    <Image source={{ uri: getImageUrl(item.profilePhoto) }} style={styles.gridImage} />
+                    <OptimizedStorageImage imagePath={item.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.gridImage} cachePolicy="memory-disk" contentFit="cover" />
                 ) : (
                     <View style={[styles.gridImage, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                         <IconSymbol name="person.fill" size={60} color={lightTextColor} />
@@ -703,6 +771,9 @@ const GridView = ({
             renderItem={renderProfileCard}
             keyExtractor={(item) => item._id}
             numColumns={2}
+            initialNumToRender={6}
+            maxToRenderPerBatch={4}
+            windowSize={5}
             contentContainerStyle={styles.gridContainer}
             onEndReached={hasMore ? onLoadMore : undefined}
             onEndReachedThreshold={0.5}

@@ -13,9 +13,12 @@ import { MediaPickerButton, MediaPickerResult } from './media-picker-button';
 import { storyAPI, getImageUrl } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { compressImageForUpload } from '@/utils/media-optimization';
+import { compressVideoForUpload } from '@/utils/video-optimization';
+import { getVideoSource } from '@/utils/video-source';
 
 function VideoPreview({ videoUri }: { videoUri: string }) {
-    const player = useVideoPlayer({ uri: videoUri });
+    const player = useVideoPlayer(getVideoSource(videoUri));
     return (
         <VideoView
             player={player}
@@ -65,7 +68,6 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['videos'],
             allowsEditing: true,
-            quality: 1,
             videoMaxDuration: 60, // 60 seconds max for stories
         });
 
@@ -109,17 +111,17 @@ export function CreateStoryModal({ visible, onClose, onCreate }: CreateStoryModa
             let uploadedVideoUrl = undefined;
 
             if (image) {
-                const base64 = await FileSystem.readAsStringAsync(image, { encoding: 'base64' });
                 const filename = `story-image-${Date.now()}.jpg`;
                 const uploadResponse = await storyAPI.uploadStoryImageBase64({
-                    imageData: `data:image/jpeg;base64,${base64}`,
+                    imageData: await compressImageForUpload(image),
                     filename,
                 });
                 uploadedImageUrl = uploadResponse.imageUrl;
             }
 
             if (video) {
-                const base64 = await FileSystem.readAsStringAsync(video, { encoding: 'base64' });
+                const compressedVideoUri = await compressVideoForUpload(video);
+                const base64 = await FileSystem.readAsStringAsync(compressedVideoUri, { encoding: 'base64' });
                 const filename = `story-video-${Date.now()}.mp4`;
                 const uploadResponse = await storyAPI.uploadStoryVideoBase64({
                     videoData: `data:video/mp4;base64,${base64}`,

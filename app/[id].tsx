@@ -1,16 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Image, TouchableOpacity, Alert, FlatList, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, ScrollView, TouchableOpacity, Alert, FlatList, ActivityIndicator } from 'react-native';
 import AnimatedActivityIndicator from '@/components/animated-activity-indicator';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { communityAPI, getImageUrl } from '@/utils/api';
+import { communityAPI } from '@/utils/api';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { spacing, borderRadius, typography, shadows } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSocket } from '@/utils/socket';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface User {
   _id: string;
@@ -149,7 +150,7 @@ export default function CommunityScreen() {
         {/* Header Image */}
         <View style={styles.imageContainer}>
           {community.image ? (
-            <Image source={{ uri: getImageUrl(community.image) }} style={styles.coverImage} />
+            <OptimizedStorageImage imagePath={community.image} transform={{ width: 1280, quality: 75 }} style={styles.coverImage} cachePolicy="memory-disk" contentFit="cover" />
           ) : (
             <View style={[styles.placeholderImage, { backgroundColor: surfaceColor }]}>
               <IconSymbol name="person.3.fill" size={64} color={lightTextColor} />
@@ -214,7 +215,7 @@ export default function CommunityScreen() {
                   <View style={styles.memberInfo}>
                     <View style={[styles.memberAvatar, { backgroundColor: surfaceColor, overflow: 'hidden' }]}>
                         {member.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(member.profilePhoto) }} style={{ width: '100%', height: '100%' }} />
+                            <OptimizedStorageImage imagePath={member.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={{ width: '100%', height: '100%' }} cachePolicy="memory-disk" contentFit="cover" />
                         ) : (
                             <IconSymbol name="person.fill" size={20} color={lightTextColor} />
                         )}
@@ -246,7 +247,7 @@ export default function CommunityScreen() {
                 <View style={styles.memberInfo}>
                     <View style={[styles.memberAvatar, { backgroundColor: surfaceColor, overflow: 'hidden' }]}>
                         {member.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(member.profilePhoto) }} style={{ width: '100%', height: '100%' }} />
+                            <OptimizedStorageImage imagePath={member.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={{ width: '100%', height: '100%' }} cachePolicy="memory-disk" contentFit="cover" />
                         ) : (
                             <IconSymbol name="person.fill" size={20} color={lightTextColor} />
                         )}

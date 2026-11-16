@@ -7,6 +7,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { communityAPI } from '@/utils/api';
+import { compressImageForUpload } from '@/utils/media-optimization';
 
 interface CreateCommunityModalProps {
     visible: boolean;
@@ -50,15 +51,8 @@ export function CreateCommunityModal({ visible, onClose, onCreate }: CreateCommu
         try {
             let uploadedImageUrl = undefined;
             if (image) {
-                const response = await fetch(image);
-                const blob = await response.blob();
-                const base64 = await new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.readAsDataURL(blob);
-                });
                 const uploadResponse = await communityAPI.uploadImageBase64({
-                    imageData: base64,
+                    imageData: await compressImageForUpload(image, 1200),
                     filename: `comm-${Date.now()}.jpg`,
                 });
                 uploadedImageUrl = uploadResponse.imageUrl;

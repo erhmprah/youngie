@@ -18,6 +18,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { MediaPickerButton, MediaPickerResult } from '@/components/media-picker-button';
 import * as Haptics from 'expo-haptics';
 import { CustomAlert } from '@/utils/alert';
+import { compressImageForUpload } from '@/utils/media-optimization';
+import { compressVideoForUpload } from '@/utils/video-optimization';
+import { getVideoSource } from '@/utils/video-source';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -36,7 +39,7 @@ const categories = [
 ];
 
 function VideoPreviewItem({ videoUri, videoPlayerRef }: { videoUri: string; videoPlayerRef: React.MutableRefObject<any> }) {
-    const player = useVideoPlayer({ uri: videoUri });
+    const player = useVideoPlayer(getVideoSource(videoUri));
     return (
         <VideoView
             ref={videoPlayerRef}
@@ -189,7 +192,6 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
                     const result = await ImagePicker.launchImageLibraryAsync({
                         mediaTypes: ['videos'],
                         allowsEditing: true,
-                        quality: 1,
                     });
                     if (!result.canceled) {
                         const asset = result.assets[0];
@@ -202,7 +204,6 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['videos'],
             allowsEditing: true,
-            quality: 1,
         });
 
         if (!result.canceled) {
@@ -267,17 +268,17 @@ export function CreatePostModal({ visible, onClose, onPost, initialAnonymous = f
 
             for (const medium of media) {
                 if (medium.type === 'image') {
-                    const base64 = await FileSystem.readAsStringAsync(medium.uri, { encoding: 'base64' });
                     const filename = `post-image-${Date.now()}-${Math.random()}.jpg`;
                     const uploadResponse = await postAPI.uploadPostImageBase64({
-                        imageData: `data:image/jpeg;base64,${base64}`,
+                        imageData: await compressImageForUpload(medium.uri),
                         filename
                     });
                     imageUrls.push(uploadResponse.imageUrl);
                 } else if (medium.type === 'video') {
                     videoWidth = medium.width;
                     videoHeight = medium.height;
-                    const base64 = await FileSystem.readAsStringAsync(medium.uri, { encoding: 'base64' });
+                    const compressedVideoUri = await compressVideoForUpload(medium.uri);
+                    const base64 = await FileSystem.readAsStringAsync(compressedVideoUri, { encoding: 'base64' });
                     const filename = `post-video-${Date.now()}.mp4`;
                     const uploadResponse = await postAPI.uploadPostVideoBase64({
                         videoData: `data:video/mp4;base64,${base64}`,

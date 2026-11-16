@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Image, Alert, ViewToken } from 'react-native';
+import { StyleSheet, View, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Alert, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +28,8 @@ import { SkeletonCard } from '@/components/ui/skeleton';
 import { spacing, borderRadius, typography, shadows, sizes } from '@/constants/design-tokens';
 import { getSocket, onPostUpdated, offPostUpdated, onPostCreated, offPostCreated, onPostDeleted, offPostDeleted } from '@/utils/socket';
 import { getRelativeTime } from '@/utils/helpers';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
+import { getVideoSource } from '@/utils/video-source';
 
 // Feed ad cadence. The first ad appears after AD_FIRST_INDEX posts, then every
 // AD_INTERVAL items. AdMob counts every banner impression against your
@@ -114,11 +116,11 @@ function getCommunityFeedVideoAspectRatio(width: number, height: number) {
     return getCommunityMediaAspectRatio(width, height) / 0.7;
 }
 
-function CommunityFeedImage({ uri }: { uri: string | undefined }) {
+function CommunityFeedImage({ imagePath }: { imagePath: string | undefined }) {
     const [aspectRatio, setAspectRatio] = useState(1);
 
-    const handleImageLoad = useCallback((event: { nativeEvent: { source: { width: number; height: number } } }) => {
-        const { width: imageWidth, height: imageHeight } = event.nativeEvent.source;
+    const handleImageLoad = useCallback((event: { source: { width: number; height: number } }) => {
+        const { width: imageWidth, height: imageHeight } = event.source;
         if (!imageWidth || !imageHeight) return;
 
         setAspectRatio(getCommunityMediaAspectRatio(imageWidth, imageHeight));
@@ -126,10 +128,12 @@ function CommunityFeedImage({ uri }: { uri: string | undefined }) {
 
     return (
         <View style={[styles.communityPostImageFrame, { aspectRatio }]}>
-            <Image
-                source={{ uri: uri || '' }}
+            <OptimizedStorageImage
+                imagePath={imagePath}
+                transform={{ width: 800, quality: 75 }}
                 style={styles.communityPostImage}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
                 onLoad={handleImageLoad}
             />
         </View>
@@ -137,7 +141,7 @@ function CommunityFeedImage({ uri }: { uri: string | undefined }) {
 }
 
 function CommunityFeedVideo({ uri, shouldPlay, videoWidth, videoHeight }: { uri: string | undefined; shouldPlay: boolean; videoWidth?: number; videoHeight?: number }) {
-    const player = useVideoPlayer(uri ? { uri } : null, (videoPlayer) => {
+    const player = useVideoPlayer(getVideoSource(uri), (videoPlayer) => {
         videoPlayer.loop = true;
         videoPlayer.muted = true;
     });
@@ -221,8 +225,10 @@ export default function FeedScreen() {
     const [selectedCommunityPostForComments, setSelectedCommunityPostForComments] = useState<CommunityFeedPost | null>(null);
     const { isIncognito, toggleIncognito, setIncognito } = useIncognito();
     const [playingPostId, setPlayingPostId] = useState<string | null>(null);
+    const [mediaReadyFeedItemKeys, setMediaReadyFeedItemKeys] = useState<Set<string>>(() => new Set());
     
     const flatListRef = useRef<FlatList>(null);
+    const feedItemsRef = useRef<any[]>([]);
     const feedRequestVersionRef = useRef(0);
     const feedRequestIdRef = useRef(0);
     const activeLoadMoreRequestRef = useRef(0);
@@ -702,19 +708,39 @@ const handleStoryPress = (userId: string) => {
     };
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        const mediaReadyKeys = new Set<string>();
         const visibleVideoItem = viewableItems.find(({ item }) =>
-            item.kind === 'community'
+            item?.kind === 'community'
                 ? !!item.data.video
-                : item.kind === 'post' && !!item.data.video
+                : item?.kind === 'post' && !!item.data.video
         )?.item;
+
+        viewableItems.forEach(({ item, index }) => {
+            if ((item?.kind !== 'community' && item?.kind !== 'post') || !item.data?._id) return;
+            mediaReadyKeys.add(`${item.kind}:${item.data._id}`);
+
+            if (index === null) return;
+            const nextMediaItem = feedItemsRef.current
+                .slice(index + 1)
+                .find(next => next.kind === 'community' || next.kind === 'post');
+            if (nextMediaItem?.data?._id) {
+                mediaReadyKeys.add(`${nextMediaItem.kind}:${nextMediaItem.data._id}`);
+            }
+        });
+
+        setMediaReadyFeedItemKeys(previous => (
+            previous.size === mediaReadyKeys.size &&
+            [...previous].every(key => mediaReadyKeys.has(key))
+                ? previous
+                : mediaReadyKeys
+        ));
 
         if (!visibleVideoItem) {
             setPlayingPostId(null);
-            return;
+        } else {
+            const prefix = visibleVideoItem.kind === 'community' ? 'community' : 'post';
+            setPlayingPostId(`${prefix}:${visibleVideoItem.data._id}`);
         }
-
-        const prefix = visibleVideoItem.kind === 'community' ? 'community' : 'post';
-        setPlayingPostId(`${prefix}:${visibleVideoItem.data._id}`);
     }, []);
 
     const renderHeader = () => {
@@ -745,7 +771,7 @@ const handleStoryPress = (userId: string) => {
         const renderAvatar = (user: User) => (
             <View style={[styles.storyAvatarContainer, { backgroundColor: surfaceColor }]}>
                 {user.profilePhoto ? (
-                    <Image source={{ uri: getImageUrl(user.profilePhoto) }} style={styles.storyAvatar} />
+                    <OptimizedStorageImage imagePath={user.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.storyAvatar} cachePolicy="memory-disk" contentFit="cover" />
                 ) : (
                     <View style={[styles.storyAvatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                         <IconSymbol name="person.fill" size={30} color={lightTextColor} />
@@ -880,7 +906,7 @@ const handleStoryPress = (userId: string) => {
         );
     };
 
-    const CommunityPostCard = ({ item }: { item: CommunityFeedPost }) => {
+    const CommunityPostCard = ({ item, shouldLoadMedia }: { item: CommunityFeedPost; shouldLoadMedia: boolean }) => {
         const isMember = item.isMember !== false;
         const liked = (item.likes || []).some((l: any) => String(l?._id || l) === String(user?._id));
         const likeCount = (item.likes || []).length;
@@ -958,7 +984,7 @@ const handleStoryPress = (userId: string) => {
                     onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/community/${item.community._id}`); }}
                 >
                     {item.community.image ? (
-                        <Image source={{ uri: getImageUrl(item.community.image) }} style={styles.communityPostAvatar} />
+                        <OptimizedStorageImage imagePath={item.community.image} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={styles.communityPostAvatar} cachePolicy="memory-disk" contentFit="cover" />
                     ) : (
                         <View style={[styles.communityPostAvatar, styles.communityImagePlaceholder, { backgroundColor: primaryColor + '20' }]}>
                             <IconSymbol name="person.3.fill" size={16} color={primaryColor} />
@@ -970,7 +996,7 @@ const handleStoryPress = (userId: string) => {
                         </ThemedText>
                         <View style={styles.communityPostAuthorRow}>
                             {item.author.profilePhoto || item.author.avatar ? (
-                                <Image source={{ uri: getImageUrl(item.author.profilePhoto || item.author.avatar) }} style={styles.communityPostAuthorAvatar} />
+                                <OptimizedStorageImage imagePath={item.author.profilePhoto || item.author.avatar} transform={{ width: 128, height: 128, quality: 70, resize: 'cover' }} style={styles.communityPostAuthorAvatar} cachePolicy="memory-disk" contentFit="cover" />
                             ) : (
                                 <View style={[styles.communityPostAuthorAvatar, styles.communityImagePlaceholder, { backgroundColor: surfaceColor }]}>
                                     <IconSymbol name="person.fill" size={9} color={lightTextColor} />
@@ -996,15 +1022,31 @@ const handleStoryPress = (userId: string) => {
                     ) : null}
 
                     {item.images && item.images.length > 0 && (
-                        <CommunityFeedImage uri={getImageUrl(item.images[0])} />
+                        shouldLoadMedia
+                            ? <CommunityFeedImage imagePath={item.images[0]} />
+                            : <View style={[styles.communityPostImageFrame, { aspectRatio: 1 }]} />
                     )}
                     {item.video && (
-                        <CommunityFeedVideo
-                            uri={getImageUrl(item.video)}
-                            shouldPlay={playingPostId === `community:${item._id}`}
-                            videoWidth={item.videoWidth}
-                            videoHeight={item.videoHeight}
-                        />
+                        shouldLoadMedia ? (
+                            <CommunityFeedVideo
+                                uri={getImageUrl(item.video)}
+                                shouldPlay={playingPostId === `community:${item._id}`}
+                                videoWidth={item.videoWidth}
+                                videoHeight={item.videoHeight}
+                            />
+                        ) : (
+                            <View
+                                style={[
+                                    styles.communityPostImageFrame,
+                                    {
+                                        aspectRatio: getCommunityFeedVideoAspectRatio(
+                                            item.videoWidth || 0,
+                                            item.videoHeight || 0
+                                        ),
+                                    },
+                                ]}
+                            />
+                        )
                     )}
                 </TouchableOpacity>
 
@@ -1094,6 +1136,9 @@ const handleStoryPress = (userId: string) => {
         
         return merged;
     }, [posts, communityPosts, recommendedPosts]);
+    useEffect(() => {
+        feedItemsRef.current = feedItems;
+    }, [feedItems]);
 
     const renderFeedItem = ({ item }: { item: any }) => {
         if (item.kind === 'ad') {
@@ -1129,7 +1174,12 @@ const handleStoryPress = (userId: string) => {
             );
         }
         if (item.kind === 'community') {
-            return <CommunityPostCard item={item.data} />;
+            return (
+                <CommunityPostCard
+                    item={item.data}
+                    shouldLoadMedia={mediaReadyFeedItemKeys.has(`community:${item.data._id}`)}
+                />
+            );
         }
         const fullProfilePhoto = getImageUrl(item.data.author?.profilePhoto);
         const postWithAvatar = {
@@ -1153,6 +1203,7 @@ const handleStoryPress = (userId: string) => {
                 onLike={handleLikePost}
                 onComment={(post) => { setSelectedPostForComments(post); setShowCommentModal(true); }}
                 shouldPlay={playingPostId === `post:${item.data._id}`}
+                shouldLoadMedia={mediaReadyFeedItemKeys.has(`post:${item.data._id}`)}
             />
         );
     };
@@ -1193,7 +1244,7 @@ const handleStoryPress = (userId: string) => {
                     contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: spacing.lg }}
                     initialNumToRender={3}
                     maxToRenderPerBatch={2}
-                    windowSize={31}
+                    windowSize={7}
                     updateCellsBatchingPeriod={50}
                     onScrollToIndexFailed={(info) => {
                         const wait = new Promise(resolve => setTimeout(resolve, 500));

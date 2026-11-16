@@ -18,7 +18,10 @@ import { getSocket, joinChat, leaveChat, sendMessage, sendTypingStart, sendTypin
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ChatSettingsModal } from '@/components/chat-settings-modal';
 import { MediaPreviewModal } from '@/components/media-preview-modal';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import { MediaPickerButton, MediaPickerResult } from '@/components/media-picker-button';
+import { compressVideoForUpload } from '@/utils/video-optimization';
+import { getVideoSource } from '@/utils/video-source';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { Swipeable, RectButton } from 'react-native-gesture-handler';
 
@@ -101,7 +104,7 @@ const InlineVideoPreview = ({
   autoPlay?: boolean;
   playIconColor?: string;
 }) => {
-  const player = useVideoPlayer({ uri });
+  const player = useVideoPlayer(getVideoSource(uri));
   useEffect(() => {
     if (autoPlay) {
       player.play();
@@ -619,17 +622,24 @@ export default function ChatScreen() {
         const formData = new FormData();
 
         const ext = (type || '').split('/')[1] === 'quicktime' ? 'mov' : ((type || '').split('/')[1] || 'jpg');
-        const name = currentAttachment.fileName || `media-${Date.now()}.${ext}`;
 
-        let uri = currentAttachment.uri;
+        const isVideoAttachment = (type || '').startsWith('video/');
+        let uri = isVideoAttachment
+          ? await compressVideoForUpload(currentAttachment.uri)
+          : currentAttachment.uri;
         if (Platform.OS === 'android' && !uri.startsWith('file://')) {
             uri = `file://${uri}`;
         }
 
+        const uploadType = isVideoAttachment ? 'video/mp4' : type;
+        const uploadName = isVideoAttachment
+          ? `video-${Date.now()}.mp4`
+          : currentAttachment.fileName || `media-${Date.now()}.${ext}`;
+
         formData.append('file', {
           uri,
-          name,
-          type,
+          name: uploadName,
+          type: uploadType,
         } as any);
 
         const response = await chatAPI.uploadAttachment(formData, {
@@ -1127,12 +1137,13 @@ export default function ChatScreen() {
       const isImageError = imageErrors.get(normalizedUrl) || false;
       return !isImageError ? (
         <TouchableOpacity onPress={() => handleMediaPreview(attachment, attachmentUrl)}>
-          <Image
-            key={attachmentUrl}
-            source={{ uri: attachmentUrl }}
+          <OptimizedStorageImage
+            imagePath={attachmentUrl}
+            transform={{ width: 640, quality: 75 }}
             style={styles.attachmentImage}
-            resizeMode="cover"
-            onError={(e) => {
+            cachePolicy="memory-disk"
+            contentFit="cover"
+            onError={() => {
               setImageErrors(prev => new Map(prev).set(normalizedUrl, true));
             }}
           />
@@ -1246,7 +1257,7 @@ export default function ChatScreen() {
                       const attachmentUrl = normalizedUrl.startsWith('http') ? normalizedUrl : getImageUrl(normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`);
                       if (!attachmentUrl) return null;
                       if (attachment.type && attachment.type.startsWith('image')) {
-                        return <Image source={{ uri: attachmentUrl }} style={styles.replyMediaThumb} resizeMode="cover" />;
+                        return <OptimizedStorageImage imagePath={attachmentUrl} transform={{ width: 240, height: 180, quality: 65, resize: 'cover' }} style={styles.replyMediaThumb} cachePolicy="memory-disk" contentFit="cover" />;
                       }
                       if (attachment.type && attachment.type.startsWith('video')) {
                         return (

@@ -3,6 +3,7 @@ import { ImageViewerModal } from '@/components/image-viewer-modal';
 import { ReportUserModal } from '@/components/report-user-modal';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 import { borderRadius, shadows, spacing, typography } from '@/constants/design-tokens';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -11,7 +12,7 @@ import { chatAPI, getImageUrl, postAPI, userAPI } from '@/utils/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Image, Modal, ScrollView, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Modal, ScrollView, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 
@@ -27,10 +28,9 @@ interface UserProfile {
   school?: string;
   educationLevel?: string;
   interests?: string[];
-  friends?: any[];
-  friendRequests?: any[];
-  incomingRequests?: any[];
-  posts?: any[];
+  friendsCount: number;
+  photosCount: number;
+  connectionStatus: 'self' | 'friend' | 'requested' | 'received' | 'none';
   isPrivate?: boolean;
 }
 
@@ -63,17 +63,32 @@ export default function UserProfileScreen() {
   const loadingOpacity = useRef(new Animated.Value(1)).current;
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const [posts, setPosts] = useState<Post[]>([]);
+  const [loadedPostMediaIds, setLoadedPostMediaIds] = useState<Set<string>>(() => new Set());
   const [album, setAlbum] = useState<AlbumPhoto[]>([]);
+  const [albumTotal, setAlbumTotal] = useState(0);
   const [loadingPosts, setLoadingPosts] = useState(false);
+  const [postsError, setPostsError] = useState<string | null>(null);
   const [hasMorePosts, setHasMorePosts] = useState(true);
   const [postsPage, setPostsPage] = useState(1);
+  const postsLoadingRef = useRef(false);
+  const postsRequestId = useRef(0);
+  const postsLoadedForProfile = useRef<string | null>(null);
+  const postsListLayout = useRef({ y: 0, height: 0 });
   const [activeTab, setActiveTab] = useState<'posts' | 'album'>('posts');
   const [loadingAlbum, setLoadingAlbum] = useState(false);
+  const [albumError, setAlbumError] = useState<string | null>(null);
+  const [albumPage, setAlbumPage] = useState(1);
+  const [hasMoreAlbum, setHasMoreAlbum] = useState(true);
+  const [albumLoadedForProfile, setAlbumLoadedForProfile] = useState<string | null>(null);
+  const albumLoadingRef = useRef(false);
+  const albumRequestId = useRef(0);
+  const albumGridLayout = useRef({ y: 0, height: 0 });
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [hasOpenedReportModal, setHasOpenedReportModal] = useState(false);
   const postPositions = useRef<Map<string, { y: number; height: number }>>(new Map());
   const profileRequestId = useRef(0);
   const isOwnProfile = currentUser?._id === profileId;
@@ -114,7 +129,7 @@ export default function UserProfileScreen() {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const userRes = await Promise.race([
-        userAPI.getProfile(profileId),
+        userAPI.getProfileSummary(profileId, true),
         new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Profile request timed out')), 15000);
         }),
@@ -129,24 +144,11 @@ export default function UserProfileScreen() {
 
       setProfile(targetData);
       setStats({
-        posts: targetData.posts?.length || 0,
-        friends: targetData.friends?.length || 0
+        posts: 0,
+        friends: targetData.friendsCount || 0
       });
-
-      const targetId = targetData._id;
-      if (targetId === currentUser._id) {
-        setConnectionStatus('self');
-      } else {
-        const includesUser = (users: any[] | undefined) =>
-          users?.some(user => (typeof user === 'string' ? user : user?._id) === currentUser._id) ?? false;
-        if (includesUser(targetData.friends)) {
-          setConnectionStatus('friend');
-        } else if (includesUser(targetData.incomingRequests)) {
-          setConnectionStatus('requested');
-        } else if (includesUser(targetData.friendRequests)) {
-          setConnectionStatus('received');
-        }
-      }
+      setAlbumTotal(targetData.photosCount || 0);
+      setConnectionStatus(targetData.connectionStatus || 'none');
     } catch (error) {
       if (requestId !== profileRequestId.current) return;
       console.error('Error fetching user profile:', error);
@@ -160,15 +162,30 @@ export default function UserProfileScreen() {
   const fetchPosts = useCallback(async (page: number = 1) => {
     const profileId = Array.isArray(id) ? id[0] : id;
     if (!profileId) return;
+    const requestId = page === 1 ? ++postsRequestId.current : postsRequestId.current;
+    if (page === 1) {
+      setPosts([]);
+      setLoadedPostMediaIds(new Set());
+      setPostsPage(1);
+      setHasMorePosts(true);
+      setPostsError(null);
+      postPositions.current.clear();
+    } else {
+      setPostsError(null);
+    }
+    postsLoadingRef.current = true;
     setLoadingPosts(true);
     try {
-      const response = await postAPI.getUserPosts(profileId, page, 20);
+      const response = await postAPI.getUserPosts(profileId, page, 10, true, true);
+      if (requestId !== postsRequestId.current) return;
       const data = response.data || {};
       const newPosts = Array.isArray(data.posts) ? data.posts : Array.isArray(data) ? data : [];
       const hasMore = typeof data.hasMore === 'boolean' ? data.hasMore : false;
       const total = data.total;
       if (page === 1) {
         setPosts(newPosts);
+        setLoadedPostMediaIds(new Set(newPosts.slice(0, 1).map((post: Post) => post._id)));
+        postsLoadedForProfile.current = profileId;
         // Count comes from the posts collection (soft-delete aware) so the stat
         // always matches what the grid can actually load.
         if (typeof total === 'number') {
@@ -180,46 +197,89 @@ export default function UserProfileScreen() {
       setHasMorePosts(hasMore);
       setPostsPage(page);
     } catch (error) {
+      if (requestId !== postsRequestId.current) return;
       console.error('Error fetching posts:', error);
+      setPostsError("Couldn't load posts. Check your connection and try again.");
     } finally {
-      setLoadingPosts(false);
+      if (requestId === postsRequestId.current) {
+        postsLoadingRef.current = false;
+        setLoadingPosts(false);
+      }
     }
   }, [id]);
 
-  const fetchAlbum = useCallback(async () => {
+  const fetchAlbum = useCallback(async (page: number = 1) => {
     const profileId = Array.isArray(id) ? id[0] : id;
-    if (!profileId) return;
+    if (!profileId || albumLoadingRef.current) return;
+    const requestId = page === 1 ? ++albumRequestId.current : albumRequestId.current;
+    if (page === 1) {
+      setAlbum([]);
+      setAlbumTotal(0);
+      setAlbumPage(1);
+      setHasMoreAlbum(true);
+      setAlbumLoadedForProfile(null);
+    }
+    setAlbumError(null);
+    albumLoadingRef.current = true;
     setLoadingAlbum(true);
     try {
-      const response = await userAPI.getAlbum(profileId, 1, 30);
-      setAlbum(response.data?.data || []);
+      const response = await userAPI.getAlbum(profileId, page, 12, true);
+      if (requestId !== albumRequestId.current) return;
+      const newPhotos = Array.isArray(response.data?.data) ? response.data.data : [];
+      setAlbum(prev => page === 1 ? newPhotos : [...prev, ...newPhotos]);
+      if (typeof response.data?.pagination?.totalItems === 'number') {
+        setAlbumTotal(response.data.pagination.totalItems);
+      }
+      setAlbumPage(page);
+      setHasMoreAlbum(response.data?.pagination?.hasNextPage === true);
+      setAlbumLoadedForProfile(profileId);
     } catch (error) {
+      if (requestId !== albumRequestId.current) return;
       console.error('Error fetching album:', error);
-      setAlbum([]);
+      setAlbumError("Couldn't load photos. Check your connection and try again.");
+      if (page === 1) setAlbum([]);
     } finally {
-      setLoadingAlbum(false);
+      if (requestId === albumRequestId.current) {
+        albumLoadingRef.current = false;
+        setLoadingAlbum(false);
+      }
     }
   }, [id]);
 
-  const loadMorePosts = () => {
-    if (!loadingPosts && hasMorePosts) {
-      fetchPosts(postsPage + 1);
+  const loadMorePosts = useCallback(() => {
+    if (!postsLoadingRef.current && hasMorePosts) {
+      void fetchPosts(postsPage + 1);
     }
-  };
+  }, [fetchPosts, hasMorePosts, postsPage]);
+
+  const loadMoreAlbum = useCallback(() => {
+    if (!albumLoadingRef.current && hasMoreAlbum) {
+      void fetchAlbum(albumPage + 1);
+    }
+  }, [albumPage, fetchAlbum, hasMoreAlbum]);
 
   useEffect(() => {
     void fetchProfile();
     return () => {
       profileRequestId.current += 1;
+      postsRequestId.current += 1;
+      albumRequestId.current += 1;
+      postsLoadingRef.current = false;
+      albumLoadingRef.current = false;
     };
   }, [fetchProfile]);
 
   useEffect(() => {
-    if (profile) {
+    if (profileId && profile?._id === profileId && postsLoadedForProfile.current !== profileId) {
       fetchPosts(1);
-      fetchAlbum();
     }
-  }, [profile, fetchPosts, fetchAlbum]);
+  }, [profile?._id, profileId, fetchPosts]);
+
+  useEffect(() => {
+    if (profile && activeTab === 'album' && albumLoadedForProfile !== profile._id) {
+      void fetchAlbum(1);
+    }
+  }, [activeTab, albumLoadedForProfile, fetchAlbum, profile]);
 
   useEffect(() => {
     Animated.parallel([
@@ -349,6 +409,7 @@ export default function UserProfileScreen() {
 
   const handleReport = () => {
     setOptionsVisible(false);
+    setHasOpenedReportModal(true);
     setReportModalVisible(true);
   };
 
@@ -377,6 +438,8 @@ export default function UserProfileScreen() {
           post={postWithAuthor as any}
           currentUserId={currentUser?._id || ''}
           shouldPlay={item._id === playingPostId}
+          shouldLoadMedia={loadedPostMediaIds.has(item._id)}
+          compactInteractions
         />
       </View>
     );
@@ -391,25 +454,63 @@ export default function UserProfileScreen() {
     const visibleTop = offsetY;
     const visibleBottom = offsetY + viewportHeight;
 
-    let bestId: string | null = null;
-    let bestOverlap = 0;
+    if (activeTab === 'posts') {
+      let bestId: string | null = null;
+      let bestOverlap = 0;
 
-    postPositions.current.forEach((pos, id) => {
-      const postTop = pos.y;
-      const postBottom = pos.y + pos.height;
-      const overlapTop = Math.max(visibleTop, postTop);
-      const overlapBottom = Math.min(visibleBottom, postBottom);
-      const overlap = Math.max(0, overlapBottom - overlapTop);
-      if (overlap > bestOverlap) {
-        bestOverlap = overlap;
-        bestId = id;
+      postPositions.current.forEach((pos, id) => {
+        const postTop = postsListLayout.current.y + pos.y;
+        const postBottom = postTop + pos.height;
+        const overlapTop = Math.max(visibleTop, postTop);
+        const overlapBottom = Math.min(visibleBottom, postBottom);
+        const overlap = Math.max(0, overlapBottom - overlapTop);
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestId = id;
+        }
+      });
+
+      if (bestId && bestOverlap > 0) {
+        setPlayingPostId(bestId);
+        const visiblePostIndex = posts.findIndex(post => post._id === bestId);
+        const nextMediaIds = new Set(
+          visiblePostIndex >= 0
+            ? posts.slice(visiblePostIndex, visiblePostIndex + 2).map(post => post._id)
+            : [bestId]
+        );
+        setLoadedPostMediaIds(prev => {
+          if (
+            prev.size === nextMediaIds.size &&
+            [...prev].every(postId => nextMediaIds.has(postId))
+          ) {
+            return prev;
+          }
+          return nextMediaIds;
+        });
+      } else {
+        setPlayingPostId(null);
       }
-    });
-
-    if (bestId && bestOverlap > 0) {
-      setPlayingPostId(bestId);
     }
-  }, []);
+
+    const postsBottom = postsListLayout.current.y + postsListLayout.current.height;
+    if (
+      activeTab === 'posts' &&
+      hasMorePosts &&
+      !postsLoadingRef.current &&
+      visibleBottom >= postsBottom - viewportHeight * 1.5
+    ) {
+      loadMorePosts();
+    }
+    const albumBottom = albumGridLayout.current.y + albumGridLayout.current.height;
+    if (
+      activeTab === 'album' &&
+      hasMoreAlbum &&
+      !albumLoadingRef.current &&
+      visibleBottom >= albumBottom - viewportHeight * 1.5
+    ) {
+      loadMoreAlbum();
+    }
+  }, [activeTab, hasMoreAlbum, hasMorePosts, loadMoreAlbum, loadMorePosts, posts]);
 
   const handleDeleteAlbumPhoto = async (photoId: string) => {
     if (!currentUser?._id) return;
@@ -421,6 +522,7 @@ export default function UserProfileScreen() {
           CustomAlert.loading('Deleting photo...', 'Please wait');
           await userAPI.deleteAlbumPhoto(currentUser._id, photoId);
           setAlbum(prev => prev.filter(p => p._id !== photoId));
+          setAlbumTotal(prev => Math.max(0, prev - 1));
           setSelectedImage(null);
           setSelectedPhotoId(null);
           CustomAlert.success('Deleted', 'Photo has been deleted');
@@ -491,7 +593,7 @@ export default function UserProfileScreen() {
               {/* Cover Photo */}
               <View style={styles.coverPhotoContainer}>
                 {profile.coverPhoto ? (
-                  <Image source={{ uri: getImageUrl(profile.coverPhoto) }} style={styles.coverPhoto} />
+                  <OptimizedStorageImage imagePath={profile.coverPhoto} transform={{ width: 1280, quality: 75 }} style={styles.coverPhoto} cachePolicy="memory-disk" contentFit="cover" />
                 ) : (
                   <LinearGradient colors={[primaryColor + '20', primaryColor + '10']} style={styles.coverPhotoPlaceholder} />
                 )}
@@ -505,7 +607,7 @@ export default function UserProfileScreen() {
                         activeOpacity={0.8}
                     >
                         {profile.profilePhoto ? (
-                            <Image source={{ uri: getImageUrl(profile.profilePhoto) }} style={[styles.avatar, { borderColor: primaryColor }]} />
+                            <OptimizedStorageImage imagePath={profile.profilePhoto} transform={{ width: 256, height: 256, quality: 70, resize: 'cover' }} style={[styles.avatar, { borderColor: primaryColor }]} cachePolicy="memory-disk" contentFit="cover" />
                         ) : (
                             <View style={[styles.avatarPlaceholder, { borderColor: primaryColor, backgroundColor: cardBackgroundColor }]}>
                                 <IconSymbol name="person.fill" size={50} color={lightTextColor} />
@@ -578,7 +680,7 @@ export default function UserProfileScreen() {
                     <ThemedText style={{ color: lightTextColor }}>Friends</ThemedText>
                   </View>
                   <View style={styles.statBox}>
-                    <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{album.length}</ThemedText>
+                    <ThemedText type="title" style={{ fontFamily: typography.families.bold, color: primaryColor }}>{albumTotal}</ThemedText>
                     <ThemedText style={{ color: lightTextColor }}>Photos</ThemedText>
                   </View>
                 </View>
@@ -617,14 +719,39 @@ export default function UserProfileScreen() {
 
               {/* Posts/Album Grid */}
               {activeTab === 'posts' && (
-                <View style={styles.postsList}>
+                <View
+                  style={styles.postsList}
+                  onLayout={(event) => {
+                    postsListLayout.current = {
+                      y: event.nativeEvent.layout.y,
+                      height: event.nativeEvent.layout.height,
+                    };
+                  }}
+                >
                   {posts.length > 0 ? (
                     posts.map((p) => renderPostItem({ item: p }))
                   ) : (
                     <View style={styles.emptyContainer}>
-                      <IconSymbol name="camera" size={48} color={lightTextColor} />
-                      <ThemedText style={[styles.emptyText, { color: textColor }]}>No posts yet</ThemedText>
+                      {postsError ? (
+                        <>
+                          <ThemedText style={[styles.emptyText, { color: textColor }]}>{postsError}</ThemedText>
+                          <TouchableOpacity onPress={() => void fetchPosts(postsPage || 1)} activeOpacity={0.7}>
+                            <ThemedText style={[styles.emptyText, { color: primaryColor }]}>Try Again</ThemedText>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <>
+                          <IconSymbol name="camera" size={48} color={lightTextColor} />
+                          <ThemedText style={[styles.emptyText, { color: textColor }]}>No posts yet</ThemedText>
+                        </>
+                      )}
                     </View>
+                  )}
+                  {loadingPosts && <ActivityIndicator style={styles.postsLoading} color={primaryColor} />}
+                  {posts.length > 0 && postsError && (
+                    <TouchableOpacity style={styles.postsLoading} onPress={() => void fetchPosts(postsPage + 1)} activeOpacity={0.7}>
+                      <ThemedText style={{ color: primaryColor }}>{postsError} Try Again</ThemedText>
+                    </TouchableOpacity>
                   )}
                 </View>
               )}
@@ -636,7 +763,15 @@ export default function UserProfileScreen() {
               {/* Album empty/loading state handled in album section below */
               /* (removed erroneous extra wrapper that broke JSX structure) */}
               {activeTab === 'album' && (
-                <View style={styles.albumGrid}>
+                <View
+                  style={styles.albumGrid}
+                  onLayout={(event) => {
+                    albumGridLayout.current = {
+                      y: event.nativeEvent.layout.y,
+                      height: event.nativeEvent.layout.height,
+                    };
+                  }}
+                >
                   {getAlbumData() ? (
                     album.map((photo) => (
                       <TouchableOpacity
@@ -645,14 +780,33 @@ export default function UserProfileScreen() {
                         onPress={() => { setSelectedImage(getImageUrl(photo.image) || null); setSelectedPhotoId(photo._id); }}
                         activeOpacity={0.8}
                       >
-                        <Image source={{ uri: getImageUrl(photo.image) }} style={styles.albumImage} resizeMode="cover" />
+                        <OptimizedStorageImage imagePath={photo.image} transform={{ width: 480, quality: 75 }} style={styles.albumImage} cachePolicy="memory-disk" contentFit="cover" />
                       </TouchableOpacity>
                     ))
                   ) : (
                     <View style={styles.emptyContainer}>
-                      <IconSymbol name="photo" size={48} color={lightTextColor} />
-                      <ThemedText style={[styles.emptyText, { color: textColor }]}>No photos in album</ThemedText>
+                      {loadingAlbum ? (
+                        <ActivityIndicator color={primaryColor} />
+                      ) : albumError ? (
+                        <>
+                          <ThemedText style={[styles.emptyText, { color: textColor }]}>{albumError}</ThemedText>
+                          <TouchableOpacity onPress={() => void fetchAlbum(albumPage || 1)} activeOpacity={0.7}>
+                            <ThemedText style={[styles.emptyText, { color: primaryColor }]}>Try Again</ThemedText>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <>
+                          <IconSymbol name="photo" size={48} color={lightTextColor} />
+                          <ThemedText style={[styles.emptyText, { color: textColor }]}>No photos in album</ThemedText>
+                        </>
+                      )}
                     </View>
+                  )}
+                  {loadingAlbum && album.length > 0 && <ActivityIndicator style={styles.postsLoading} color={primaryColor} />}
+                  {album.length > 0 && albumError && (
+                    <TouchableOpacity style={styles.postsLoading} onPress={() => void fetchAlbum(albumPage + 1)} activeOpacity={0.7}>
+                      <ThemedText style={{ color: primaryColor }}>{albumError} Try Again</ThemedText>
+                    </TouchableOpacity>
                   )}
                 </View>
               )}
@@ -686,12 +840,14 @@ export default function UserProfileScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      <ReportUserModal
-        visible={reportModalVisible}
-        onClose={() => setReportModalVisible(false)}
-        targetUserId={profile?._id || ''}
-        targetUsername={profile?.username}
-      />
+      {hasOpenedReportModal && profile && (
+        <ReportUserModal
+          visible={reportModalVisible}
+          onClose={() => setReportModalVisible(false)}
+          targetUserId={profile._id}
+          targetUsername={profile.username}
+        />
+      )}
     </Animated.View>
     </View>
   );
@@ -784,6 +940,7 @@ const styles = StyleSheet.create({
   },
   tabText: { fontSize: typography.sizes.body1, fontFamily: typography.families.medium },
   postsList: { paddingBottom: spacing.xxl, paddingHorizontal: spacing.sm },
+  postsLoading: { marginVertical: spacing.lg },
   albumGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingBottom: spacing.xxl, paddingHorizontal: spacing.xs },
   postItem: { 
     padding: spacing.xl, 

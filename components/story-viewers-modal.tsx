@@ -1,12 +1,12 @@
 import React from 'react';
-import { Modal, StyleSheet, View, TouchableOpacity, FlatList, Image, ScrollView } from 'react-native';
+import { Modal, StyleSheet, View, TouchableOpacity, FlatList, ScrollView } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { Ionicons } from '@expo/vector-icons';
-import { getImageUrl } from '@/utils/api';
 import { useRouter } from 'expo-router';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface User {
     _id: string;
@@ -159,7 +159,7 @@ export function StoryViewersModal({ visible, onClose, viewers = [], reactions = 
                                 >
                                     <View style={styles.userInfo}>
                                         {item.user.profilePhoto ? (
-                                            <Image source={{ uri: getImageUrl(item.user.profilePhoto) }} style={styles.avatar} />
+                                            <OptimizedStorageImage imagePath={item.user.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                                         ) : (
                                             <View style={[styles.avatar, { backgroundColor: surfaceColor, justifyContent: 'center', alignItems: 'center' }]}>
                                                 <Ionicons name="person" size={16} color={lightTextColor} />

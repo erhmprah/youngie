@@ -1,7 +1,7 @@
 // components/story-viewer.tsx
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Modal, StyleSheet, View, Image, Dimensions, Animated, Easing, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { Modal, StyleSheet, View, Dimensions, Animated, Easing, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEventListener } from 'expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,12 +12,14 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { spacing, borderRadius, typography } from '@/constants/design-tokens';
 import { IconSymbol } from './ui/icon-symbol';
 import { getImageUrl, storyAPI } from '@/utils/api';
+import { getVideoSource } from '@/utils/video-source';
 import { getRelativeTime } from '@/utils/helpers';
 import { useAuth } from '@/contexts/AuthContext';
 import { ReactionPicker, ReactionType } from './reaction-picker';
 import { StoryViewersModal } from './story-viewers-modal';
 import { useRouter } from 'expo-router';
 import { useInterstitialAdHelper } from '@/hooks/useInterstitialAdHelper';
+import { OptimizedStorageImage } from '@/components/optimized-storage-image';
 
 interface User {
     _id: string;
@@ -110,7 +112,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     );
     const story = group?.stories[currentStoryIndex];
     const storyVideoUri = story?.video ? getImageUrl(story.video) : undefined;
-    const storyPlayer = useVideoPlayer(storyVideoUri ? { uri: storyVideoUri } : null, (player) => {
+    const storyPlayer = useVideoPlayer(getVideoSource(storyVideoUri), (player) => {
         player.muted = false;
         player.volume = 1;
         // Duck whatever else is playing (music, another app) rather than
@@ -514,7 +516,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                     surfaceType="textureView"
                 />
             ) : story.image && getImageUrl(story.image) ? (
-                <Image source={{ uri: getImageUrl(story.image) }} style={styles.media} />
+                <OptimizedStorageImage imagePath={story.image} transform={{ width: 1280, quality: 75 }} style={styles.media} cachePolicy="memory-disk" contentFit="contain" />
             ) : null}
             {story.content && (
                 <View style={styles.contentOverlay}>
@@ -548,7 +550,7 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                         }
                     }}
                 >
-                    <Image source={{ uri: getImageUrl(group.user?.profilePhoto) }} style={styles.avatar} />
+                    <OptimizedStorageImage imagePath={group.user?.profilePhoto} transform={{ width: 96, height: 96, quality: 65, resize: 'cover' }} style={styles.avatar} cachePolicy="memory-disk" contentFit="cover" />
                     <ThemedText style={styles.username}>{group.user?.username || 'User'}</ThemedText>
                 </Pressable>
                 <ThemedText style={styles.time}>{getRelativeTime(story.createdAt)}</ThemedText>

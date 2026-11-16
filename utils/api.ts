@@ -584,6 +584,8 @@ export const appAPI = {
 
 export const userAPI = {
   getProfile: (userId: string) => api.get(`/users/${userId}`),
+  getProfileSummary: (userId: string, skipGlobalErrorAlert: boolean = false) =>
+    api.get(`/users/${userId}/profile-summary`, { _skipGlobalErrorAlert: skipGlobalErrorAlert } as any),
   updateProfile: (userId: string, data: any) => api.put(`/users/${userId}`, data),
   deleteAccount: () => api.post('/users/delete-account'),
   restoreAccount: () => api.post('/users/restore-account'),
@@ -624,7 +626,11 @@ export const userAPI = {
     api.post(`/users/${userId}/friends/${friendId}`),
   unfriend: (userId: string, friendId: string) =>
     api.delete(`/users/${userId}/friends/${friendId}`),
-  getAlbum: (userId: string, page?: number, limit?: number) => api.get(`/posts/album/user/${userId}`, { params: { page, limit } }),
+  getAlbum: (userId: string, page?: number, limit?: number, skipGlobalErrorAlert: boolean = false) =>
+    api.get(`/posts/album/user/${userId}`, {
+      params: { page, limit },
+      _skipGlobalErrorAlert: skipGlobalErrorAlert,
+    } as any),
   uploadAlbumPhoto: async (userId: string, data: { imageData: string; filename: string }) => {
     return safeFetchWithRetry(`${API_URL}/posts/album`, {
       method: 'POST',
@@ -705,7 +711,11 @@ export const chatAPI = {
 
 export const postAPI = {
   getPosts: (isAnonymous?: boolean, page?: number, limit?: number) => api.get('/posts', { params: { isAnonymous, page, limit } }),
-  getUserPosts: (userId: string, page?: number, limit?: number) => api.get(`/posts/user/${userId}`, { params: { page, limit } }),
+  getUserPosts: (userId: string, page?: number, limit?: number, compact?: boolean, skipGlobalErrorAlert: boolean = false) =>
+    api.get(`/posts/user/${userId}`, {
+      params: { page, limit, compact },
+      _skipGlobalErrorAlert: skipGlobalErrorAlert,
+    } as any),
   getPost: (postId: string) => api.get(`/posts/${postId}`),
   createPost: (data: { content?: string; images?: string[]; video?: string; videoWidth?: number; videoHeight?: number; isPublic?: boolean; isAnonymous?: boolean; commentsDisabled?: boolean; tags?: string[]; category?: string; pollOptions?: { text: string; votes: string[] }[] }) =>
     api.post('/posts', data),
@@ -852,12 +862,34 @@ export const communityAPI = {
     api.post(`/communities/${communityId}/events`, data),
 };
 
-// Helper function to get full image URL
-export const getImageUrl = (imagePath?: string): string | undefined => {
+export interface StorageImageTransform {
+  width: number;
+  quality?: number;
+  height?: number;
+  resize?: 'cover' | 'contain' | 'fill';
+}
+
+// Helper function to resolve a stored image URL and optionally request a transformed variant.
+export const getImageUrl = (imagePath?: string, transform?: StorageImageTransform): string | undefined => {
   if (!imagePath) return undefined;
   
-  // Return Supabase URLs as-is - they should work
   if (imagePath.startsWith('http')) {
+    if (transform) {
+      try {
+        const url = new URL(imagePath);
+        const publicObjectPath = '/storage/v1/object/public/';
+        if (url.pathname.includes(publicObjectPath)) {
+          url.pathname = url.pathname.replace(publicObjectPath, '/storage/v1/render/image/public/');
+          url.searchParams.set('width', String(Math.round(transform.width)));
+          if (transform.height) url.searchParams.set('height', String(Math.round(transform.height)));
+          url.searchParams.set('quality', String(transform.quality ?? 75));
+          if (transform.resize) url.searchParams.set('resize', transform.resize);
+          return url.toString();
+        }
+      } catch {
+        return imagePath;
+      }
+    }
     return imagePath;
   }
   if (imagePath.startsWith('/uploads/')) {
