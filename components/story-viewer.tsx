@@ -1,7 +1,7 @@
 // components/story-viewer.tsx
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Modal, StyleSheet, View, Image, Dimensions, Animated, Easing, Alert, Pressable } from 'react-native';
+import { Modal, StyleSheet, View, Image, Dimensions, Animated, Easing, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEventListener } from 'expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -96,6 +96,9 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
     const [showReactions, setShowReactions] = useState(false);
     const [showViewersModal, setShowViewersModal] = useState(false);
+    const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+    const [isDeletingStory, setIsDeletingStory] = useState(false);
+    const [deleteStoryError, setDeleteStoryError] = useState<string | null>(null);
     const [currentPollOptions, setCurrentPollOptions] = useState<PollOption[]>([]);
     const [progressAnim] = useState(() => new Animated.Value(0));
     const [storiesViewedSinceAd, setStoriesViewedSinceAd] = useState(0);
@@ -201,6 +204,9 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
     }, [progressAnim]);
 
     const primaryColor = useThemeColor('primary');
+    const surfaceColor = useThemeColor('surface');
+    const textColor = useThemeColor('text');
+    const errorColor = useThemeColor('error');
     const white = useThemeColor('white');
     const lightTextColor = useThemeColor('lightText');
 
@@ -421,29 +427,26 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
 
     const handleDeleteStory = () => {
         if (!story) return;
+        setDeleteStoryError(null);
+        setShowDeleteConfirmation(true);
+    };
 
-        Alert.alert(
-            'Delete Story',
-            'Are you sure you want to delete this story? This action cannot be undone.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await storyAPI.deleteStory(story._id);
-                            Alert.alert('Success', 'Story deleted successfully');
-                            onStoryDeleted?.(); // Refresh stories in parent component
-                            onClose(); // Close the viewer after deletion
-                        } catch (error) {
-                            console.error('Failed to delete story:', error);
-                            Alert.alert('Error', 'Failed to delete story. Please try again.');
-                        }
-                    }
-                }
-            ]
-        );
+    const confirmDeleteStory = async () => {
+        if (!story || isDeletingStory) return;
+
+        setIsDeletingStory(true);
+        setDeleteStoryError(null);
+        try {
+            await storyAPI.deleteStory(story._id);
+            setShowDeleteConfirmation(false);
+            onStoryDeleted?.();
+            onClose();
+        } catch (error) {
+            console.error('Failed to delete story:', error);
+            setDeleteStoryError('Failed to delete story. Please try again.');
+        } finally {
+            setIsDeletingStory(false);
+        }
     };
 
     const handleMuteUser = () => {
@@ -604,6 +607,48 @@ export function StoryViewer({ visible, onClose, storyGroups, initialGroupIndex, 
                 </Pressable>
             )}
 
+            {showDeleteConfirmation && (
+                <View style={styles.deleteConfirmationOverlay}>
+                    <Pressable
+                        style={styles.deleteConfirmationBackdrop}
+                        onPress={() => {
+                            if (!isDeletingStory) setShowDeleteConfirmation(false);
+                        }}
+                    />
+                    <View style={[styles.deleteConfirmationCard, { backgroundColor: surfaceColor }]}>
+                        <ThemedText style={[styles.deleteConfirmationTitle, { color: textColor }]}>Delete Story?</ThemedText>
+                        <ThemedText style={[styles.deleteConfirmationMessage, { color: textColor }]}>
+                            This action cannot be undone.
+                        </ThemedText>
+                        {deleteStoryError && (
+                            <ThemedText style={[styles.deleteConfirmationError, { color: errorColor }]}>
+                                {deleteStoryError}
+                            </ThemedText>
+                        )}
+                        <View style={styles.deleteConfirmationActions}>
+                            <Pressable
+                                disabled={isDeletingStory}
+                                style={[styles.deleteConfirmationButton, styles.cancelDeleteButton]}
+                                onPress={() => setShowDeleteConfirmation(false)}
+                            >
+                                <ThemedText style={[styles.cancelDeleteText, { color: textColor }]}>Cancel</ThemedText>
+                            </Pressable>
+                            <Pressable
+                                disabled={isDeletingStory}
+                                style={[styles.deleteConfirmationButton, { backgroundColor: errorColor }]}
+                                onPress={confirmDeleteStory}
+                            >
+                                {isDeletingStory ? (
+                                    <ActivityIndicator color="#FFFFFF" />
+                                ) : (
+                                    <ThemedText style={styles.confirmDeleteText}>Delete</ThemedText>
+                                )}
+                            </Pressable>
+                        </View>
+                    </View>
+                </View>
+            )}
+
             {/* Reaction Controls */}
             {!isOwnStory && (
                 <View style={[styles.footerControls, { paddingBottom: insets.bottom + spacing.md }]}>
@@ -648,6 +693,63 @@ const styles = StyleSheet.create({
     // the poll — has no box to draw in.
     modalFill: {
         flex: 1,
+    },
+    deleteConfirmationOverlay: {
+        ...StyleSheet.absoluteFill,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+        zIndex: 20,
+    },
+    deleteConfirmationBackdrop: {
+        ...StyleSheet.absoluteFill,
+        backgroundColor: 'rgba(0,0,0,0.65)',
+    },
+    deleteConfirmationCard: {
+        width: '100%',
+        maxWidth: 360,
+        borderRadius: borderRadius.lg,
+        padding: spacing.lg,
+        alignItems: 'center',
+    },
+    deleteConfirmationTitle: {
+        fontSize: typography.sizes.heading3,
+        fontFamily: typography.families.bold,
+        marginBottom: spacing.sm,
+    },
+    deleteConfirmationMessage: {
+        fontSize: typography.sizes.body2,
+        textAlign: 'center',
+    },
+    deleteConfirmationError: {
+        fontSize: typography.sizes.caption,
+        textAlign: 'center',
+        marginTop: spacing.sm,
+    },
+    deleteConfirmationActions: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.lg,
+        width: '100%',
+    },
+    deleteConfirmationButton: {
+        flex: 1,
+        minHeight: 44,
+        borderRadius: borderRadius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.md,
+    },
+    cancelDeleteButton: {
+        borderWidth: 1,
+        borderColor: 'rgba(127,127,127,0.5)',
+    },
+    cancelDeleteText: {
+        fontFamily: typography.families.medium,
+    },
+    confirmDeleteText: {
+        color: 'white',
+        fontFamily: typography.families.bold,
     },
     container: {
         flex: 1,
